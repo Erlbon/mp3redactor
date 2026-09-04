@@ -31,6 +31,7 @@ a = Analysis(
         ("assets/icon.ico", "assets"),
         ("README.md", "."),
         ("CHANGELOG.md", "."),
+        ("CREDITS.md", "."),
     ],
     hiddenimports=[],
     hookspath=[],
