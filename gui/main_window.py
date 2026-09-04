@@ -33,7 +33,6 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHeaderView,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QTableWidget,
     QTableWidgetItem,
@@ -61,6 +60,7 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
+from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.progress import run_with_progress
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
@@ -335,10 +335,16 @@ class MainWindow(QMainWindow):
     # -- context menu -----------------------------------------------------
 
     def _show_context_menu(self, pos) -> None:
-        if not self.table.itemAt(pos):
-            return
-        menu = QMenu(self)
-        menu.addAction("Check File Integrity", self.run_integrity_check)
-        menu.addAction("Fix File Integrity Issues...", self.run_integrity_fix)
-        menu.addAction("Detect BPM", self.run_bpm_check)
-        menu.exec(self.table.viewport().mapToGlobal(pos))
+        # Selection-fix, and the generic Open Containing Folder/Copy Path
+        # actions, are handled by the shared helper -- see its docstring.
+        show_table_context_menu(
+            self, self.table, pos,
+            get_selected_items=self._selected_files,
+            get_path=lambda mp3: mp3.path,
+            extra_items=lambda files: [
+                Separator(),
+                MenuAction("check_integrity", "Check File Integrity", self.run_integrity_check),
+                MenuAction("fix_integrity", "Fix File Integrity Issues...", self.run_integrity_fix),
+                MenuAction("detect_bpm", "Detect BPM", self.run_bpm_check),
+            ],
+        )
