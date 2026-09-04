@@ -4,7 +4,7 @@ Windows GUI utility (Python/PyQt6) for bulk-checking and bulk-editing
 MP3 metadata. Sibling project to the EPUB and Video Redactors,
 mp3tag-inspired UX.
 
-## Status: v1 (integrity + BPM + basic tag editing)
+## Status: v1 (integrity + BPM + key + basic tag editing)
 
 Roadmap, in build order:
 
@@ -17,7 +17,11 @@ Roadmap, in build order:
    Apply to the selection, Save writes to disk. No cover art, extended
    tags (composer, comment, ...), or external lookups yet -- those stay
    later roadmap items, same as the two below.
-4. Key detection -- via `keyfinder-cli` (shelled out) -- not yet built
+4. **Key detection** -- via `keyfinder-cli` (shelled out, `core/keyfinder_runner.py`).
+   No prebuilt Windows binary exists upstream; see
+   [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)
+   for how it's built. "Detect Key" from the Operations menu, its
+   toolbar button, or right-click, same as Check Integrity/Detect BPM.
 5. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
 6. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
 
@@ -58,10 +62,9 @@ this has to be built on Windows itself.
      FFmpeg, so the DLLs have to ship alongside the exe). That repo also
      has the build script, if `keyfinder-cli`/`libkeyfinder` ever need a
      newer version.
-   (keyfinder-cli isn't wired into the app yet -- key detection is a
-   later roadmap item -- but bundling it now avoids a second build once
-   it lands. The build still works without a `tools\` folder at all;
-   integrity check/fix will just report TOOL MISSING until it's added.)
+   (The build still works without a `tools\` folder at all -- Check
+   Integrity/Detect Key will just report TOOL MISSING until the
+   relevant binary's added.)
 2. Optionally bump the version first:
    ```
    python bump_version.py

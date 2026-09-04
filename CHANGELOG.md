@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-04#09
+
+- Added **key detection** -- via `keyfinder-cli` (shelled out,
+  `core/keyfinder_runner.py`; see
+  [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)
+  for how the Windows binary is built, since none exists upstream).
+  "Detect Key" from the Operations menu, its toolbar button, or
+  right-click -- same three places Check Integrity/Detect BPM already
+  live. New Key column in the table (`MP3File.key_status/key_value/
+  key_message` were already reserved fields, now actually populated).
+  A silent file (genuinely no key) is reported OK with an explanatory
+  tooltip, not as an error.
+- Fixed `core.scan_service.save_dirty_tags()`: its docstring already
+  claimed non-dirty files are skipped, but the code saved every file it
+  was given regardless -- harmless today (the only caller already
+  pre-filters to dirty files) but now actually does what it says.
+- New test: `test_keyfinder_runner.py`.
+
 ## 2026-09-04#08
 
 - Added **basic bulk tag editing** -- Title/Artist/Album/Track/Year/Genre

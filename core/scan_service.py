@@ -4,16 +4,16 @@ progress via a callback so the GUI can drive a QProgressDialog the same
 way the epub tool does for its load/save/rebuild operations.
 
 Kept deliberately separate from any specific check (tags, integrity,
-BPM) so a later addition -- key detection, cover, lyrics -- is just
-another function with the same (mp3, ) -> None mutate-in-place shape,
-plugged into load_folder()/run_integrity_check()/run_bpm_check() sitting
-alongside these two rather than a rewrite.
+BPM, key) so a later addition -- cover, lyrics -- is just another
+function with the same (mp3, ) -> None mutate-in-place shape, plugged
+in alongside the existing ones rather than a rewrite.
 """
 
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from core.bpm_detector import detect_bpm
+from core.keyfinder_runner import detect_key
 from core.mp3_file import MP3File
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
@@ -129,10 +129,34 @@ def save_dirty_tags(files: list[MP3File], progress: ProgressCallback | None = No
     Deliberately takes an explicit list rather than filtering "all
     loaded files" internally -- callers should already have filtered to
     dirty files before calling (see MainWindow.save_changed()), so the
-    progress-dialog item count reflects only the actual work.
+    progress-dialog item count reflects only the actual work. The
+    dirty-check here is a second, cheap guarantee of that same
+    contract, not a substitute for it.
     """
     total = len(files)
     for i, mp3 in enumerate(files, start=1):
-        save_tags(mp3)
+        if mp3.dirty:
+            save_tags(mp3)
+        if progress is not None:
+            progress(i, total)
+
+
+def run_key_detection(
+    files: list[MP3File],
+    progress: ProgressCallback | None = None,
+    keyfinder_cli_path: str | None = None,
+) -> None:
+    """
+    Mutates each file's key_value/key_status/key_message in place.
+    keyfinder_cli_path is the user's manual override from Settings >
+    Locate External Tools (core.settings.Settings.keyfinder_cli_path),
+    if set -- same convention as run_integrity_check()'s mp3val_path.
+    """
+    total = len(files)
+    for i, mp3 in enumerate(files, start=1):
+        key, status, message = detect_key(mp3.path, override_path=keyfinder_cli_path)
+        mp3.key_value = key
+        mp3.key_status = status
+        mp3.key_message = message
         if progress is not None:
             progress(i, total)

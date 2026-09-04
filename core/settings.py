@@ -32,9 +32,7 @@ class Settings:
     # Locate External Tools. Empty string means "auto-detect" (bundled
     # tools/ dir, then PATH -- see core.tool_locator.find_tool()), same
     # convention the video tool's equivalent dialog uses for
-    # ffmpeg/MKVToolNix. keyfinder_cli_path exists ahead of key
-    # detection actually being built (next on the roadmap) so this
-    # dialog doesn't need a second layout pass once it lands.
+    # ffmpeg/MKVToolNix.
     mp3val_path: str = ""
     keyfinder_cli_path: str = ""
 

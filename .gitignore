@@ -5,3 +5,9 @@ __pycache__/
 build/
 dist/
 *.spec.bak
+
+# External tool binaries (mp3val.exe, keyfinder-cli.exe + its FFmpeg
+# DLLs) -- README explains where to get them; never meant to be
+# committed here, only bundled into a local build's tools\.
+tools/*.exe
+tools/*.dll

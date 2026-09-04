@@ -1,11 +1,11 @@
 """
 MainWindow: bulk-edit tag panel (left) + file table (right) in a
 collapsible QSplitter, menu+toolbar for the v1 actions (Load
-Files/Folder, bulk tag editing, Check Integrity, Detect BPM). Tag
-editing is deliberately "basic" -- plain text fields only, via
-core.fields.FIELDS -- no covers, genre/language pickers, or external
-lookups the way the epub tool's fuller tag panel has; those don't have
-an obvious MP3-tag equivalent yet.
+Files/Folder, bulk tag editing, Check Integrity, Detect BPM, Detect
+Key). Tag editing is deliberately "basic" -- plain text fields only,
+via core.fields.FIELDS -- no covers, genre/language pickers, or
+external lookups the way the epub tool's fuller tag panel has; those
+don't have an obvious MP3-tag equivalent yet.
 
 Column layout, row-to-file mapping via Qt.UserRole (not list index -- a
 sort or filter must never desync the row from the object it displays,
@@ -56,6 +56,7 @@ from core.scan_service import (
     run_bpm_check,
     run_integrity_check,
     run_integrity_fix,
+    run_key_detection,
     save_dirty_tags,
 )
 from core.settings import Settings, load_settings, save_settings
@@ -76,8 +77,9 @@ COL_FILENAME = 0
 FIRST_FIELD_COL = 1  # Title/Artist/Album/Track/Year/Genre, in core.fields.FIELDS order
 COL_INTEGRITY = FIRST_FIELD_COL + len(FIELDS)
 COL_BPM = COL_INTEGRITY + 1
-COLUMN_COUNT = COL_BPM + 1
-COLUMN_HEADERS = ["Filename"] + [label for _key, label, _m in FIELDS] + ["Integrity", "BPM"]
+COL_KEY = COL_BPM + 1
+COLUMN_COUNT = COL_KEY + 1
+COLUMN_HEADERS = ["Filename"] + [label for _key, label, _m in FIELDS] + ["Integrity", "BPM", "Key"]
 
 STATUS_COLORS = {
     STATUS_OK: Qt.GlobalColor.darkGreen,
@@ -167,6 +169,7 @@ class MainWindow(QMainWindow):
                     "fix_integrity", "&Fix Selected Files' Integrity Issues...", self.run_integrity_fix
                 ),
                 MenuAction("check_bpm", "Detect &BPM for Selected Files", self.run_bpm_check),
+                MenuAction("check_key", "Detect &Key for Selected Files", self.run_key_detection),
             ],
             "Settings": [
                 MenuAction("preferences", "&Preferences...", self.open_settings_dialog),
@@ -190,6 +193,7 @@ class MainWindow(QMainWindow):
         self.action_check_integrity = actions["check_integrity"]
         self.action_fix_integrity = actions["fix_integrity"]
         self.action_check_bpm = actions["check_bpm"]
+        self.action_check_key = actions["check_key"]
 
         toolbar = QToolBar("Main", self)
         self.addToolBar(toolbar)
@@ -200,6 +204,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(self.action_check_integrity)
         toolbar.addAction(self.action_check_bpm)
+        toolbar.addAction(self.action_check_key)
         toolbar.addSeparator()
 
         toggle_panel_act = make_action(self, "Panel", self._toggle_tag_panel)
@@ -405,6 +410,14 @@ class MainWindow(QMainWindow):
     def run_bpm_check(self) -> None:
         self._run_check_with_progress("Detecting BPM...", run_bpm_check, self._selected_files())
 
+    def run_key_detection(self) -> None:
+        self._run_check_with_progress(
+            "Detecting key...",
+            run_key_detection,
+            self._selected_files(),
+            keyfinder_cli_path=self.settings.keyfinder_cli_path or None,
+        )
+
     def _selected_files(self) -> list[MP3File]:
         seen: dict[int, MP3File] = {}
         for item in self.table.selectedItems():
@@ -468,6 +481,15 @@ class MainWindow(QMainWindow):
             bpm_item.setToolTip(mp3.bpm_message)
         self.table.setItem(row, COL_BPM, bpm_item)
 
+        key_item = QTableWidgetItem(self._key_display(mp3))
+        key_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        key_color = STATUS_COLORS.get(mp3.key_status)
+        if key_color is not None:
+            key_item.setForeground(key_color)
+        if mp3.key_message:
+            key_item.setToolTip(mp3.key_message)
+        self.table.setItem(row, COL_KEY, key_item)
+
     @staticmethod
     def _integrity_display(mp3: MP3File) -> str:
         if mp3.integrity_status == STATUS_TOOL_MISSING:
@@ -479,6 +501,12 @@ class MainWindow(QMainWindow):
         if mp3.bpm_status == STATUS_TOOL_MISSING:
             return "TOOL MISSING"
         return mp3.display_bpm()
+
+    @staticmethod
+    def _key_display(mp3: MP3File) -> str:
+        if mp3.key_status == STATUS_TOOL_MISSING:
+            return "TOOL MISSING"
+        return mp3.key_value
 
     # -- context menu -----------------------------------------------------
 
@@ -498,5 +526,6 @@ class MainWindow(QMainWindow):
                     "fix_integrity", "Fix Selected Files' Integrity Issues...", self.run_integrity_fix
                 ),
                 MenuAction("detect_bpm", "Detect BPM for Selected Files", self.run_bpm_check),
+                MenuAction("detect_key", "Detect Key for Selected Files", self.run_key_detection),
             ],
         )

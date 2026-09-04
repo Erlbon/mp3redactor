@@ -1,9 +1,9 @@
 """
 MP3File: the per-row data object backing the file table, analogous to
-EpubBook in the epub tool. Holds tag fields plus the results of the two
-v1 checks (file-integrity and BPM); key/cover/lyrics fields are reserved
-here now so later versions don't need a schema migration, but are left
-unset/unused until those features land.
+EpubBook in the epub tool. Holds tag fields plus the results of the
+file-integrity, BPM, and key checks; cover/lyrics fields are reserved
+here now so those later versions don't need a schema migration, but are
+left unset/unused until those features land.
 """
 
 from dataclasses import dataclass, field
@@ -43,10 +43,12 @@ class MP3File:
     bpm_status: str = STATUS_UNCHECKED
     bpm_message: str = ""
 
-    # Reserved for later versions -- deliberately present but unused in v1
+    # Key detection (keyfinder-cli)
     key_status: str = STATUS_UNCHECKED
     key_value: str = ""
     key_message: str = ""
+
+    # Reserved for later versions -- deliberately present but unused in v1
     has_cover: bool | None = None
     lyrics: str = ""
 
