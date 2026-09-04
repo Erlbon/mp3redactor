@@ -56,13 +56,13 @@ from core.scan_service import (
     run_integrity_fix,
 )
 from core.settings import Settings, load_settings, save_settings
-from core.version import APP_NAME, APP_VERSION, RELEASE_LABEL
+from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
 from redactor_common.gui.progress import run_with_progress
-from redactor_common.core.version import REDACTOR_COMMON_VERSION
+from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
 COL_FILENAME = 0
 COL_TITLE = 1
@@ -162,6 +162,8 @@ class MainWindow(QMainWindow):
             icon_path=str(asset_path("assets/icon.ico")),
             about_path=str(asset_path("README.md")),
             component_versions={"redactor_common": REDACTOR_COMMON_VERSION},
+            repo_url=APP_REPO_URL,
+            component_repo_urls={"redactor_common": REDACTOR_COMMON_REPO_URL},
             parent=self,
         )
         dialog.exec()
