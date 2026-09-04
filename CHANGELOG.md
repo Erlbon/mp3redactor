@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-04#11
+
+- `redactor_common` is now a real pip dependency
+  ([Erlbon/redactor_common](https://github.com/Erlbon/redactor_common),
+  pinned to tag `2026-09-04-10` in `requirements.txt`) instead of a
+  vendored copy under `redactor_common/`. This is the actual fix for
+  what #10's setWindowModality crash exposed: three projects each
+  hand-copying the same files meant a fix in one place didn't reach
+  the other two without three separate manual resyncs -- one canonical
+  source now, bumped via a deliberate one-line `requirements.txt` diff
+  instead. Import paths are unchanged (`from redactor_common.gui...`
+  still works, just resolves from site-packages now). No code changes
+  needed here beyond removing the vendored folder.
+
 ## 2026-09-04#10
 
 - **Detect Key now runs across multiple cores in parallel** instead of
