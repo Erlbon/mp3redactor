@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-04#07
+
+- **Check File Integrity** and **Detect BPM** now operate on the table's
+  current **selection only**, matching Fix's existing behavior, instead
+  of silently running across every loaded file. Menu/toolbar/context-menu
+  labels reworded ("...Selected Files...") to make that explicit.
+- The "nothing to run on" message now distinguishes no files loaded
+  ("Load some files first") from files loaded but none selected
+  ("Select one or more files in the table").
+- `keyfinder-cli.exe` build/distribution moved out to its own repo:
+  [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)
+  (there's no prebuilt Windows binary upstream, and the build needs
+  vcpkg + a ~120MB FFmpeg dev package -- keeping that out of this repo).
+  v1.2.0 is published there as a GitHub Release with `keyfinder-cli.exe`
+  + its 4 DLLs attached. README's build step 1 updated accordingly.
+
 ## 2026-09-04#06
 
 - Added branding icon: `assets/icon.ico` / `icon.png`, turned-m glyph on

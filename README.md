@@ -39,15 +39,25 @@ something beyond read-only fields to edit toward.
 PyInstaller can't cross-compile a Windows executable from another OS, so
 this has to be built on Windows itself.
 
-1. Download `mp3val.exe` and `keyfinder-cli.exe` and place them at:
-   ```
-   tools\mp3val.exe
-   tools\keyfinder-cli.exe
-   ```
-   (keyfinder-cli isn't used yet -- key detection is a later roadmap item
-   -- but bundling it now avoids a second build once it lands. The build
-   still works without a `tools\` folder at all; integrity check/fix
-   will just report TOOL MISSING until it's added.)
+1. Get `mp3val.exe` and `keyfinder-cli.exe` (+ its 4 FFmpeg DLLs) into
+   `tools\`:
+   - `mp3val.exe`: download the official Windows binary and place it at
+     `tools\mp3val.exe`.
+   - `keyfinder-cli.exe`: **there is no prebuilt Windows binary upstream**
+     -- it has to be compiled, which needs vcpkg + a ~120MB FFmpeg dev
+     package. Rather than carrying that build setup (and its DLLs) in
+     *this* repo, it lives in a separate one dedicated to it:
+     [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows).
+     Download `keyfinder-cli.exe` + the 4 `.dll` files from its
+     [latest release](https://github.com/Erlbon/keyfinder-cli-windows/releases/latest)
+     and drop all 5 into `tools\` (it's dynamically linked against
+     FFmpeg, so the DLLs have to ship alongside the exe). That repo also
+     has the build script, if `keyfinder-cli`/`libkeyfinder` ever need a
+     newer version.
+   (keyfinder-cli isn't wired into the app yet -- key detection is a
+   later roadmap item -- but bundling it now avoids a second build once
+   it lands. The build still works without a `tools\` folder at all;
+   integrity check/fix will just report TOOL MISSING until it's added.)
 2. Optionally bump the version first:
    ```
    python bump_version.py

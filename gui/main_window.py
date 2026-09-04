@@ -117,11 +117,13 @@ class MainWindow(QMainWindow):
             # before there's anything to put in it.
             "Import": [],
             "Operations": [
-                MenuAction("check_integrity", "&Check File Integrity", self.run_integrity_check),
+                MenuAction(
+                    "check_integrity", "&Check Selected Files' Integrity", self.run_integrity_check
+                ),
                 MenuAction(
                     "fix_integrity", "&Fix Selected Files' Integrity Issues...", self.run_integrity_fix
                 ),
-                MenuAction("check_bpm", "Detect &BPM", self.run_bpm_check),
+                MenuAction("check_bpm", "Detect &BPM for Selected Files", self.run_bpm_check),
             ],
             "Settings": [
                 MenuAction("preferences", "&Preferences...", self.open_settings_dialog),
@@ -224,7 +226,7 @@ class MainWindow(QMainWindow):
         self._run_check_with_progress(
             "Checking file integrity...",
             run_integrity_check,
-            self.files,
+            self._selected_files(),
             mp3val_path=self.settings.mp3val_path or None,
         )
 
@@ -268,7 +270,7 @@ class MainWindow(QMainWindow):
         self._rebuild_table()
 
     def run_bpm_check(self) -> None:
-        self._run_check_with_progress("Detecting BPM...", run_bpm_check, self.files)
+        self._run_check_with_progress("Detecting BPM...", run_bpm_check, self._selected_files())
 
     def _selected_files(self) -> list[MP3File]:
         seen: dict[int, MP3File] = {}
@@ -282,7 +284,12 @@ class MainWindow(QMainWindow):
         self, label: str, check_fn, targets: list[MP3File], **extra_kwargs
     ) -> None:
         if not targets:
-            QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+            if not self.files:
+                QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+            else:
+                QMessageBox.information(
+                    self, "No Files Selected", "Select one or more files in the table."
+                )
             return
 
         def step(target: MP3File, _index: int) -> None:
@@ -343,8 +350,12 @@ class MainWindow(QMainWindow):
             get_path=lambda mp3: mp3.path,
             extra_items=lambda files: [
                 Separator(),
-                MenuAction("check_integrity", "Check File Integrity", self.run_integrity_check),
-                MenuAction("fix_integrity", "Fix File Integrity Issues...", self.run_integrity_fix),
-                MenuAction("detect_bpm", "Detect BPM", self.run_bpm_check),
+                MenuAction(
+                    "check_integrity", "Check Selected Files' Integrity", self.run_integrity_check
+                ),
+                MenuAction(
+                    "fix_integrity", "Fix Selected Files' Integrity Issues...", self.run_integrity_fix
+                ),
+                MenuAction("detect_bpm", "Detect BPM for Selected Files", self.run_bpm_check),
             ],
         )
