@@ -31,10 +31,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFileDialog,
     QHeaderView,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -411,12 +413,50 @@ class MainWindow(QMainWindow):
         self._run_check_with_progress("Detecting BPM...", run_bpm_check, self._selected_files())
 
     def run_key_detection(self) -> None:
-        self._run_check_with_progress(
-            "Detecting key...",
-            run_key_detection,
-            self._selected_files(),
+        # Deliberately NOT routed through _run_check_with_progress -- that
+        # helper (and run_with_progress underneath it) iterates targets
+        # one at a time itself, which would mean core.scan_service.
+        # run_key_detection() is never actually handed more than a single
+        # file and its internal thread pool never gets to run more than
+        # one keyfinder-cli process at once. This drives the dialog from
+        # scan_service's own progress/should_cancel callbacks instead, so
+        # the whole selection is dispatched together and genuinely runs
+        # across multiple cores. See run_key_detection()'s docstring.
+        targets = self._selected_files()
+        if not targets:
+            if not self.files:
+                QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+            else:
+                QMessageBox.information(
+                    self, "No Files Selected", "Select one or more files in the table."
+                )
+            return
+
+        dialog = None
+        if len(targets) >= 3:
+            dialog = QProgressDialog("Detecting key...", "Cancel", 0, len(targets), self)
+            dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            dialog.setMinimumDuration(0)
+            dialog.show()
+
+        def on_progress(done: int, _total: int) -> None:
+            if dialog is not None:
+                dialog.setValue(done)
+                QApplication.processEvents()
+
+        def should_cancel() -> bool:
+            return dialog is not None and dialog.wasCanceled()
+
+        run_key_detection(
+            targets,
+            progress=on_progress,
             keyfinder_cli_path=self.settings.keyfinder_cli_path or None,
+            should_cancel=should_cancel,
         )
+
+        if dialog is not None:
+            dialog.close()
+        self._rebuild_table()
 
     def _selected_files(self) -> list[MP3File]:
         seen: dict[int, MP3File] = {}

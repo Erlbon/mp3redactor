@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-09-04#10
+
+- **Detect Key now runs across multiple cores in parallel** instead of
+  one file at a time -- each keyfinder-cli invocation is a genuinely
+  separate OS process, and it's by far the slowest of the three checks
+  (full decode + FFT per file), so this is where parallelism actually
+  pays off. `core/scan_service.run_key_detection()` now dispatches the
+  whole selection to a `ThreadPoolExecutor` (default: one worker per
+  core, capped at the number of files) instead of being called once per
+  file the way the other checks are; `MainWindow.run_key_detection()`
+  was rewritten to match (drives its progress dialog from
+  scan_service's own progress/should_cancel callbacks rather than
+  `_run_check_with_progress`'s one-item-at-a-time loop, which would
+  have silently defeated the whole point). Verified with 12 real files
+  against the actual keyfinder-cli.exe binary: ~7.6x wall-clock speedup
+  on this machine, all results correct.
+- **Fixed a real, live crash** (found while testing the above with 3+
+  files, not caused by it): `redactor_common/gui/progress.py`'s
+  `run_with_progress()` called `dialog.setWindowModality(True)` -- a
+  bare bool, not the `Qt.WindowModality` enum PyQt6 actually requires
+  -- which raised `TypeError` in this PyQt6 version the moment the
+  progress dialog was ever actually shown (3+ items). This affected
+  every check in this app (Integrity/BPM/Key), not just the new
+  parallel path; it just happened to surface here first since it's what
+  I was testing with a bigger batch. Fixed upstream in
+  [Erlbon/redactor_common](https://github.com/Erlbon/redactor_common)
+  and re-synced into this project's vendored copy
+  (`REDACTOR_COMMON_VERSION` bumped to `2026-09-04#09`); flagged for
+  the epub/video tools too, since they vendor the same file.
+- New test: `test_scan_service_key_detection.py`.
+
 ## 2026-09-04#09
 
 - Added **key detection** -- via `keyfinder-cli` (shelled out,
