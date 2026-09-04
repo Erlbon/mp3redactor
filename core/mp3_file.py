@@ -57,6 +57,12 @@ class MP3File:
     load_error: str = ""
     save_error: str = ""
 
+    # True once a bulk-edit has been applied in memory but not yet
+    # written to disk -- set by apply_tags(), cleared by
+    # core.tag_writer.save_tags() on a successful write. Left set (so
+    # the file stays visibly unsaved) if a save attempt fails.
+    dirty: bool = False
+
     @property
     def filename(self) -> str:
         return self.path.name
@@ -65,3 +71,13 @@ class MP3File:
         if self.bpm is None:
             return ""
         return f"{self.bpm:.1f}"
+
+    def apply_tags(self, values: dict[str, str]) -> None:
+        """Writes each field in `values` (attribute_key -> new value,
+        from core.fields.FIELDS) onto this file's in-memory tag
+        attributes and marks it dirty. Mirrors the epub tool's
+        EpubBook.apply_metadata() -- does not touch disk, that's
+        core.tag_writer.save_tags()'s job."""
+        for key, value in values.items():
+            setattr(self, key, value)
+        self.dirty = True

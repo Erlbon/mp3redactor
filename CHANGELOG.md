@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-09-04#08
+
+- Added **basic bulk tag editing** -- Title/Artist/Album/Track/Year/Genre
+  -- the mp3tag-style workflow every sibling Redactor project uses,
+  built on the same `redactor_common` pieces the epub tool's tag panel
+  uses (`collapsible_splitter`, `progress`, `error_summary`,
+  `action_factory`):
+  - `core/fields.py`: single source of truth for the editable fields,
+    same pattern as the epub tool's (trimmed down -- no covers,
+    genre/language pickers, or external lookups yet).
+  - `core/tag_writer.py`: writes tags back via mutagen (the write
+    counterpart to `core/tag_reader.py`'s read side, same ID3 frames).
+    Blanking a field and saving removes that frame entirely rather than
+    writing it empty -- how you clear a tag.
+  - `MP3File.apply_tags()` / `.dirty` (`core/mp3_file.py`): in-memory
+    edit + dirty tracking, mirroring the epub tool's
+    `EpubBook.apply_metadata()`/`.dirty`.
+  - `gui/tag_panel.py`: the bulk-edit panel itself -- select rows, tick
+    a field (or just start typing -- that ticks it too), Apply to the
+    selection. Shows "<multiple values>" (scroll to cycle through and
+    pick one) when the selection disagrees on a field.
+  - `gui/main_window.py`: panel lives in a collapsible splitter next to
+    the file table (Panel toolbar button to minimize/restore); table
+    gained Track/Year/Genre columns so applied edits are visible, not
+    just Title/Artist/Album; dirty rows highlighted amber; **Save Tags**
+    (Ctrl+S, File menu) writes every dirty file to disk, reporting any
+    per-file failures; confirms before discarding unsaved edits (Load
+    Files/Folder, window close).
+  - New tests: `test_mp3_file.py`, `test_tag_writer.py` (the latter uses
+    a real tiny MP3 fixture, `tests/fixtures/tiny.mp3`, round-tripping
+    through actual mutagen rather than mocking it).
+
 ## 2026-09-04#07
 
 - **Check File Integrity** and **Detect BPM** now operate on the table's

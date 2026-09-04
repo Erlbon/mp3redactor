@@ -17,6 +17,7 @@ from core.bpm_detector import detect_bpm
 from core.mp3_file import MP3File
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
+from core.tag_writer import save_tags
 
 ProgressCallback = Callable[[int, int], None]  # (completed, total) -> None
 
@@ -112,5 +113,26 @@ def run_bpm_check(files: list[MP3File], progress: ProgressCallback | None = None
         mp3.bpm = bpm
         mp3.bpm_status = status
         mp3.bpm_message = message
+        if progress is not None:
+            progress(i, total)
+
+
+def save_dirty_tags(files: list[MP3File], progress: ProgressCallback | None = None) -> None:
+    """
+    Writes every dirty file's tags to disk via core.tag_writer.save_tags(),
+    which itself clears each file's dirty flag on success or sets its
+    save_error and leaves it dirty on failure -- same per-file error
+    isolation as the integrity/BPM checks, one bad file doesn't abort
+    the rest of the batch. Non-dirty files are skipped entirely (no-op,
+    not even re-saved) since they have nothing new to write.
+
+    Deliberately takes an explicit list rather than filtering "all
+    loaded files" internally -- callers should already have filtered to
+    dirty files before calling (see MainWindow.save_changed()), so the
+    progress-dialog item count reflects only the actual work.
+    """
+    total = len(files)
+    for i, mp3 in enumerate(files, start=1):
+        save_tags(mp3)
         if progress is not None:
             progress(i, total)

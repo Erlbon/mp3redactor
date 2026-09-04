@@ -1,21 +1,25 @@
 # The ɯP3 Redactor
 
-Windows GUI utility (Python/PyQt6) for bulk-checking and eventually
-bulk-editing MP3 metadata. Sibling project to the EPUB and Video
-Redactors, mp3tag-inspired UX.
+Windows GUI utility (Python/PyQt6) for bulk-checking and bulk-editing
+MP3 metadata. Sibling project to the EPUB and Video Redactors,
+mp3tag-inspired UX.
 
-## Status: v1 (integrity + BPM)
+## Status: v1 (integrity + BPM + basic tag editing)
 
 Roadmap, in build order:
 
 1. **File integrity check** -- via `mp3val` (shelled out)
 2. **BPM detection** -- via `aubio`'s Python bindings (in-process)
-3. Key detection -- via `keyfinder-cli` (shelled out) -- not yet built
-4. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
-5. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
-
-Tag editing (mp3tag-style bulk-edit panel) is deferred until there's
-something beyond read-only fields to edit toward.
+3. **Basic tag editing** -- Title/Artist/Album/Track/Year/Genre, via a
+   bulk-edit panel (`gui/tag_panel.py`) and `mutagen` (in-process,
+   `core/tag_writer.py`) -- same mp3tag-style workflow as the epub
+   tool's fuller tag panel: select rows, tick a field, type a value,
+   Apply to the selection, Save writes to disk. No cover art, extended
+   tags (composer, comment, ...), or external lookups yet -- those stay
+   later roadmap items, same as the two below.
+4. Key detection -- via `keyfinder-cli` (shelled out) -- not yet built
+5. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
+6. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
 
 ## Tooling decisions
 
