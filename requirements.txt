@@ -1,5 +1,5 @@
-PyQt6
-mutagen
+PyQt6>=6.6
+mutagen>=1.47
 
 # aubio-ledfx, not plain "aubio" -- the original aubio PyPI package is
 # source-only (no Windows wheels, ever), so pip always tries to compile
@@ -14,6 +14,7 @@ aubio-ledfx
 
 # Dev/build only -- not needed to run the app itself:
 pytest
+pyinstaller>=6.3
 
 # Not pip-installable -- these are separate CLI binaries the app shells
 # out to (core/tool_locator.py). Ship them in tools/ alongside a frozen
