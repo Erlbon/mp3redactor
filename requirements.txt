@@ -1,0 +1,26 @@
+PyQt6>=6.6
+mutagen>=1.47
+
+# aubio-ledfx, not plain "aubio" -- the original aubio PyPI package is
+# source-only (no Windows wheels, ever), so pip always tries to compile
+# a C extension and needs MSVC Build Tools. aubio-ledfx is a maintained
+# fork (by the LedFx project, which hit the same problem) that ships
+# real prebuilt Windows wheels, including for newer Python versions the
+# original has never built for. Same source tree, same `import aubio`
+# in code -- only the pip package name differs. Third-party fork, not
+# the canonical aubio release; swap back to plain "aubio" (+ MSVC Build
+# Tools) if that provenance ever becomes a concern.
+aubio-ledfx
+
+# Dev/build only -- not needed to run the app itself:
+pytest
+pyinstaller>=6.3
+
+# Not pip-installable -- these are separate CLI binaries the app shells
+# out to (core/tool_locator.py). Ship them in tools/ alongside a frozen
+# build, or have them on PATH for dev-mode runs:
+#   mp3val        https://mp3val.sourceforge.net/
+#   keyfinder-cli https://github.com/EvanPurkhiser/keyfinder-cli   (v2+)
+
+# Pulled in when lyrics support (v4 in the roadmap) lands -- not needed yet:
+# lyricy
