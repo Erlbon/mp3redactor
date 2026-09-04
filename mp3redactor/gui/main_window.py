@@ -62,6 +62,7 @@ from gui.settings_dialog import SettingsDialog
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
 from redactor_common.gui.progress import run_with_progress
+from redactor_common.core.version import REDACTOR_COMMON_VERSION
 
 COL_FILENAME = 0
 COL_TITLE = 1
@@ -160,6 +161,7 @@ class MainWindow(QMainWindow):
             release_label=RELEASE_LABEL,
             icon_path=str(asset_path("assets/icon.ico")),
             about_path=str(asset_path("README.md")),
+            component_versions={"redactor_common": REDACTOR_COMMON_VERSION},
             parent=self,
         )
         dialog.exec()

@@ -1,21 +1,21 @@
 @echo off
 REM Builds a standalone Windows .exe using PyInstaller.
-REM Run this from a Windows machine with Python 3.10+ installed.
+REM Run this from a Windows machine with Python 3.11+ installed.
 REM
-REM Ported from the epub tool's build_exe.bat: checks the result of every
-REM step and stops with a clear message on failure, uses "python -m
-REM PyInstaller" rather than the bare "pyinstaller" command (avoids a
-REM common failure where pip installs the console script into a Scripts
-REM folder that isn't on PATH, especially for a per-user Python install).
+REM Checks the result of every step and stops with a clear message on
+REM failure, instead of continuing to a false "Done" message.
 REM
-REM One difference from the epub tool: mp3val.exe and keyfinder-cli.exe
-REM are external binaries this app shells out to via subprocess, not
-REM data assets -- so they are NOT passed through --add-data. With
-REM --onefile, --add-data content gets unpacked to a temp folder at
-REM runtime, not next to the actual .exe, and core/tool_locator.py looks
-REM for tools\ next to the exe itself. So they're copied into dist\tools
-REM as a separate step after the build instead. See README.md for where
-REM to get those two binaries.
+REM Does NOT bump the version number -- run bump_version.py yourself
+REM first if this build should carry a new version. Keeping that a
+REM separate, deliberate step means a test/debug build doesn't inflate
+REM the official version history every time you run this script.
+REM
+REM mp3val.exe and keyfinder-cli.exe are external binaries this app
+REM shells out to, not data assets -- so they are NOT passed through
+REM the spec file's datas. They're copied into dist\tools as a separate
+REM step after the build instead, since core\tool_locator.py looks for
+REM tools\ next to the exe itself, not PyInstaller's onefile temp
+REM extraction dir. See README.md for where to get those two binaries.
 
 cd /d "%~dp0"
 echo Working directory: %cd%
@@ -26,7 +26,7 @@ python --version
 if errorlevel 1 (
     echo.
     echo ERROR: "python" was not found on your PATH.
-    echo Install Python 3.10+ from python.org and make sure to check
+    echo Install Python 3.11+ from python.org and make sure to check
     echo "Add python.exe to PATH" during installation, then try again.
     pause
     exit /b 1
@@ -35,7 +35,7 @@ echo.
 
 echo Installing dependencies ^(this can take a minute the first time^)...
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt pyinstaller
+python -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
     echo ERROR: pip install failed. Common causes: no internet connection,
@@ -46,16 +46,17 @@ if errorlevel 1 (
 echo.
 
 echo Building mp3redactor.exe ...
-python -m PyInstaller --noconfirm --onefile --windowed ^
-    --name mp3redactor ^
-    --icon assets\icon.ico ^
-    --add-data "assets;assets" ^
-    --add-data "README.md;." ^
-    --add-data "CHANGELOG.md;." ^
-    main.py
+REM "python -m PyInstaller" instead of the bare "pyinstaller" command --
+REM pip installs the pyinstaller console script into a "Scripts" folder
+REM that often isn't on PATH, especially for a per-user (non-admin)
+REM Python install. "python -m" always finds it as long as it's
+REM installed in this same Python environment.
+python -m PyInstaller mp3redactor.spec --noconfirm
 if errorlevel 1 (
     echo.
     echo ERROR: PyInstaller failed. See the error output above for details.
+    echo Common causes: missing Python dependencies or a PyQt6 install
+    echo problem.
     pause
     exit /b 1
 )
