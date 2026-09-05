@@ -7,6 +7,12 @@ Stored as an .ini file next to the app (core.app_paths.base_dir()),
 matching the epub tool's Registry->ini migration (v31) -- ini survives
 version upgrades and installer reruns in a way the Windows Registry
 didn't for that project.
+
+Filename is app-prefixed ("mp3redactor_settings.ini"), not a bare
+"settings.ini" -- the whole Redactor family writes its ini file to the
+same "next to the exe" location, and a generic name would collide the
+moment two of these exes (e.g. this one and videoredactor's) end up in
+the same folder, silently corrupting whichever one wrote last.
 """
 
 import configparser
@@ -15,7 +21,7 @@ from pathlib import Path
 
 from core.app_paths import base_dir
 
-SETTINGS_FILENAME = "settings.ini"
+SETTINGS_FILENAME = "mp3redactor_settings.ini"
 SECTION = "general"
 
 
