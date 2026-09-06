@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-06#01
+
+- Bumped `redactor_common` to `2026-09-06-02` -- fixes a stray leading
+  comma in the About dialog ("`, ver 2026-...`") caused by this
+  project's empty `RELEASE_LABEL`.
+
 ## 2026-09-04#11
 
 - `redactor_common` is now a real pip dependency
