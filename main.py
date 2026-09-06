@@ -16,11 +16,13 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402 -- must follow crash_log.
 from core.app_paths import asset_path  # noqa: E402
 from gui.main_window import MainWindow  # noqa: E402
 from redactor_common.gui.qmessagebox_style import apply_message_box_style  # noqa: E402
+from redactor_common.gui.theme import apply_theme  # noqa: E402
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(asset_path("assets/icon.ico"))))
+    apply_theme(app)  # Fusion + a WCAG-contrast-verified light/dark palette -- see redactor_common/gui/theme.py
     apply_message_box_style(app)
     window = MainWindow()
     window.show()
