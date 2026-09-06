@@ -33,6 +33,7 @@ rather than Operations (they bring external data IN, rather than
 analyzing the file's own content the way integrity/BPM/key do).
 """
 
+import dataclasses
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -46,10 +47,12 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QSizePolicy,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
+    QWidget,
 )
 
 from core.app_paths import asset_path
@@ -83,6 +86,7 @@ from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
+from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
 from redactor_common.gui.collapsible_splitter import SplitterPaneCollapser
@@ -93,6 +97,7 @@ from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_b
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.progress import run_with_progress
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
+from redactor_common.gui.zoom_toolbar import TableZoomController
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
 # Table columns, field-key based -- see redactor_common.core.
@@ -139,6 +144,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.files: list[MP3File] = []
         self.settings: Settings = load_settings()
+        # In-memory-edit undo only (bulk-edit Apply) -- never physical
+        # file operations (Save, mp3val Fix). See redactor_common.core.
+        # undo's own module docstring for why.
+        self.undo_manager: UndoManager[MP3File] = UndoManager()
 
         self.setWindowTitle(f"{APP_NAME} ({APP_VERSION})")
         self.setWindowIcon(QIcon(str(asset_path("assets/icon.ico"))))
@@ -156,6 +165,7 @@ class MainWindow(QMainWindow):
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self._setup_column_persistence()
+        self.zoom = TableZoomController(self.table, parent=self)
 
         self.tag_panel = TagPanel()
         self.tag_panel.setMinimumWidth(24)
@@ -213,6 +223,8 @@ class MainWindow(QMainWindow):
                 ),
                 MenuAction("check_bpm", "Detect &BPM for Selected Files", self.run_bpm_check),
                 MenuAction("check_key", "Detect &Key for Selected Files", self.run_key_detection),
+                Separator(),
+                MenuAction("undo", "&Undo", self.undo_last_action, shortcut="Ctrl+Z"),
             ],
             "Settings": [
                 MenuAction("preferences", "&Preferences...", self.open_settings_dialog),
@@ -243,22 +255,39 @@ class MainWindow(QMainWindow):
         self.action_fix_integrity = actions["fix_integrity"]
         self.action_check_bpm = actions["check_bpm"]
         self.action_check_key = actions["check_key"]
+        self.action_undo = actions["undo"]
+        self.action_undo.setEnabled(False)
 
+        # Toolbar carries only the everyday five (Load Files, Load
+        # Folder, Save, Apply, Undo) -- everything else (Check
+        # Integrity, Detect BPM, Detect Key) stays reachable only via
+        # the Operations menu and the table's right-click context menu
+        # (_show_context_menu), both of which already have them, rather
+        # than crowding a second copy onto the toolbar too.
         toolbar = QToolBar("Main", self)
         self.addToolBar(toolbar)
+        toolbar.addAction(self.action_load_files)
         toolbar.addAction(self.action_load_folder)
         toolbar.addSeparator()
         toolbar.addAction(self.action_save)
+        toolbar.addSeparator()
         toolbar.addAction(self.action_apply_bulk_edit)
         toolbar.addSeparator()
-        toolbar.addAction(self.action_check_integrity)
-        toolbar.addAction(self.action_check_bpm)
-        toolbar.addAction(self.action_check_key)
+        toolbar.addAction(self.action_undo)
         toolbar.addSeparator()
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
 
         toggle_panel_act = make_action(self, "Panel", self._toggle_tag_panel)
         toggle_panel_act.setToolTip("Minimize or restore the bulk-edit panel")
         toolbar.addAction(toggle_panel_act)
+        toolbar.addSeparator()
+
+        toolbar.addAction(self.zoom.zoom_out_action)
+        toolbar.addWidget(self.zoom.label)
+        toolbar.addAction(self.zoom.zoom_in_action)
 
     # -- about/changelog ----------------------------------------------------
 
@@ -327,6 +356,10 @@ class MainWindow(QMainWindow):
 
         run_with_progress(self, mp3_paths, step, "Loading files...", threshold=3)
         self.files = loaded
+        # Old undo snapshots reference now-discarded MP3File objects --
+        # restoring into them wouldn't reach anything still on screen.
+        self.undo_manager.clear()
+        self._update_undo_action()
         self._rebuild_table()
 
     # -- tag editing ------------------------------------------------------
@@ -339,9 +372,42 @@ class MainWindow(QMainWindow):
         targets = self._selected_files()
         if not targets:
             return
+        self._push_undo("Bulk Edit", targets)
         for mp3 in targets:
             mp3.apply_tags(values)
         self._rebuild_table()
+
+    # -- undo ---------------------------------------------------------------
+    # In-memory edits only (currently just the bulk-edit Apply above) --
+    # never physical file operations (Save, mp3val Fix). MP3File is a
+    # flat dataclass with no nested sub-objects (unlike e.g. cbzredactor's
+    # CbzBook.metadata), so a shallow dataclasses.replace() snapshot is
+    # already a complete, independent copy -- no deepcopy needed.
+
+    @staticmethod
+    def _snapshot_mp3(mp3: MP3File) -> MP3File:
+        return dataclasses.replace(mp3)
+
+    @staticmethod
+    def _restore_mp3(mp3: MP3File, snapshot: MP3File) -> None:
+        for f in dataclasses.fields(MP3File):
+            setattr(mp3, f.name, getattr(snapshot, f.name))
+
+    def _push_undo(self, label: str, targets: list[MP3File]) -> None:
+        self.undo_manager.push(label, targets, self._snapshot_mp3)
+        self._update_undo_action()
+
+    def _update_undo_action(self) -> None:
+        can_undo = self.undo_manager.can_undo()
+        self.action_undo.setEnabled(can_undo)
+        label = self.undo_manager.peek_label()
+        self.action_undo.setText(f"&Undo {label}" if label else "&Undo")
+
+    def undo_last_action(self) -> None:
+        affected = self.undo_manager.undo(self._restore_mp3)
+        if affected:
+            self._rebuild_table()
+        self._update_undo_action()
 
     def save_changed(self) -> None:
         # Catches a field that's ticked with a value typed in but not

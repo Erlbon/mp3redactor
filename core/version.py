@@ -7,6 +7,6 @@ run bump_version.py instead so the counter/date logic stays consistent.
 """
 
 APP_NAME = "The \u026fP3 Redactor"  # turned-m (\u026f = LATIN SMALL LETTER TURNED M) standing in for the M in MP3
-APP_VERSION = "2026-09-06#05"
+APP_VERSION = "2026-09-06#06"
 RELEASE_LABEL = ""  # optional tagline shown in About dialog; empty until requested
 APP_REPO_URL = "https://github.com/erlbon/mp3redactor"

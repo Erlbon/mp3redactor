@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-06#06
+
+- **Toolbar trimmed to the five everyday actions** -- Load Files, Load
+  Folder, Save, Apply, Undo. Check Integrity, Detect BPM, and Detect
+  Key stay available (unchanged) from the Operations menu and the
+  table's right-click context menu, but no longer duplicate themselves
+  onto the toolbar.
+- **Undo** -- new, via `redactor_common.core.undo.UndoManager`. Covers
+  in-memory edits only (currently just the bulk-edit Apply); never
+  physical file operations (Save, mp3val Fix), same scope convention
+  as the sibling projects. `Ctrl+Z` / Operations menu / toolbar button,
+  label reflects what it'll undo (e.g. "Undo Bulk Edit"), bounded to
+  the last 5 edits, and clears itself when Load Files/Folder replaces
+  the file list wholesale (old snapshots would no longer reach
+  anything on screen).
+- **Table zoom** -- new "-  100%  +" toolbar control
+  (`redactor_common.gui.zoom_toolbar.TableZoomController`), matching
+  the epub/cbz tools. Adjusts the table's font size (and re-fits row
+  heights); a this-window display preference, not persisted across
+  restarts.
+
 ## 2026-09-06#05
 
 - **Column management + Genre/Language quick-pick + management
