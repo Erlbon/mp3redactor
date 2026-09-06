@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-06#04
+
+- Load Files/Load Folder now remember the last directory used and
+  start there next time, across app restarts -- previously always
+  opened wherever Qt/Windows defaulted to. `core/settings.py` gained
+  `last_directory` (persisted the same way `mp3val_path`/
+  `keyfinder_cli_path` already are) plus two small pure helpers,
+  `resolve_start_directory()` (falls back to "" -- Qt's own default --
+  if the remembered directory no longer exists, e.g. an unplugged
+  removable drive) and `directory_for()` (the directory to remember
+  from whatever was just picked, a file or a folder itself). Same
+  semantics as the epub tool's QSettings-based equivalent, adapted to
+  this project's plain-configparser persistence.
+
 ## 2026-09-06#03
 
 - **Detect BPM now runs across multiple cores in parallel**, same as

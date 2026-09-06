@@ -42,12 +42,20 @@ class Settings:
     mp3val_path: str = ""
     keyfinder_cli_path: str = ""
 
+    # Where Load Files/Load Folder's file dialogs start from -- set via
+    # remember_last_directory() after a successful pick. Empty string
+    # means "let Qt use its own default" (same convention the epub
+    # tool's QSettings-based last_directory uses, adapted to this
+    # project's plain-configparser persistence).
+    last_directory: str = ""
+
     def to_config(self) -> configparser.ConfigParser:
         config = configparser.ConfigParser()
         config[SECTION] = {
             "delete_backup_after_fix": str(self.delete_backup_after_fix),
             "mp3val_path": self.mp3val_path,
             "keyfinder_cli_path": self.keyfinder_cli_path,
+            "last_directory": self.last_directory,
         }
         return config
 
@@ -60,6 +68,7 @@ class Settings:
             delete_backup_after_fix=section.getboolean("delete_backup_after_fix", fallback=False),
             mp3val_path=section.get("mp3val_path", fallback=""),
             keyfinder_cli_path=section.get("keyfinder_cli_path", fallback=""),
+            last_directory=section.get("last_directory", fallback=""),
         )
 
 
@@ -88,3 +97,21 @@ def save_settings(settings: Settings, target_dir: Path | None = None) -> None:
             settings.to_config().write(f)
     except OSError:
         pass  # settings persistence is best-effort; in-memory value still applies this session
+
+
+def resolve_start_directory(last_directory: str) -> str:
+    """Returns last_directory if it's still a real directory, else "" --
+    e.g. a removable drive that's since been unplugged, or a settings
+    file carried over from another machine. Callers should treat ""
+    as "let Qt use its own default" for a file dialog's starting
+    location, same semantics as the epub tool's QSettings-based
+    load_last_directory()."""
+    return last_directory if last_directory and Path(last_directory).is_dir() else ""
+
+
+def directory_for(path: str) -> str:
+    """The directory to remember as the next dialog's starting point,
+    given a path just picked -- a file (from Load Files) or a folder
+    itself (from Load Folder)."""
+    p = Path(path)
+    return str(p if p.is_dir() else p.parent)

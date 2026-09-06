@@ -61,7 +61,7 @@ from core.scan_service import (
     run_key_detection,
     save_dirty_tags,
 )
-from core.settings import Settings, load_settings, save_settings
+from core.settings import Settings, directory_for, load_settings, resolve_start_directory, save_settings
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
@@ -244,14 +244,22 @@ class MainWindow(QMainWindow):
     # -- loading ------------------------------------------------------------
 
     def load_files_dialog(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Load Files", "", "MP3 Files (*.mp3)")
+        start_dir = resolve_start_directory(self.settings.last_directory)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Load Files", start_dir, "MP3 Files (*.mp3)")
         if paths:
+            self._remember_last_directory(paths[0])
             self._load_paths([Path(p) for p in paths])
 
     def load_folder_dialog(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Load Folder")
+        start_dir = resolve_start_directory(self.settings.last_directory)
+        folder = QFileDialog.getExistingDirectory(self, "Load Folder", start_dir)
         if folder:
+            self._remember_last_directory(folder)
             self._load_paths([Path(folder)])
+
+    def _remember_last_directory(self, path: str) -> None:
+        self.settings.last_directory = directory_for(path)
+        save_settings(self.settings)
 
     def _load_paths(self, raw_paths: list[Path]) -> None:
         mp3_paths = find_mp3_files(raw_paths)

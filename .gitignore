@@ -11,3 +11,7 @@ dist/
 # committed here, only bundled into a local build's tools\.
 tools/*.exe
 tools/*.dll
+
+# Runtime-generated: written next to the app on first run (dev mode:
+# the project root) via core.app_paths.base_dir() -- see core/settings.py.
+mp3redactor_settings.ini
