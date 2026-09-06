@@ -46,7 +46,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -175,10 +174,6 @@ class TagPanel(QWidget):
         absorb_extra_row_space(grid, len(FIELDS))
 
         outer.addWidget(fields_box, 1)
-
-        clear_btn = QPushButton("Uncheck All Fields")
-        clear_btn.clicked.connect(self._uncheck_all)
-        outer.addWidget(clear_btn)
 
     def _wrap_with_quick_pick(self, key: str, editor: QLineEdit) -> QWidget:
         """A QLineEdit plus a small "+" button requesting a quick-pick

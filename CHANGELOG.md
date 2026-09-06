@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-06#07
+
+- **New "Path" column**, alongside Filename -- shows each file's full
+  path, matching the sibling projects. Hideable/reorderable like any
+  other column.
+- Colors (unsaved-edit row tint, table selection highlight) now come
+  from `redactor_common.gui.colors` -- standardized on the epub tool's
+  scheme (this project's dirty-row tint already matched it; the table
+  selection highlight is new here, this project had none before).
+- Removed the "Uncheck All Fields" button from the bulk-edit panel --
+  not needed.
+- Bumped `redactor_common` to `2026-09-06-06`.
+
 ## 2026-09-06#06
 
 - **Toolbar trimmed to the five everyday actions** -- Load Files, Load

@@ -37,7 +37,7 @@ import dataclasses
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QIcon
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -90,6 +90,7 @@ from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
 from redactor_common.gui.collapsible_splitter import SplitterPaneCollapser
+from redactor_common.gui.colors import DIRTY_COLOR, HIGHLIGHT_TEXT_COLOR, TABLE_SELECTION_STYLESHEET
 from redactor_common.gui.column_menu import show_column_header_context_menu
 from redactor_common.gui.column_settings_dialog import ColumnSettingsDialog
 from redactor_common.gui.manage_list_dialog import ManageListDialog
@@ -109,10 +110,11 @@ from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMM
 _STATUS_COLUMN_LABELS: dict[str, str] = {"integrity": "Integrity", "bpm": "BPM", "key": "Key"}
 _COLUMN_LABELS: dict[str, str] = {
     "filename": "Filename",
+    "path": "Path",
     **{key: label for key, label, _m in FIELDS},
     **_STATUS_COLUMN_LABELS,
 }
-ALL_COLUMN_KEYS: list[str] = ["filename"] + [key for key, _l, _m in FIELDS] + list(_STATUS_COLUMN_LABELS)
+ALL_COLUMN_KEYS: list[str] = ["filename", "path"] + [key for key, _l, _m in FIELDS] + list(_STATUS_COLUMN_LABELS)
 PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to tell rows apart
 
 # Nothing hidden on a genuinely first run -- matches this app's own
@@ -129,11 +131,6 @@ STATUS_COLORS = {
     STATUS_ERROR: Qt.GlobalColor.red,
     STATUS_TOOL_MISSING: Qt.GlobalColor.gray,
 }
-
-# Unsaved-tag-edit row highlight -- soft amber background + black text
-# override, same colors the epub tool uses for the same purpose.
-DIRTY_COLOR = QColor("#fff3cd")
-DIRTY_TEXT_COLOR = QColor("#000000")
 
 TAG_PANEL_COLLAPSED_WIDTH = 32
 TAG_PANEL_DEFAULT_WIDTH = 300
@@ -161,6 +158,7 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setStyleSheet(TABLE_SELECTION_STYLESHEET)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemSelectionChanged.connect(self._on_table_selection_changed)
@@ -835,12 +833,16 @@ class MainWindow(QMainWindow):
         filename_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["filename"], filename_item)
 
+        path_item = QTableWidgetItem(str(mp3.path))
+        path_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        self.table.setItem(row, self._col_index["path"], path_item)
+
         for key, _label, _m in FIELDS:
             item = QTableWidgetItem(getattr(mp3, key, "") or "")
             item.setData(Qt.ItemDataRole.UserRole, mp3)
             if mp3.dirty:
                 item.setBackground(DIRTY_COLOR)
-                item.setForeground(DIRTY_TEXT_COLOR)
+                item.setForeground(HIGHLIGHT_TEXT_COLOR)
             self.table.setItem(row, self._col_index[key], item)
 
         integrity_item = QTableWidgetItem(self._integrity_display(mp3))

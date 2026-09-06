@@ -11,7 +11,7 @@ mutagen>=1.47
 # see that repo's README ("Releasing a new version") for how to bump
 # this pin deliberately when it changes, rather than floating and
 # having one bad push there break this project's next install.
-redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-09-06-04
+redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-09-06-06
 
 # aubio-ledfx, not plain "aubio" -- the original aubio PyPI package is
 # source-only (no Windows wheels, ever), so pip always tries to compile
