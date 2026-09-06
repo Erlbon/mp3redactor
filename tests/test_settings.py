@@ -87,3 +87,68 @@ def test_load_settings_handles_corrupt_file_gracefully(tmp_path):
     bad_file.write_text("this is not valid ini content [[[", encoding="utf-8")
     settings = load_settings(target_dir=tmp_path)
     assert settings.delete_backup_after_fix is False
+
+
+def test_default_settings_have_empty_column_and_genre_language_lists():
+    settings = Settings()
+    assert settings.hidden_columns == []
+    assert settings.column_order == []
+    assert settings.has_column_preference is False
+    assert settings.custom_genres == []
+    assert settings.hidden_default_genres == []
+    assert settings.custom_languages == []
+    assert settings.hidden_default_languages == []
+
+
+def test_save_then_load_round_trips_hidden_and_ordered_columns(tmp_path):
+    save_settings(
+        Settings(hidden_columns=["bpm", "key"], column_order=["filename", "title", "artist"]),
+        target_dir=tmp_path,
+    )
+    loaded = load_settings(target_dir=tmp_path)
+    assert loaded.hidden_columns == ["bpm", "key"]
+    assert loaded.column_order == ["filename", "title", "artist"]
+
+
+def test_save_then_load_round_trips_has_column_preference(tmp_path):
+    # Explicit-empty-list-but-configured case: has_column_preference is
+    # the signal that distinguishes "never touched" from "deliberately
+    # shows everything" (hidden_columns == [] either way).
+    save_settings(Settings(hidden_columns=[], has_column_preference=True), target_dir=tmp_path)
+    loaded = load_settings(target_dir=tmp_path)
+    assert loaded.hidden_columns == []
+    assert loaded.has_column_preference is True
+
+
+def test_save_then_load_round_trips_custom_and_hidden_genres(tmp_path):
+    save_settings(
+        Settings(custom_genres=["Vaporwave", "Lo-Fi Hip Hop"], hidden_default_genres=["Polka"]),
+        target_dir=tmp_path,
+    )
+    loaded = load_settings(target_dir=tmp_path)
+    assert loaded.custom_genres == ["Vaporwave", "Lo-Fi Hip Hop"]
+    assert loaded.hidden_default_genres == ["Polka"]
+
+
+def test_save_then_load_round_trips_custom_and_hidden_languages(tmp_path):
+    save_settings(
+        Settings(
+            custom_languages=[("nld", "Dutch"), ("isl", "Icelandic")],
+            hidden_default_languages=["und"],
+        ),
+        target_dir=tmp_path,
+    )
+    loaded = load_settings(target_dir=tmp_path)
+    assert loaded.custom_languages == [("nld", "Dutch"), ("isl", "Icelandic")]
+    assert loaded.hidden_default_languages == ["und"]
+
+
+def test_load_settings_tolerates_malformed_list_values(tmp_path):
+    bad_file = tmp_path / "mp3redactor_settings.ini"
+    bad_file.write_text(
+        "[general]\nhidden_columns = not valid json [[[\ncustom_genres = 42\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(target_dir=tmp_path)
+    assert settings.hidden_columns == []
+    assert settings.custom_genres == []

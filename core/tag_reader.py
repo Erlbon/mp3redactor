@@ -48,6 +48,7 @@ def load_tags(mp3: MP3File) -> None:
         mp3.track = _first(tags, "TRCK")
         mp3.year = _first(tags, "TDRC")
         mp3.genre = _first(tags, "TCON")
+        mp3.language = _first(tags, "TLAN")
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
 
     if audio.info is not None:

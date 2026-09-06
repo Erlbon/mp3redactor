@@ -3,18 +3,26 @@ MainWindow: bulk-edit tag panel (left) + file table (right) in a
 collapsible QSplitter, menu+toolbar for the v1 actions (Load
 Files/Folder, bulk tag editing, Check Integrity, Detect BPM, Detect
 Key). Tag editing is deliberately "basic" -- plain text fields only,
-via core.fields.FIELDS -- no covers, genre/language pickers, or
-external lookups the way the epub tool's fuller tag panel has; those
-don't have an obvious MP3-tag equivalent yet.
+via core.fields.FIELDS -- no covers or external lookups the way the
+epub tool's fuller tag panel has; those don't have an obvious MP3-tag
+equivalent yet. Genre and Language do get the family's quick-pick "+"
+button (core.fields.QUICK_PICK_FIELDS) plus Settings > Add/Remove
+Genres.../Add/Remove Languages... management dialogs.
 
-Column layout, row-to-file mapping via Qt.UserRole (not list index -- a
-sort or filter must never desync the row from the object it displays,
-same lesson as the epub tool), and the progress-dialog pattern for
-long-running scans all follow the sibling projects' conventions --
-menu bar, progress dialogs, About/Changelog, and the bulk-edit panel's
-collapsible splitter are now all built on redactor_common, the same
-shared package the epub and video tools use, rather than reimplementing
-these independently the way this project originally did.
+The table's columns are field-key based (redactor_common.core.
+table_settings), not index-based -- drag a header to reorder,
+right-click a header for a show/hide checklist or "Add/Remove
+Columns...", and both order and visibility persist across restarts
+via core/settings.py. Column layout, row-to-file mapping via
+Qt.UserRole (not list index -- a sort or filter must never desync the
+row from the object it displays, same lesson as the epub tool), and
+the progress-dialog pattern for long-running scans all follow the
+sibling projects' conventions -- menu bar, progress dialogs,
+About/Changelog, the bulk-edit panel's collapsible splitter, and now
+column/genre/language management are all built on redactor_common,
+the same shared package the epub and video tools use, rather than
+reimplementing these independently the way this project originally
+did.
 
 Menu shape is File / Import / Operations / Settings / Help, matching
 every other Redactor project. Import is present but genuinely empty
@@ -34,6 +42,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHeaderView,
+    QInputDialog,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
@@ -52,6 +61,12 @@ from core.mp3_file import (
     STATUS_TOOL_MISSING,
     STATUS_WARNING,
 )
+from core.mp3_genres import COMMON_MP3_GENRES
+from core.mp3_genres import exclude_hidden as exclude_hidden_genres
+from core.mp3_genres import merge_genres
+from core.mp3_languages import DEFAULT_LANGUAGES
+from core.mp3_languages import exclude_hidden as exclude_hidden_languages
+from core.mp3_languages import merge_languages
 from core.scan_service import (
     find_mp3_files,
     load_files,
@@ -67,21 +82,41 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
+from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
 from redactor_common.gui.collapsible_splitter import SplitterPaneCollapser
+from redactor_common.gui.column_menu import show_column_header_context_menu
+from redactor_common.gui.column_settings_dialog import ColumnSettingsDialog
+from redactor_common.gui.manage_list_dialog import ManageListDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.progress import run_with_progress
+from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
-COL_FILENAME = 0
-FIRST_FIELD_COL = 1  # Title/Artist/Album/Track/Year/Genre, in core.fields.FIELDS order
-COL_INTEGRITY = FIRST_FIELD_COL + len(FIELDS)
-COL_BPM = COL_INTEGRITY + 1
-COL_KEY = COL_BPM + 1
-COLUMN_COUNT = COL_KEY + 1
-COLUMN_HEADERS = ["Filename"] + [label for _key, label, _m in FIELDS] + ["Integrity", "BPM", "Key"]
+# Table columns, field-key based -- see redactor_common.core.
+# table_settings's own docstring for why (a persisted index-based
+# preference silently breaks the moment a column is added/removed/
+# reordered in code). "integrity"/"bpm"/"key" are synthetic (derived
+# check results, not a tag field); everything else is exactly
+# core.fields.FIELDS.
+_STATUS_COLUMN_LABELS: dict[str, str] = {"integrity": "Integrity", "bpm": "BPM", "key": "Key"}
+_COLUMN_LABELS: dict[str, str] = {
+    "filename": "Filename",
+    **{key: label for key, label, _m in FIELDS},
+    **_STATUS_COLUMN_LABELS,
+}
+ALL_COLUMN_KEYS: list[str] = ["filename"] + [key for key, _l, _m in FIELDS] + list(_STATUS_COLUMN_LABELS)
+PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to tell rows apart
+
+# Nothing hidden on a genuinely first run -- matches this app's own
+# behavior before column management existed (every column always
+# shown), unlike a project with a large field set that wants a curated
+# default. Once the user has saved ANY choice, even "show everything"
+# (an empty hidden set), that saved choice always wins -- see
+# Settings.has_column_preference's own docstring.
+DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset()
 
 STATUS_COLORS = {
     STATUS_OK: Qt.GlobalColor.darkGreen,
@@ -109,14 +144,18 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(QIcon(str(asset_path("assets/icon.ico"))))
         self.resize(1000, 600)
 
-        self.table = QTableWidget(0, COLUMN_COUNT, self)
-        self.table.setHorizontalHeaderLabels(COLUMN_HEADERS)
+        self._column_keys = merge_column_order(self.settings.column_order, ALL_COLUMN_KEYS)
+        self._col_index = {key: i for i, key in enumerate(self._column_keys)}
+
+        self.table = QTableWidget(0, len(self._column_keys), self)
+        self.table.setHorizontalHeaderLabels([_COLUMN_LABELS[key] for key in self._column_keys])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemSelectionChanged.connect(self._on_table_selection_changed)
+        self._setup_column_persistence()
 
         self.tag_panel = TagPanel()
         self.tag_panel.setMinimumWidth(24)
@@ -124,6 +163,8 @@ class MainWindow(QMainWindow):
         self.tag_panel.applyRequested.connect(self._apply_bulk_edit)
         self.tag_panel.selectionCountChanged.connect(self._on_tag_panel_selection_count_changed)
         self.tag_panel.collapseToggleRequested.connect(self._toggle_tag_panel)
+        self.tag_panel.quickPickRequested.connect(self._on_quick_pick_requested)
+        self._sync_panel_visible_fields()
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.addWidget(self.tag_panel)
@@ -177,6 +218,12 @@ class MainWindow(QMainWindow):
                 MenuAction("preferences", "&Preferences...", self.open_settings_dialog),
                 MenuAction(
                     "locate_tools", "&Locate External Tools...", self.open_external_tools_dialog
+                ),
+                Separator(),
+                MenuAction("manage_columns", "Add/&Remove Columns...", self.open_column_settings_dialog),
+                MenuAction("manage_genres", "Add/Remove &Genres...", self.open_genre_settings_dialog),
+                MenuAction(
+                    "manage_languages", "Add/Remove &Languages...", self.open_language_settings_dialog
                 ),
             ],
             "Help": [
@@ -338,6 +385,129 @@ class MainWindow(QMainWindow):
             return
         super().closeEvent(event)
 
+    # -- quick-pick (Genre/Language "+") -----------------------------------
+
+    def _on_quick_pick_requested(self, key: str) -> None:
+        if key == "genre":
+            dialog = QuickPickDialog(
+                "Pick Genre",
+                load_entries_fn=lambda: [(g, g) for g in self._load_genres()],
+                multi_select=False,  # replaces the field -- see core/mp3_genres.py's docstring
+                add_custom_fn=self._add_custom_genre,
+                parent=self,
+            )
+            if dialog.exec() == QuickPickDialog.DialogCode.Accepted:
+                picked = dialog.selected_keys()
+                if picked:
+                    self.tag_panel.set_picked_value("genre", picked[0])
+        elif key == "language":
+            dialog = QuickPickDialog(
+                "Pick Language",
+                load_entries_fn=lambda: [(c, f"{n} ({c})") for c, n in self._load_languages()],
+                multi_select=False,  # replaces the field outright
+                add_custom_fn=self._add_custom_language,
+                parent=self,
+            )
+            if dialog.exec() == QuickPickDialog.DialogCode.Accepted:
+                picked = dialog.selected_keys()
+                if picked:
+                    self.tag_panel.set_picked_value("language", picked[0])
+
+    def _visible_default_genres(self) -> list[str]:
+        return exclude_hidden_genres(COMMON_MP3_GENRES, self.settings.hidden_default_genres)
+
+    def _load_genres(self) -> list[str]:
+        """Visible (non-hidden) default genres plus any custom ones
+        added previously -- what the quick-pick "+" button shows."""
+        return merge_genres(self._visible_default_genres(), self.settings.custom_genres)
+
+    def _add_custom_genre(self, parent_widget) -> None:
+        """Shared Add-custom handler for both the quick-pick dialog's
+        "Add Custom..." button and Settings > Add/Remove Genres...'s
+        "Add..." button -- both hand this the same shape, a widget to
+        parent the prompt against."""
+        text, ok = QInputDialog.getText(parent_widget, "Add Custom Genre", "New genre name:")
+        text = text.strip()
+        if ok and text and not any(g.lower() == text.lower() for g in self.settings.custom_genres):
+            self.settings.custom_genres.append(text)
+            save_settings(self.settings)
+
+    def _remove_custom_genre(self, genre: str) -> None:
+        self.settings.custom_genres = [
+            g for g in self.settings.custom_genres if g.lower() != genre.lower()
+        ]
+        save_settings(self.settings)
+
+    def _hide_default_genre(self, genre: str) -> None:
+        if not any(g.lower() == genre.lower() for g in self.settings.hidden_default_genres):
+            self.settings.hidden_default_genres.append(genre)
+            save_settings(self.settings)
+
+    def _restore_default_genres(self) -> None:
+        self.settings.hidden_default_genres = []
+        save_settings(self.settings)
+
+    def _visible_default_languages(self) -> list[tuple[str, str]]:
+        return exclude_hidden_languages(DEFAULT_LANGUAGES, self.settings.hidden_default_languages)
+
+    def _load_languages(self) -> list[tuple[str, str]]:
+        return merge_languages(self._visible_default_languages(), self.settings.custom_languages)
+
+    def _add_custom_language(self, parent_widget) -> None:
+        code, ok = QInputDialog.getText(
+            parent_widget, "Add Custom Language",
+            'Language code (ISO 639-2, e.g. "por" for Portuguese):',
+        )
+        code = code.strip()
+        if not (ok and code):
+            return
+        name, ok = QInputDialog.getText(parent_widget, "Add Custom Language", "Display name for this language:")
+        name = name.strip()
+        if ok and name and not any(c == code for c, _n in self.settings.custom_languages):
+            self.settings.custom_languages.append((code, name))
+            save_settings(self.settings)
+
+    def _remove_custom_language(self, code: str) -> None:
+        self.settings.custom_languages = [
+            (c, n) for c, n in self.settings.custom_languages if c != code
+        ]
+        save_settings(self.settings)
+
+    def _hide_default_language(self, code: str) -> None:
+        if code not in self.settings.hidden_default_languages:
+            self.settings.hidden_default_languages.append(code)
+            save_settings(self.settings)
+
+    def _restore_default_languages(self) -> None:
+        self.settings.hidden_default_languages = []
+        save_settings(self.settings)
+
+    def open_genre_settings_dialog(self) -> None:
+        dialog = ManageListDialog(
+            "Add/Remove Genres",
+            load_defaults_fn=lambda: [(g, g) for g in self._visible_default_genres()],
+            load_custom_fn=lambda: [(g, g) for g in self.settings.custom_genres],
+            add_dialog_fn=self._add_custom_genre,
+            remove_custom_fn=self._remove_custom_genre,
+            hide_default_fn=self._hide_default_genre,
+            restore_defaults_fn=self._restore_default_genres,
+            parent=self,
+        )
+        dialog.exec()
+
+    def open_language_settings_dialog(self) -> None:
+        dialog = ManageListDialog(
+            "Add/Remove Languages",
+            load_defaults_fn=lambda: [(c, f"{n} ({c})") for c, n in self._visible_default_languages()],
+            load_custom_fn=lambda: [(c, f"{n} ({c})") for c, n in self.settings.custom_languages],
+            add_dialog_fn=self._add_custom_language,
+            remove_custom_fn=self._remove_custom_language,
+            hide_default_fn=self._hide_default_language,
+            restore_defaults_fn=self._restore_default_languages,
+            parent=self,
+        )
+        dialog.exec()
+
     # -- selection / tag panel --------------------------------------------
 
     def _on_table_selection_changed(self) -> None:
@@ -353,6 +523,89 @@ class MainWindow(QMainWindow):
 
     def _sync_tag_panel_collapsed_indicator(self) -> None:
         self.tag_panel.set_collapsed_indicator(self._panel_collapser.is_collapsed())
+
+    # -- columns: order/visibility, persisted by field key -----------------
+
+    def _setup_column_persistence(self) -> None:
+        header = self.table.horizontalHeader()
+        header.setSectionsMovable(True)  # drag headers to reorder columns
+        header.sectionMoved.connect(self._on_columns_reordered)
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_context_menu)
+
+        # A genuinely first run (never touched column visibility at all)
+        # gets DEFAULT_HIDDEN_COLUMNS (currently: nothing, see its own
+        # comment). Once the user has saved ANY choice, that saved
+        # choice always wins -- see Settings.has_column_preference.
+        raw_hidden = (
+            set(self.settings.hidden_columns)
+            if self.settings.has_column_preference
+            else set(DEFAULT_HIDDEN_COLUMNS)
+        )
+        hidden = sanitize_hidden_fields(raw_hidden, PROTECTED_COLUMNS)
+        for key in hidden:
+            if key in self._col_index:
+                self.table.setColumnHidden(self._col_index[key], True)
+
+    def _on_columns_reordered(self, *_args) -> None:
+        """`*_args` absorbs QHeaderView.sectionMoved's (logical,
+        old_visual, new_visual) arguments -- not needed here, we just
+        re-read the header's current full visual order and persist it."""
+        header = self.table.horizontalHeader()
+        visual_order = [self._column_keys[header.logicalIndex(v)] for v in range(header.count())]
+        self.settings.column_order = visual_order
+        save_settings(self.settings)
+
+    def _on_column_visibility_toggled(self, key: str, visible: bool) -> None:
+        if key not in self._col_index:
+            return
+        self.table.setColumnHidden(self._col_index[key], not visible)
+        self._save_hidden_columns()
+        self._sync_panel_visible_fields()
+
+    def _save_hidden_columns(self) -> None:
+        hidden = {k for k in self._column_keys if self.table.isColumnHidden(self._col_index[k])}
+        self.settings.hidden_columns = sorted(sanitize_hidden_fields(hidden, PROTECTED_COLUMNS))
+        self.settings.has_column_preference = True
+        save_settings(self.settings)
+
+    def _sync_panel_visible_fields(self) -> None:
+        """Keeps the bulk-edit panel's visible rows in lock-step with
+        which columns are currently shown in the table -- hiding a
+        column also stops cluttering the panel with a field you said
+        you don't care about, and un-hiding a column brings its row
+        straight back. The field's data is untouched either way (see
+        TagPanel.set_visible_fields()'s own docstring) -- this only
+        ever changes what's drawn on screen."""
+        hidden = {k for k in self._column_keys if self.table.isColumnHidden(self._col_index[k])}
+        field_keys = {key for key, _l, _m in FIELDS}
+        self.tag_panel.set_visible_fields(field_keys - hidden)
+
+    def _show_header_context_menu(self, pos) -> None:
+        hidden = {k for k in self._column_keys if self.table.isColumnHidden(self._col_index[k])}
+        show_column_header_context_menu(
+            self, self.table, pos,
+            column_order=self._column_keys,
+            label_lookup=_COLUMN_LABELS,
+            protected_columns=PROTECTED_COLUMNS,
+            hidden_fields=hidden,
+            is_visible=lambda key, hidden_set: is_column_visible(key, hidden_set, PROTECTED_COLUMNS),
+            on_toggle=self._on_column_visibility_toggled,
+            open_column_settings_dialog=self.open_column_settings_dialog,
+        )
+
+    def open_column_settings_dialog(self) -> None:
+        all_columns = [(key, _COLUMN_LABELS[key]) for key in self._column_keys]
+        hidden = {k for k in self._column_keys if self.table.isColumnHidden(self._col_index[k])}
+        dialog = ColumnSettingsDialog(all_columns, hidden, PROTECTED_COLUMNS, self)
+        dialog.exec()
+        new_hidden = dialog.hidden_fields()
+        for key in self._column_keys:
+            self.table.setColumnHidden(self._col_index[key], key in new_hidden)
+        self.settings.hidden_columns = sorted(sanitize_hidden_fields(new_hidden, PROTECTED_COLUMNS))
+        self.settings.has_column_preference = True
+        save_settings(self.settings)
+        self._sync_panel_visible_fields()
 
     # -- checks ---------------------------------------------------------
 
@@ -512,14 +765,17 @@ class MainWindow(QMainWindow):
         self.tag_panel.set_selection(self._selected_files())
 
     def _populate_row(self, row: int, mp3: MP3File) -> None:
-        values = [mp3.filename] + [getattr(mp3, key, "") for key, _label, _m in FIELDS]
-        for col, value in enumerate(values):
-            item = QTableWidgetItem(value)
+        filename_item = QTableWidgetItem(mp3.filename)
+        filename_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        self.table.setItem(row, self._col_index["filename"], filename_item)
+
+        for key, _label, _m in FIELDS:
+            item = QTableWidgetItem(getattr(mp3, key, "") or "")
             item.setData(Qt.ItemDataRole.UserRole, mp3)
-            if mp3.dirty and col >= FIRST_FIELD_COL:
+            if mp3.dirty:
                 item.setBackground(DIRTY_COLOR)
                 item.setForeground(DIRTY_TEXT_COLOR)
-            self.table.setItem(row, col, item)
+            self.table.setItem(row, self._col_index[key], item)
 
         integrity_item = QTableWidgetItem(self._integrity_display(mp3))
         integrity_item.setData(Qt.ItemDataRole.UserRole, mp3)
@@ -528,13 +784,13 @@ class MainWindow(QMainWindow):
             integrity_item.setForeground(color)
         if mp3.integrity_message:
             integrity_item.setToolTip(mp3.integrity_message)
-        self.table.setItem(row, COL_INTEGRITY, integrity_item)
+        self.table.setItem(row, self._col_index["integrity"], integrity_item)
 
         bpm_item = QTableWidgetItem(self._bpm_display(mp3))
         bpm_item.setData(Qt.ItemDataRole.UserRole, mp3)
         if mp3.bpm_message:
             bpm_item.setToolTip(mp3.bpm_message)
-        self.table.setItem(row, COL_BPM, bpm_item)
+        self.table.setItem(row, self._col_index["bpm"], bpm_item)
 
         key_item = QTableWidgetItem(self._key_display(mp3))
         key_item.setData(Qt.ItemDataRole.UserRole, mp3)
@@ -543,7 +799,7 @@ class MainWindow(QMainWindow):
             key_item.setForeground(key_color)
         if mp3.key_message:
             key_item.setToolTip(mp3.key_message)
-        self.table.setItem(row, COL_KEY, key_item)
+        self.table.setItem(row, self._col_index["key"], key_item)
 
     @staticmethod
     def _integrity_display(mp3: MP3File) -> str:

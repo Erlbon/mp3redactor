@@ -1,7 +1,7 @@
 """
 Writes an MP3File's tag fields back to disk using mutagen -- the write
 counterpart to tag_reader.load_tags(). Uses the same raw ID3 frames
-tag_reader reads (TIT2/TPE1/TALB/TRCK/TDRC/TCON), so a round-trip
+tag_reader reads (TIT2/TPE1/TALB/TRCK/TDRC/TCON/TLAN), so a round-trip
 (load -> bulk-edit -> save -> load) reads back exactly what was written.
 
 mutagen is imported lazily/guarded, same reasoning as tag_reader.py and
@@ -11,13 +11,12 @@ capability (here: saving), not crash the app.
 
 from core.mp3_file import MP3File
 
-# attribute_key -> (ID3 frame id, frame class name) for the six basic
-# fields core.fields.FIELDS defines. A separate mapping from FIELDS
-# itself (rather than reusing it directly) since not every attribute
-# core.fields could ever list is necessarily backed by a single ID3
-# frame the same simple way -- keeping this explicit here means a
-# future FIELDS entry doesn't silently need writer support it doesn't
-# have.
+# attribute_key -> ID3 frame id for the fields core.fields.FIELDS
+# defines. A separate mapping from FIELDS itself (rather than reusing
+# it directly) since not every attribute core.fields could ever list
+# is necessarily backed by a single ID3 frame the same simple way --
+# keeping this explicit here means a future FIELDS entry doesn't
+# silently need writer support it doesn't have.
 _FRAME_IDS = {
     "title": "TIT2",
     "artist": "TPE1",
@@ -25,6 +24,7 @@ _FRAME_IDS = {
     "track": "TRCK",
     "year": "TDRC",
     "genre": "TCON",
+    "language": "TLAN",
 }
 
 
@@ -43,14 +43,15 @@ def save_tags(mp3: MP3File) -> bool:
     blank the field in the bulk-edit panel, tick it, Apply, Save.
     """
     try:
-        from mutagen.id3 import TALB, TCON, TDRC, TIT2, TPE1, TRCK
+        from mutagen.id3 import TALB, TCON, TDRC, TIT2, TLAN, TPE1, TRCK
         from mutagen.mp3 import MP3
     except ImportError:
         mp3.save_error = "mutagen is not installed"
         return False
 
     frame_classes = {
-        "TIT2": TIT2, "TPE1": TPE1, "TALB": TALB, "TRCK": TRCK, "TDRC": TDRC, "TCON": TCON,
+        "TIT2": TIT2, "TPE1": TPE1, "TALB": TALB, "TRCK": TRCK,
+        "TDRC": TDRC, "TCON": TCON, "TLAN": TLAN,
     }
 
     try:

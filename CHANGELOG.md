@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-09-06#05
+
+- **Column management + Genre/Language quick-pick + management
+  dialogs** -- the "columns/genres/languages" trio every other
+  Redactor-family app already has, built on redactor_common the same
+  way (`core/table_settings`, `gui/column_menu`,
+  `gui/column_settings_dialog`, `gui/quick_pick_dialog`,
+  `gui/manage_list_dialog`):
+  - The table's columns are now field-key based, not fixed-index --
+    drag a header to reorder, right-click for a show/hide checklist or
+    "Add/Remove Columns...", both persisted across restarts
+    (`core/settings.py` gained `hidden_columns`/`column_order`/
+    `has_column_preference`). Nothing hidden by default -- matches
+    this app's existing behavior before column management existed.
+  - New **Language** field (ID3 `TLAN`, ISO 639-2 codes --
+    `core/mp3_languages.py`), alongside the existing six.
+  - Genre and Language each get a "+" quick-pick button next to their
+    bulk-edit field: a searchable popup (not a flat menu -- doesn't
+    overflow once enough custom entries pile up) over a curated
+    default list (`core/mp3_genres.py`'s `COMMON_MP3_GENRES` -- the
+    standard ID3v1 genre list; `core/mp3_languages.py`'s
+    `DEFAULT_LANGUAGES` -- ~18 common ISO 639-2 codes) plus custom
+    entries, individually hideable/restorable via Settings >
+    Add/Remove Genres.../Add/Remove Languages.... Picking a value
+    replaces the field -- unlike epub's/cbz's semicolon/comma-joined
+    multi-value Genre, MP3's TCON is conventionally single-valued in
+    practice and nothing else here treats it as a delimited list.
+  - Hiding a column also hides that field's row in the bulk-edit panel
+    (`TagPanel.set_visible_fields()`, new) and vice versa -- same
+    lock-step convention as epub/cbz.
+- New tests: `test_mp3_genres.py`, `test_mp3_languages.py`, plus
+  expanded `test_settings.py` coverage for the new persisted fields.
+  Verified end-to-end via real Qt-driven scenarios (not just unit
+  tests): quick-pick a genre and language, Apply, Save, confirm the
+  actual `TCON`/`TLAN` frames on disk via mutagen; hide/reorder columns
+  and confirm both the panel sync and cross-restart persistence via a
+  fresh `load_settings()` call.
+
 ## 2026-09-06#04
 
 - Load Files/Load Folder now remember the last directory used and

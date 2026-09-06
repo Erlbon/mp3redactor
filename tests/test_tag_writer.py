@@ -34,6 +34,7 @@ def test_save_tags_writes_and_round_trips(tmp_path):
             "track": "3",
             "year": "2026",
             "genre": "Electronic",
+            "language": "eng",
         }
     )
 
@@ -49,6 +50,7 @@ def test_save_tags_writes_and_round_trips(tmp_path):
     assert reloaded.track == "3"
     assert reloaded.year == "2026"
     assert reloaded.genre == "Electronic"
+    assert reloaded.language == "eng"
 
 
 def test_save_tags_blank_value_removes_the_frame_entirely(tmp_path):

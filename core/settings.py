@@ -13,16 +13,57 @@ Filename is app-prefixed ("mp3redactor_settings.ini"), not a bare
 same "next to the exe" location, and a generic name would collide the
 moment two of these exes (e.g. this one and videoredactor's) end up in
 the same folder, silently corrupting whichever one wrote last.
+
+List/tuple-list fields (hidden_columns, column_order, custom_genres,
+etc.) are JSON-encoded into a single ini value -- same technique the
+epub/cbz tools' QSettings-based equivalents use, just persisted via
+configparser instead of QSettings.setValue()/.value(). Unlike those
+tools, this project loads/saves the *whole* Settings object as one
+unit rather than exposing a load_X()/save_X() function per setting --
+callers mutate a field on their live self.settings instance and call
+save_settings(self.settings), same pattern already used for
+mp3val_path/keyfinder_cli_path.
 """
 
 import configparser
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.app_paths import base_dir
 
 SETTINGS_FILENAME = "mp3redactor_settings.ini"
 SECTION = "general"
+
+
+def _dump_list(value: list) -> str:
+    return json.dumps(value)
+
+
+def _load_list(raw: str) -> list:
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def _load_str_list(raw: str) -> list[str]:
+    return [v for v in _load_list(raw) if isinstance(v, str)]
+
+
+def _load_pair_list(raw: str) -> list[tuple[str, str]]:
+    """For custom_languages: a JSON list of [code, name] pairs, loaded
+    back as (code, name) tuples. A malformed entry is skipped rather
+    than failing the whole list -- a hand-edited or corrupted ini value
+    for one entry shouldn't cost every other saved language."""
+    result = []
+    for item in _load_list(raw):
+        if isinstance(item, list) and len(item) == 2 and all(isinstance(x, str) for x in item):
+            result.append((item[0], item[1]))
+    return result
 
 
 @dataclass
@@ -49,6 +90,31 @@ class Settings:
     # project's plain-configparser persistence).
     last_directory: str = ""
 
+    # Column visibility/order, field-key based -- see
+    # redactor_common.core.table_settings for why field-name (not
+    # index) based persistence matters.
+    hidden_columns: list[str] = field(default_factory=list)
+    column_order: list[str] = field(default_factory=list)
+    # True once the user has ever saved a hidden-columns choice --
+    # including an explicit "show everything" (an empty list is still
+    # a saved choice). Distinct from hidden_columns == [], which is
+    # ambiguous between "never configured" and "deliberately show
+    # everything" on its own; a first-ever run applies
+    # gui.main_window.DEFAULT_HIDDEN_COLUMNS instead of showing every
+    # column immediately, same convention cbzredactor's
+    # has_hidden_columns_preference() uses.
+    has_column_preference: bool = False
+
+    # Genre/Language quick-pick ("+" button next to those two fields in
+    # the bulk-edit panel): built-in defaults (individually hideable/
+    # restorable via Settings > Add/Remove Genres.../Languages...) plus
+    # any custom entries added the same way. Same shape as the epub/cbz
+    # tools' equivalents -- see core/mp3_genres.py, core/mp3_languages.py.
+    custom_genres: list[str] = field(default_factory=list)
+    hidden_default_genres: list[str] = field(default_factory=list)
+    custom_languages: list[tuple[str, str]] = field(default_factory=list)
+    hidden_default_languages: list[str] = field(default_factory=list)
+
     def to_config(self) -> configparser.ConfigParser:
         config = configparser.ConfigParser()
         config[SECTION] = {
@@ -56,6 +122,13 @@ class Settings:
             "mp3val_path": self.mp3val_path,
             "keyfinder_cli_path": self.keyfinder_cli_path,
             "last_directory": self.last_directory,
+            "hidden_columns": _dump_list(self.hidden_columns),
+            "column_order": _dump_list(self.column_order),
+            "has_column_preference": str(self.has_column_preference),
+            "custom_genres": _dump_list(self.custom_genres),
+            "hidden_default_genres": _dump_list(self.hidden_default_genres),
+            "custom_languages": _dump_list([list(pair) for pair in self.custom_languages]),
+            "hidden_default_languages": _dump_list(self.hidden_default_languages),
         }
         return config
 
@@ -69,6 +142,13 @@ class Settings:
             mp3val_path=section.get("mp3val_path", fallback=""),
             keyfinder_cli_path=section.get("keyfinder_cli_path", fallback=""),
             last_directory=section.get("last_directory", fallback=""),
+            hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
+            column_order=_load_str_list(section.get("column_order", fallback="")),
+            has_column_preference=section.getboolean("has_column_preference", fallback=False),
+            custom_genres=_load_str_list(section.get("custom_genres", fallback="")),
+            hidden_default_genres=_load_str_list(section.get("hidden_default_genres", fallback="")),
+            custom_languages=_load_pair_list(section.get("custom_languages", fallback="")),
+            hidden_default_languages=_load_str_list(section.get("hidden_default_languages", fallback="")),
         )
 
 

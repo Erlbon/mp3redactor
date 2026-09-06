@@ -31,6 +31,7 @@ class MP3File:
     track: str = ""
     year: str = ""
     genre: str = ""
+    language: str = ""
     duration_seconds: float | None = None
     bitrate_kbps: int | None = None
 
