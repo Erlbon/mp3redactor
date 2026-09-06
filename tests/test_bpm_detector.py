@@ -1,13 +1,19 @@
-import builtins
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 
 
-def test_detect_bpm_reports_tool_missing_when_aubio_not_installed():
-    # aubio is genuinely not installed in this sandbox, so this exercises
-    # the real ImportError path rather than a simulated one.
+def test_detect_bpm_reports_tool_missing_when_aubio_not_installed(monkeypatch):
+    # Setting a name to None in sys.modules is the standard way to force
+    # `import aubio` to raise ImportError regardless of whether the real
+    # package happens to be installed in whatever environment the tests
+    # run in (it now is, in this one -- this used to rely on aubio
+    # genuinely being absent, which silently stopped testing the
+    # ImportError branch at all once aubio got installed here).
+    monkeypatch.setitem(sys.modules, "aubio", None)
+
     from core.bpm_detector import detect_bpm
 
     bpm, status, message = detect_bpm(Path("song.mp3"))

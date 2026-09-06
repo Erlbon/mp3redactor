@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-06#03
+
+- **Detect BPM now runs across multiple cores in parallel**, same as
+  Detect Key already did -- was fully sequential (one file at a time)
+  despite aubio's decode+tempo-detection loop being a C extension that
+  releases the GIL, confirmed by measurement (~2.8x speedup on an
+  8-worker/12-file benchmark of a few-second clips; longer, real-world
+  tracks should do better still, since aubio's fixed per-file setup
+  overhead shrinks as a fraction of the total). `core/scan_service.
+  run_bpm_check()` now dispatches the whole selection to a
+  `ThreadPoolExecutor`, same shape as `run_key_detection()`.
+  `MainWindow`'s two now share one `_run_concurrent_check_with_progress()`
+  helper instead of duplicating the progress-dialog-driving logic twice.
+- Fixed a pre-existing, already-failing test found while working on the
+  above (unrelated to the parallelism change itself):
+  `tests/test_bpm_detector.py`'s tool-missing test relied on aubio
+  genuinely not being installed in the sandbox to exercise the
+  `ImportError` branch. aubio is now actually installed here, so it was
+  taking a different code path entirely (a real file-not-found error
+  inside the broad `except`, landing on `STATUS_ERROR` instead of the
+  `STATUS_TOOL_MISSING` it asserted) -- no longer testing what it
+  claimed to. Now forces the `ImportError` via
+  `sys.modules["aubio"] = None` regardless of whether the real package
+  happens to be installed.
+- New test: `test_scan_service_bpm_check.py`.
+
 ## 2026-09-06#02
 
 - Fixed the gap between every Bulk Edit Tags field visibly growing as

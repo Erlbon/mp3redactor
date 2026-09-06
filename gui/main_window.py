@@ -410,18 +410,30 @@ class MainWindow(QMainWindow):
         self._rebuild_table()
 
     def run_bpm_check(self) -> None:
-        self._run_check_with_progress("Detecting BPM...", run_bpm_check, self._selected_files())
+        self._run_concurrent_check_with_progress("Detecting BPM...", run_bpm_check)
 
     def run_key_detection(self) -> None:
-        # Deliberately NOT routed through _run_check_with_progress -- that
-        # helper (and run_with_progress underneath it) iterates targets
-        # one at a time itself, which would mean core.scan_service.
-        # run_key_detection() is never actually handed more than a single
-        # file and its internal thread pool never gets to run more than
-        # one keyfinder-cli process at once. This drives the dialog from
-        # scan_service's own progress/should_cancel callbacks instead, so
-        # the whole selection is dispatched together and genuinely runs
-        # across multiple cores. See run_key_detection()'s docstring.
+        self._run_concurrent_check_with_progress(
+            "Detecting key...",
+            run_key_detection,
+            keyfinder_cli_path=self.settings.keyfinder_cli_path or None,
+        )
+
+    def _run_concurrent_check_with_progress(self, label: str, scan_fn, **extra_kwargs) -> None:
+        """Shared driver for the two checks (run_bpm_check(),
+        run_key_detection()) whose core.scan_service function runs a
+        thread pool across the whole batch rather than one file at a
+        time -- see either one's own docstring for why.
+
+        Deliberately NOT routed through _run_check_with_progress -- that
+        helper (and run_with_progress underneath it) iterates targets
+        one at a time itself, which would mean scan_fn is never actually
+        handed more than a single file and its internal thread pool
+        never gets to run more than one file at once, silently defeating
+        the whole point. This drives the dialog from scan_fn's own
+        progress/should_cancel callback contract instead, so the whole
+        selection is dispatched together and genuinely runs concurrently.
+        """
         targets = self._selected_files()
         if not targets:
             if not self.files:
@@ -434,7 +446,7 @@ class MainWindow(QMainWindow):
 
         dialog = None
         if len(targets) >= 3:
-            dialog = QProgressDialog("Detecting key...", "Cancel", 0, len(targets), self)
+            dialog = QProgressDialog(label, "Cancel", 0, len(targets), self)
             dialog.setWindowModality(Qt.WindowModality.WindowModal)
             dialog.setMinimumDuration(0)
             dialog.show()
@@ -447,12 +459,7 @@ class MainWindow(QMainWindow):
         def should_cancel() -> bool:
             return dialog is not None and dialog.wasCanceled()
 
-        run_key_detection(
-            targets,
-            progress=on_progress,
-            keyfinder_cli_path=self.settings.keyfinder_cli_path or None,
-            should_cancel=should_cancel,
-        )
+        scan_fn(targets, progress=on_progress, should_cancel=should_cancel, **extra_kwargs)
 
         if dialog is not None:
             dialog.close()
