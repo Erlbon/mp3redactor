@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-06#02
+
+- Fixed the gap between every Bulk Edit Tags field visibly growing as
+  the window is resized taller -- the fields grid had no row stretch
+  set anywhere, so Qt spread the extra vertical space evenly into
+  every row's gap instead of leaving it as blank space below the last
+  field. Fix lives in `redactor_common` (bumped to `2026-09-06-03`) so
+  the same latent issue in epub's identically-structured grid gets it
+  too.
+
 ## 2026-09-06#01
 
 - Bumped `redactor_common` to `2026-09-06-02` -- fixes a stray leading

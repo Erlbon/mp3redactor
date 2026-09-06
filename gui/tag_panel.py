@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 from core.fields import FIELDS
 from core.mp3_file import MP3File
 from redactor_common.gui.collapsible_splitter import CollapseToggleButton
+from redactor_common.gui.grid_utils import absorb_extra_row_space
 
 MULTIPLE_VALUES_PLACEHOLDER = "<multiple values>"
 COLLAPSE_BUTTON_WIDTH = 26
@@ -138,6 +139,10 @@ class TagPanel(QWidget):
             grid.addWidget(cb, row, 0)
             grid.addWidget(QLabel(label), row, 1)
             grid.addWidget(editor, row, 2)
+
+        # Without this, the gap between every field visibly grows as the
+        # window/panel is resized taller -- see grid_utils.py's docstring.
+        absorb_extra_row_space(grid, len(FIELDS))
 
         outer.addWidget(fields_box, 1)
 
