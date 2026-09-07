@@ -65,10 +65,12 @@ this has to be built on Windows itself.
      package. Rather than carrying that build setup (and its DLLs) in
      *this* repo, it lives in a separate one dedicated to it:
      [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows).
-     Download `keyfinder-cli.exe` + the 4 `.dll` files from its
+     Download the `keyfinder-cli-<version>-windows.zip` bundle (exe + its
+     4 FFmpeg DLLs together -- grabbing them as separate individual
+     files from that release page's asset list is how you end up with
+     the exe but not its DLLs, which fails at launch) from its
      [latest release](https://github.com/Erlbon/keyfinder-cli-windows/releases/latest)
-     and drop all 5 into `tools\` (it's dynamically linked against
-     FFmpeg, so the DLLs have to ship alongside the exe). That repo also
+     and extract all 5 files into `tools\`. That repo also
      has the build script, if `keyfinder-cli`/`libkeyfinder` ever need a
      newer version.
    (The build still works without a `tools\` folder at all -- Check
