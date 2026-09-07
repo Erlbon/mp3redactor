@@ -14,7 +14,16 @@ title/artist/etc. do.
 mutagen is imported lazily/guarded, same reasoning as tag_reader.py and
 bpm_detector.py: a missing dependency should degrade a specific
 capability (here: saving), not crash the app.
+
+Every failure path runs through redactor_common.core.save_errors.
+describe_save_error() rather than a bare str(exc) -- recognizes
+Windows' classic MAX_PATH (260-char) limit specifically and explains
+it clearly, since that's a property of WHERE the file lives (retrying
+the same save can't help), not a transient failure a raw exception
+message would otherwise make look retriable.
 """
+
+from redactor_common.core.save_errors import describe_save_error
 
 from core.mp3_file import MP3File, STATUS_OK
 
@@ -64,14 +73,14 @@ def save_tags(mp3: MP3File) -> bool:
     try:
         audio = MP3(mp3.path)
     except Exception as e:  # noqa: BLE001 -- any open/parse failure blocks writing too
-        mp3.save_error = f"failed to open file: {e}"
+        mp3.save_error = f"failed to open file: {describe_save_error(e)}"
         return False
 
     if audio.tags is None:
         try:
             audio.add_tags()
         except Exception as e:  # noqa: BLE001
-            mp3.save_error = f"failed to add a tag header: {e}"
+            mp3.save_error = f"failed to add a tag header: {describe_save_error(e)}"
             return False
 
     tags = audio.tags
@@ -89,7 +98,7 @@ def save_tags(mp3: MP3File) -> bool:
     try:
         audio.save()
     except Exception as e:  # noqa: BLE001
-        mp3.save_error = f"failed to write tags: {e}"
+        mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
         return False
 
     mp3.dirty = False

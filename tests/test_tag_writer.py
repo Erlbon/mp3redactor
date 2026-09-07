@@ -80,6 +80,33 @@ def test_save_tags_reports_save_error_for_unwritable_path(tmp_path):
     assert mp3.dirty is True  # left set -- stays visibly unsaved
 
 
+def test_save_tags_explains_a_path_too_long_error_clearly(tmp_path, monkeypatch):
+    """The one case worth mocking mutagen for (unlike the rest of this
+    file -- see its own docstring): reliably triggering a real 260+
+    char Windows path from a test is neither portable nor the point
+    here. What's actually under test is that save_tags() routes a
+    failure through redactor_common.core.save_errors.describe_save_error()
+    rather than a bare str(exc) -- a raw WinError 3/206 message doesn't
+    explain that retrying the same save can't help without moving the
+    file, the way describe_save_error()'s PATH_TOO_LONG_MESSAGE does."""
+    import mutagen.mp3
+
+    class _FakeWinError(OSError):
+        winerror = 206  # ERROR_FILENAME_EXCED_RANGE
+
+    def _fake_mp3(*_args, **_kwargs):
+        raise _FakeWinError("[WinError 206] The filename or extension is too long")
+
+    monkeypatch.setattr(mutagen.mp3, "MP3", _fake_mp3)
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"title": "Whatever"})
+
+    assert save_tags(mp3) is False
+    assert "260-character limit" in mp3.save_error
+    assert "shorten the folder path" in mp3.save_error
+
+
 def test_save_tags_writes_bpm_to_the_tbpm_frame(tmp_path):
     # mp3.bpm is a detection result (core.scan_service.run_bpm_check),
     # not a core.fields.FIELDS entry -- it doesn't go through

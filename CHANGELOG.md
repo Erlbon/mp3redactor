@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-07#05
+
+A cross-repo review of `redactor_common` adoption found this project
+had no path-too-long protection on the one real gap that mattered:
+`core/tag_writer.py`'s save failures. Fixed:
+
+- `save_tags()`'s three failure points (opening the file, adding a tag
+  header, writing tags back) now route their error message through
+  `redactor_common.core.save_errors.describe_save_error()` instead of a
+  bare `str(exc)`. A file whose path is over Windows' 260-character
+  limit now gets a clear explanation that moving it is required
+  (retrying the same save can't help), instead of a raw, confusing
+  `WinError` message. Bumps the `redactor_common` pin to `2026-09-07-01`,
+  which also fixes a real selection-color bug at the source (see that
+  repo's own changelog).
+
+1 new test in `tests/test_tag_writer.py`.
+
 ## 2026-09-07#04
 
 - **Deep Check Integrity** (Operations menu/right-click) -- a real
