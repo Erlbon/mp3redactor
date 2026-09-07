@@ -10,7 +10,7 @@ mock methods got called.
 import shutil
 from pathlib import Path
 
-from core.mp3_file import MP3File
+from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK
 from core.tag_reader import load_tags
 from core.tag_writer import save_tags
 
@@ -125,3 +125,67 @@ def test_save_tags_leaves_an_existing_tbpm_frame_alone_when_bpm_was_never_detect
 
     reloaded_tags = ID3(path)
     assert str(reloaded_tags["TBPM"].text[0]) == "140"
+
+
+def test_save_tags_writes_key_to_the_tkey_frame(tmp_path):
+    # Same shape as BPM (see test above), but gated on key_status ==
+    # STATUS_OK rather than "value is truthy" -- see
+    # _write_key_frame()'s docstring for why.
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.key_value = "Abm"
+    mp3.key_status = STATUS_OK
+    mp3.dirty = True
+
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TKEY"].text[0]) == "Abm"
+
+
+def test_save_tags_clears_tkey_on_a_successful_silent_result(tmp_path):
+    # keyfinder-cli returns STATUS_OK with an empty key_value for audio
+    # it determined has no key -- a real, positive result (unlike BPM's
+    # None), so a stale TKEY from other software should actually be
+    # cleared, the same as blanking a text field does.
+    from mutagen.id3 import TKEY, ID3
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.setall("TKEY", [TKEY(encoding=3, text="C")])
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.key_value = ""
+    mp3.key_status = STATUS_OK
+    mp3.dirty = True
+
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    assert "TKEY" not in reloaded_tags
+
+
+def test_save_tags_leaves_an_existing_tkey_frame_alone_when_detection_failed(tmp_path):
+    # STATUS_ERROR/STATUS_TOOL_MISSING means this app doesn't actually
+    # know the file's key -- must not touch a pre-existing tag just
+    # because a detection attempt (that didn't complete) happened to
+    # touch this file.
+    from mutagen.id3 import TKEY, ID3
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.setall("TKEY", [TKEY(encoding=3, text="F#m")])
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.key_value = ""
+    mp3.key_status = STATUS_ERROR
+    mp3.apply_tags({"title": "Unrelated Edit"})
+
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    assert str(reloaded_tags["TKEY"].text[0]) == "F#m"

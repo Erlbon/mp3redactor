@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-07#02
+
+- **Fixed: a detected key was never actually written to the file** --
+  the same gap as #01's BPM fix, same shape of fix: Detect Key now
+  marks the file dirty (including a genuine "no key" silent-audio
+  result -- keyfinder-cli reports that as success, not a failure, see
+  `core/keyfinder_runner.py`), and Save now writes it to the standard
+  ID3v2 `TKEY` ("Initial key") frame. A pre-existing `TKEY` from other
+  software is left alone unless this app's own Detect Key actually
+  completed on that file.
+- **The "no output at all" report turned out to be `keyfinder-cli.exe`
+  simply not being bundled** -- a built exe with no `tools\` folder
+  present reports TOOL MISSING for both Check Integrity and Detect Key
+  (see README.md's "Building the .exe" section), which can easily read
+  as "nothing happened" rather than an informative status. No code
+  change for this half -- it's a distribution/packaging step, not a
+  bug -- but the next released build bundles a working
+  `keyfinder-cli.exe` so Detect Key works out of the box.
+- New tests: `run_key_detection()` marking (and not marking) dirty --
+  including the silent-but-OK case, which is dirty-worthy unlike BPM's
+  equivalent "nothing detected" case -- and `save_tags()` writing/
+  clearing `TKEY` and leaving a pre-existing one alone on a failed
+  detection, verified via real ID3 write/independent-mutagen-read round
+  trips, plus an end-to-end real-`QAction`-triggered Detect Key -> Save
+  scenario against the real `keyfinder-cli.exe` binary (not mocked).
+
 ## 2026-09-07#01
 
 - **Fixed: a detected BPM was never actually written to the file.**

@@ -23,7 +23,7 @@ from pathlib import Path
 
 from core.bpm_detector import detect_bpm
 from core.keyfinder_runner import detect_key
-from core.mp3_file import MP3File
+from core.mp3_file import MP3File, STATUS_OK
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
 from core.tag_writer import save_tags
@@ -234,6 +234,20 @@ def run_key_detection(
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             mp3.key_value, mp3.key_status, mp3.key_message = future.result()
+            if mp3.key_status == STATUS_OK:
+                # Unlike BPM (mp3.bpm stays None for both "never
+                # detected" and "detection failed"), a genuinely silent
+                # file is STATUS_OK with an empty key_value -- see
+                # detect_key()'s own docstring ("silence having no key
+                # isn't a failure"). Either way STATUS_OK means this
+                # session actually determined something (a key, or
+                # confirmed there isn't one), so it's new tag data
+                # either to write or to explicitly clear -- mark dirty
+                # so it reaches disk via the normal Save flow. A failed/
+                # tool-missing result leaves dirty alone: we don't know
+                # anything, so we must not touch whatever's already
+                # tagged on disk.
+                mp3.dirty = True
             completed += 1
             if progress is not None:
                 progress(completed, total)

@@ -3,17 +3,18 @@ Writes an MP3File's tag fields back to disk using mutagen -- the write
 counterpart to tag_reader.load_tags(). Uses the same raw ID3 frames
 tag_reader reads (TIT2/TPE1/TALB/TRCK/TDRC/TCON/TLAN), so a round-trip
 (load -> bulk-edit -> save -> load) reads back exactly what was written.
-Also writes TBPM (see _write_bpm_frame() below) -- a detected BPM
-(core.scan_service.run_bpm_check) isn't a core.fields.FIELDS entry the
-bulk-edit panel exposes, it's a numeric detection result, so it doesn't
-go through the generic string-field loop the way title/artist/etc. do.
+Also writes TBPM and TKEY (see _write_bpm_frame()/_write_key_frame()
+below) -- a detected BPM/key (core.scan_service.run_bpm_check() /
+run_key_detection()) isn't a core.fields.FIELDS entry the bulk-edit
+panel exposes, it's a detection result, so neither goes through the
+generic string-field loop the way title/artist/etc. do.
 
 mutagen is imported lazily/guarded, same reasoning as tag_reader.py and
 bpm_detector.py: a missing dependency should degrade a specific
 capability (here: saving), not crash the app.
 """
 
-from core.mp3_file import MP3File
+from core.mp3_file import MP3File, STATUS_OK
 
 # attribute_key -> ID3 frame id for the fields core.fields.FIELDS
 # defines. A separate mapping from FIELDS itself (rather than reusing
@@ -47,7 +48,7 @@ def save_tags(mp3: MP3File) -> bool:
     blank the field in the bulk-edit panel, tick it, Apply, Save.
     """
     try:
-        from mutagen.id3 import TALB, TBPM, TCON, TDRC, TIT2, TLAN, TPE1, TRCK
+        from mutagen.id3 import TALB, TBPM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TRCK
         from mutagen.mp3 import MP3
     except ImportError:
         mp3.save_error = "mutagen is not installed"
@@ -80,6 +81,7 @@ def save_tags(mp3: MP3File) -> bool:
             tags.delall(frame_id)
 
     _write_bpm_frame(tags, mp3, TBPM)
+    _write_key_frame(tags, mp3, TKEY)
 
     try:
         audio.save()
@@ -111,3 +113,28 @@ def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:
     """
     if mp3.bpm is not None:
         tags.setall("TBPM", [tbpm_cls(encoding=3, text=str(round(mp3.bpm)))])
+
+
+def _write_key_frame(tags, mp3: MP3File, tkey_cls) -> None:
+    """mp3.key_value/key_status are core.scan_service.run_key_detection()'s
+    result, not a bulk-edit field -- written to the standard ID3v2 TKEY
+    ("Initial key") frame.
+
+    Unlike BPM, an empty key_value can be a genuine, positive result
+    here: keyfinder-cli returns STATUS_OK with "" for audio it
+    determined has no key (silence), not just for a failure -- see
+    core.keyfinder_runner.detect_key()'s own docstring. So the gate is
+    key_status == STATUS_OK, not "key_value is truthy": a successful
+    "no key" result still clears/skips the frame the same way blanking
+    a text field does (a stale TKEY from other software genuinely
+    should go, once this app has actually re-measured "there isn't
+    one"). STATUS_ERROR/STATUS_TOOL_MISSING (key_status still its
+    default STATUS_UNCHECKED, or a failed run) leaves any existing
+    TKEY frame alone -- same "we don't know, so don't touch it" reasons
+    as _write_bpm_frame()."""
+    if mp3.key_status != STATUS_OK:
+        return
+    if mp3.key_value:
+        tags.setall("TKEY", [tkey_cls(encoding=3, text=mp3.key_value)])
+    else:
+        tags.delall("TKEY")

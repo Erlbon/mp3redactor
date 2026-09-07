@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from core.mp3_file import MP3File, STATUS_OK, STATUS_UNCHECKED
+from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING, STATUS_UNCHECKED
 from core.scan_service import run_key_detection
 
 
@@ -44,6 +44,50 @@ def test_run_key_detection_reports_progress_sequentially_to_total(mock_detect):
     # single consuming loop in as_completed(), so it's always exactly
     # 1, 2, 3 in order regardless of completion order.
     assert seen == [(1, 3), (2, 3), (3, 3)]
+
+
+@patch("core.scan_service.detect_key", side_effect=_fake_detect_key)
+def test_run_key_detection_marks_files_dirty_so_save_writes_the_tag(mock_detect):
+    # A detected key used to only ever update the in-memory field/table
+    # column, the same gap BPM had -- see core/tag_writer.py's
+    # _write_key_frame().
+    files = [MP3File(path=Path("song.mp3"))]
+    assert files[0].dirty is False
+
+    run_key_detection(files, max_workers=1)
+
+    assert files[0].dirty is True
+
+
+@patch("core.scan_service.detect_key", return_value=("", STATUS_OK, "no key detected (silent audio)"))
+def test_run_key_detection_marks_dirty_even_for_a_silent_ok_result(mock_detect):
+    # Unlike BPM, STATUS_OK with an empty key_value is a genuine result
+    # (silence really has no key), not "nothing happened" -- still
+    # worth a Save so a stale TKEY from other software gets cleared.
+    files = [MP3File(path=Path("song.mp3"))]
+
+    run_key_detection(files, max_workers=1)
+
+    assert files[0].key_value == ""
+    assert files[0].dirty is True
+
+
+@patch("core.scan_service.detect_key", return_value=("", STATUS_TOOL_MISSING, "keyfinder-cli.exe not found"))
+def test_run_key_detection_does_not_mark_dirty_when_tool_missing(mock_detect):
+    files = [MP3File(path=Path("song.mp3"))]
+
+    run_key_detection(files, max_workers=1)
+
+    assert files[0].dirty is False
+
+
+@patch("core.scan_service.detect_key", return_value=("", STATUS_ERROR, "keyfinder-cli timed out"))
+def test_run_key_detection_does_not_mark_dirty_on_error(mock_detect):
+    files = [MP3File(path=Path("song.mp3"))]
+
+    run_key_detection(files, max_workers=1)
+
+    assert files[0].dirty is False
 
 
 def test_run_key_detection_empty_list_is_a_noop():

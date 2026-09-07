@@ -5,11 +5,16 @@ from core.keyfinder_runner import detect_key
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 
 
-def test_detect_key_tool_missing():
+@patch("core.keyfinder_runner.find_tool", return_value=None)
+def test_detect_key_tool_missing(mock_find_tool):
+    # find_tool() returning None (not found on PATH or bundled) is
+    # forced explicitly rather than relied on as a sandbox-environment
+    # fact -- a real keyfinder-cli.exe now genuinely lives in this
+    # project's tools/ for local manual verification (see README.md),
+    # so leaving this to "the sandbox happens not to have one" would
+    # make the test pass or fail depending on that, the same lesson
+    # test_bpm_detector.py's aubio-guarded-import test already learned.
     key, status, message = detect_key(Path("song.mp3"), tool_path=None)
-    # find_tool() will genuinely fail to find keyfinder-cli in this
-    # sandbox -- exercising the real fallback path end to end, not
-    # mocking it away (same approach test_mp3val_runner.py takes).
     assert key == ""
     assert status == STATUS_TOOL_MISSING
     assert "keyfinder-cli" in message
