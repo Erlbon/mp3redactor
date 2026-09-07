@@ -1,42 +1,51 @@
 THIRD-PARTY NOTICES
 ====================
 
-This bundle includes keyfinder-cli.exe and 4 FFmpeg DLLs
-(avcodec-63.dll, avformat-63.dll, avutil-61.dll, swresample-7.dll),
-built and distributed by:
-
-    https://github.com/Erlbon/keyfinder-cli-windows
-
-keyfinder-cli.exe is invoked as a separate, independent process (via
-command-line arguments and standard output) -- it is never linked into
-or compiled with any other program in this bundle. All three
-components below are licensed under the GNU General Public License,
-version 3 (see LICENSE.txt in this same folder for the full text).
+This folder includes keyfinder-cli.exe, ffmpeg.exe, ffprobe.exe, and 4
+FFmpeg DLLs (avcodec-63.dll, avformat-63.dll, avutil-61.dll,
+swresample-7.dll). mp3redactor invokes each of these as a separate,
+independent process (via command-line arguments and standard
+output/stderr) -- none of them is linked into or compiled with
+mp3redactor.exe itself. All components below are licensed under the
+GNU General Public License, version 3 (see LICENSE.txt in this same
+folder for the full text).
 
 1. keyfinder-cli
    https://github.com/evanpurkhiser/keyfinder-cli
    License: GPLv3
-   This build is compiled from an unmodified checkout of upstream's
-   1.2.0 release, with two small CMakeLists.txt changes (Windows/MSVC
-   build support only -- see keyfinder-cli-windows's own README, "What's
-   patched vs. upstream"). Full source, patches, and the build script
-   used to produce this exact binary:
-   https://github.com/Erlbon/keyfinder-cli-windows
+   keyfinder-cli.exe is built and distributed by
+   https://github.com/Erlbon/keyfinder-cli-windows, compiled from an
+   unmodified checkout of upstream's 1.2.0 release with two small
+   CMakeLists.txt changes (Windows/MSVC build support only -- see that
+   repo's README, "What's patched vs. upstream"). Full source,
+   patches, and the build script used to produce this exact binary
+   live there.
 
 2. libkeyfinder
    https://github.com/mixxxdj/libkeyfinder
    License: GPLv3
    Statically linked into keyfinder-cli.exe, unmodified, via vcpkg.
 
-3. FFmpeg (avcodec, avformat, avutil, swresample)
+3. FFmpeg (avcodec-63.dll, avformat-63.dll, avutil-61.dll,
+   swresample-7.dll, ffmpeg.exe, ffprobe.exe)
    https://ffmpeg.org
    License: GPLv3 (this is gyan.dev's "full" shared build --
-   https://www.gyan.dev/ffmpeg/builds/ -- which includes GPL-only
-   components; the DLLs shipped here are the unmodified upstream
-   build, no changes were made to FFmpeg itself)
+   https://www.gyan.dev/ffmpeg/builds/, specifically the
+   ffmpeg-release-full-shared.7z package -- which includes GPL-only
+   encoders; everything here is the unmodified upstream build as
+   distributed by gyan.dev, no changes made to FFmpeg itself, and no
+   wrapper/patch repo of ours is involved for these two -- they're
+   used directly from that download).
+   mp3redactor uses these two for: a full-decode "Deep Check"
+   integrity scan (catches corruption mp3val's header-only scan can
+   miss), loudness measurement (writes a TXXX:REPLAYGAIN_TRACK_GAIN
+   tag), richer format probing (actual encoder, sample rate, channel
+   count) via ffprobe, and converting non-MP3 audio files to MP3
+   (libmp3lame) for the Import menu.
 
-Corresponding source for the exact binaries in this bundle is
-available, free of charge, from the URLs above for as long as they
-remain published -- if any of them ever becomes unavailable, contact
-the maintainer of https://github.com/Erlbon/keyfinder-cli-windows for
-a copy.
+Corresponding source for every binary in this bundle is available,
+free of charge, from the URLs above for as long as they remain
+published. keyfinder-cli.exe's source specifically is also mirrored by
+https://github.com/Erlbon/keyfinder-cli-windows if upstream ever
+becomes unavailable; contact that repo's maintainer for a copy if
+needed.

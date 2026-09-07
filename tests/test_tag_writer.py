@@ -189,3 +189,80 @@ def test_save_tags_leaves_an_existing_tkey_frame_alone_when_detection_failed(tmp
 
     reloaded_tags = ID3(path)
     assert str(reloaded_tags["TKEY"].text[0]) == "F#m"
+
+
+def test_save_tags_writes_loudness_gain_to_the_replaygain_txxx_frame(tmp_path):
+    # Same STATUS_OK gate as key (not "value is truthy") -- see
+    # _write_loudness_frame()'s docstring.
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.loudness_lufs = -14.2
+    mp3.loudness_gain_db = -3.8
+    mp3.loudness_status = STATUS_OK
+    mp3.dirty = True
+
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TXXX:REPLAYGAIN_TRACK_GAIN"].text[0]) == "-3.80 dB"
+
+
+def test_save_tags_formats_a_positive_gain_with_an_explicit_plus_sign(tmp_path):
+    # ReplayGain's own convention -- a positive gain still carries a
+    # "+", not left bare, so "+1.50 dB" not "1.50 dB".
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.loudness_gain_db = 1.5
+    mp3.loudness_status = STATUS_OK
+    mp3.dirty = True
+
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TXXX:REPLAYGAIN_TRACK_GAIN"].text[0]) == "+1.50 dB"
+
+
+def test_save_tags_skips_loudness_frame_when_measurement_found_nothing_to_write(tmp_path):
+    # STATUS_OK but gain_db is None -- genuinely silent audio, a real
+    # result with no meaningful gain (see
+    # core.ffmpeg_probe.measure_loudness()'s docstring). Nothing should
+    # be written OR cleared.
+    from mutagen.id3 import TXXX, ID3
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.setall("TXXX:REPLAYGAIN_TRACK_GAIN", [TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=["-1.00 dB"])])
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.loudness_status = STATUS_OK
+    mp3.loudness_gain_db = None
+    mp3.apply_tags({"title": "Unrelated Edit"})
+
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    assert str(reloaded_tags["TXXX:REPLAYGAIN_TRACK_GAIN"].text[0]) == "-1.00 dB"
+
+
+def test_save_tags_leaves_an_existing_loudness_frame_alone_when_measurement_failed(tmp_path):
+    from mutagen.id3 import TXXX, ID3
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.setall("TXXX:REPLAYGAIN_TRACK_GAIN", [TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=["-2.50 dB"])])
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.loudness_status = STATUS_ERROR
+    mp3.loudness_gain_db = None
+    mp3.apply_tags({"title": "Unrelated Edit"})
+
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    assert str(reloaded_tags["TXXX:REPLAYGAIN_TRACK_GAIN"].text[0]) == "-2.50 dB"

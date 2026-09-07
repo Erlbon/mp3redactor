@@ -22,7 +22,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from core.bpm_detector import detect_bpm
+from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
 from core.keyfinder_runner import detect_key
+from core.mp3_converter import DEFAULT_BITRATE_KBPS, convert_to_mp3
 from core.mp3_file import MP3File, STATUS_OK
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
@@ -256,3 +258,161 @@ def run_key_detection(
                 # running keeps going (see docstring above).
                 executor.shutdown(wait=False, cancel_futures=True)
                 break
+
+
+def run_deep_check(
+    files: list[MP3File],
+    progress: ProgressCallback | None = None,
+    ffmpeg_path: str | None = None,
+    ffprobe_path: str | None = None,
+    max_workers: int | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> None:
+    """
+    Mutates each file's deep_check_status/deep_check_message AND its
+    format-probe fields (audio_encoder/sample_rate_hz/channels) in
+    place -- both a full ffmpeg decode and an ffprobe format query run
+    per file here, since both already need the same ffmpeg/ffprobe
+    toolchain and there's no reason to make this two separate
+    full-batch passes over the same files.
+
+    Concurrent via a thread pool, same reasoning as run_bpm_check()/
+    run_key_detection(): each ffmpeg/ffprobe invocation is a genuinely
+    separate OS process, so several run in parallel regardless of
+    Python's GIL. This is the slowest check the app runs -- a real full
+    decode, not a header scan (mp3val) or an FFT analysis window
+    (aubio/keyfinder-cli) -- so it's exactly the case thread-pooling
+    helps the most.
+
+    Read-only -- like run_integrity_check(), this never marks a file
+    dirty. Neither deep_check_status/message nor the probe fields are
+    ID3 data; there's nothing here for Save to write.
+    """
+    if not files:
+        return
+    total = len(files)
+    workers = max_workers or min(total, os.cpu_count() or 4)
+    completed = 0
+
+    def _check_one(mp3: MP3File):
+        status, message = deep_check_integrity(mp3.path, override_path=ffmpeg_path)
+        encoder, sample_rate, channels, probe_status, probe_message = probe_format(
+            mp3.path, override_path=ffprobe_path
+        )
+        return status, message, encoder, sample_rate, channels, probe_status, probe_message
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_mp3 = {executor.submit(_check_one, mp3): mp3 for mp3 in files}
+        for future in as_completed(future_to_mp3):
+            mp3 = future_to_mp3[future]
+            (
+                mp3.deep_check_status, mp3.deep_check_message,
+                encoder, sample_rate, channels, probe_status, _probe_message,
+            ) = future.result()
+            # Probe info is kept independent of the deep-check result --
+            # a file can fail to fully decode and still have perfectly
+            # readable container metadata, or vice versa, same "one
+            # check's failure shouldn't hide the other's result"
+            # reasoning that keeps deep_check_status separate from
+            # integrity_status in the first place.
+            if probe_status == STATUS_OK:
+                mp3.audio_encoder = encoder
+                mp3.sample_rate_hz = sample_rate
+                mp3.channels = channels
+            completed += 1
+            if progress is not None:
+                progress(completed, total)
+            if should_cancel is not None and should_cancel():
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+
+
+def run_loudness_measurement(
+    files: list[MP3File],
+    progress: ProgressCallback | None = None,
+    ffmpeg_path: str | None = None,
+    max_workers: int | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> None:
+    """
+    Mutates each file's loudness_lufs/loudness_gain_db/loudness_status/
+    loudness_message in place. Concurrent via a thread pool, same
+    reasoning as run_deep_check()/run_bpm_check()/run_key_detection().
+    """
+    if not files:
+        return
+    total = len(files)
+    workers = max_workers or min(total, os.cpu_count() or 4)
+    completed = 0
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_mp3 = {
+            executor.submit(measure_loudness, mp3.path, override_path=ffmpeg_path): mp3
+            for mp3 in files
+        }
+        for future in as_completed(future_to_mp3):
+            mp3 = future_to_mp3[future]
+            (
+                mp3.loudness_lufs, mp3.loudness_gain_db,
+                mp3.loudness_status, mp3.loudness_message,
+            ) = future.result()
+            if mp3.loudness_status == STATUS_OK and mp3.loudness_gain_db is not None:
+                # Mirrors run_key_detection()'s STATUS_OK gate -- a
+                # successful measurement is new tag data, marked dirty
+                # so it reaches disk via the normal Save flow
+                # (core.tag_writer writes it to
+                # TXXX:REPLAYGAIN_TRACK_GAIN). Genuinely silent audio
+                # (STATUS_OK but gain_db is None -- see
+                # core.ffmpeg_probe.measure_loudness()'s docstring) has
+                # no meaningful gain to write, so it's NOT marked dirty,
+                # same reasoning as BPM staying None on a failed/silent
+                # detection.
+                mp3.dirty = True
+            completed += 1
+            if progress is not None:
+                progress(completed, total)
+            if should_cancel is not None and should_cancel():
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+
+
+def run_import_conversion(
+    conversions: list[tuple[Path, Path]],
+    bitrate_kbps: int = DEFAULT_BITRATE_KBPS,
+    progress: ProgressCallback | None = None,
+    ffmpeg_path: str | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> list[tuple[Path, Path, str, str]]:
+    """
+    Converts each (src_path, dest_path) pair via
+    core.mp3_converter.convert_to_mp3() -- the Import menu's "Import &&
+    Convert to MP3..." action. Returns a list of (src_path, dest_path,
+    status, message) so the caller can report per-file results and
+    know exactly which dest_paths succeeded (to load them into the
+    table) versus which failed (to skip and report).
+
+    Sequential, unlike the checks above -- a full re-encode is heavier
+    per-file work than any of those, and an import is typically a
+    handful of files brought in alongside an existing library, not a
+    whole folder's worth the way a bulk check might be run against.
+    Worth revisiting with a thread pool if that assumption turns out
+    wrong for how this actually gets used.
+
+    should_cancel, if given, is checked after each conversion
+    completes -- remaining pairs are simply never attempted, nothing
+    already converted is undone (there's no reason to delete a file
+    that converted successfully just because a later one was
+    cancelled).
+    """
+    total = len(conversions)
+    results = []
+    for i, (src_path, dest_path) in enumerate(conversions, start=1):
+        status, message = convert_to_mp3(
+            src_path, dest_path, bitrate_kbps=bitrate_kbps, override_path=ffmpeg_path
+        )
+        results.append((src_path, dest_path, status, message))
+        if progress is not None:
+            progress(i, total)
+        if should_cancel is not None and should_cancel():
+            break  # remaining pairs are simply never attempted, same as an early return
+    return results

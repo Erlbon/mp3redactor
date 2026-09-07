@@ -49,6 +49,36 @@ class MP3File:
     key_value: str = ""
     key_message: str = ""
 
+    # Deep integrity check (ffmpeg, full decode) -- catches corrupt/
+    # truncated audio data mp3val's header-only scan can miss. Kept
+    # separate from integrity_status/message above (not merged into
+    # the same fields) since the two checks can legitimately disagree
+    # -- clean headers with bad audio data, or vice versa -- and a user
+    # should be able to see both results, not have one silently
+    # overwrite the other.
+    deep_check_status: str = STATUS_UNCHECKED
+    deep_check_message: str = ""
+
+    # Loudness measurement (ffmpeg's loudnorm filter, single-pass).
+    # loudness_lufs is the measured integrated loudness; loudness_gain_db
+    # is the ReplayGain-style track gain relative to the -18 LUFS
+    # reference (core.ffmpeg_probe.REPLAYGAIN_REFERENCE_LUFS) -- what
+    # actually gets written to the TXXX:REPLAYGAIN_TRACK_GAIN frame on
+    # Save (core/tag_writer.py).
+    loudness_lufs: float | None = None
+    loudness_gain_db: float | None = None
+    loudness_status: str = STATUS_UNCHECKED
+    loudness_message: str = ""
+
+    # Format details (ffprobe) -- richer than what mutagen surfaces
+    # above (duration_seconds/bitrate_kbps): the actual encoder used,
+    # sample rate, channel count. Gathered via core.scan_service.
+    # run_deep_check(), which already shells out to the same ffmpeg/
+    # ffprobe toolchain for the deep decode check.
+    audio_encoder: str = ""
+    sample_rate_hz: int | None = None
+    channels: int | None = None
+
     # Reserved for later versions -- deliberately present but unused in v1
     has_cover: bool | None = None
     lyrics: str = ""
@@ -74,6 +104,16 @@ class MP3File:
         if self.bpm is None:
             return ""
         return f"{self.bpm:.1f}"
+
+    def display_loudness(self) -> str:
+        if self.loudness_lufs is None:
+            return ""
+        return f"{self.loudness_lufs:.1f} LUFS"
+
+    def display_sample_rate(self) -> str:
+        if self.sample_rate_hz is None:
+            return ""
+        return f"{self.sample_rate_hz} Hz"
 
     def apply_tags(self, values: dict[str, str]) -> None:
         """Writes each field in `values` (attribute_key -> new value,

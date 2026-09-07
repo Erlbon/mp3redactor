@@ -64,6 +64,7 @@ from core.mp3_file import (
     STATUS_TOOL_MISSING,
     STATUS_WARNING,
 )
+from core.mp3_converter import BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS
 from core.mp3_genres import COMMON_MP3_GENRES
 from core.mp3_genres import exclude_hidden as exclude_hidden_genres
 from core.mp3_genres import merge_genres
@@ -74,9 +75,12 @@ from core.scan_service import (
     find_mp3_files,
     load_files,
     run_bpm_check,
+    run_deep_check,
+    run_import_conversion,
     run_integrity_check,
     run_integrity_fix,
     run_key_detection,
+    run_loudness_measurement,
     save_dirty_tags,
 )
 from core.settings import Settings, directory_for, load_settings, resolve_start_directory, save_settings
@@ -104,26 +108,47 @@ from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMM
 # Table columns, field-key based -- see redactor_common.core.
 # table_settings's own docstring for why (a persisted index-based
 # preference silently breaks the moment a column is added/removed/
-# reordered in code). "integrity"/"bpm"/"key" are synthetic (derived
-# check results, not a tag field); everything else is exactly
-# core.fields.FIELDS.
-_STATUS_COLUMN_LABELS: dict[str, str] = {"integrity": "Integrity", "bpm": "BPM", "key": "Key"}
+# reordered in code). "integrity"/"bpm"/"key"/"deep_check"/"loudness"
+# are synthetic (derived check results, not a tag field); everything
+# else is exactly core.fields.FIELDS.
+_STATUS_COLUMN_LABELS: dict[str, str] = {
+    "integrity": "Integrity", "bpm": "BPM", "key": "Key",
+    "deep_check": "Deep Check", "loudness": "Loudness",
+}
+# Format details from ffprobe (core.scan_service.run_deep_check(), same
+# action that populates deep_check above) -- kept as their own group
+# since, unlike every other column, these default to HIDDEN (see
+# DEFAULT_HIDDEN_COLUMNS below): supplementary technical detail, not a
+# check result someone would want in front of them by default.
+_PROBE_COLUMN_LABELS: dict[str, str] = {
+    "encoder": "Encoder", "sample_rate": "Sample Rate", "channels": "Channels",
+}
 _COLUMN_LABELS: dict[str, str] = {
     "filename": "Filename",
     "path": "Path",
     **{key: label for key, label, _m in FIELDS},
     **_STATUS_COLUMN_LABELS,
+    **_PROBE_COLUMN_LABELS,
 }
-ALL_COLUMN_KEYS: list[str] = ["filename", "path"] + [key for key, _l, _m in FIELDS] + list(_STATUS_COLUMN_LABELS)
+ALL_COLUMN_KEYS: list[str] = (
+    ["filename", "path"]
+    + [key for key, _l, _m in FIELDS]
+    + list(_STATUS_COLUMN_LABELS)
+    + list(_PROBE_COLUMN_LABELS)
+)
 PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to tell rows apart
 
-# Nothing hidden on a genuinely first run -- matches this app's own
-# behavior before column management existed (every column always
-# shown), unlike a project with a large field set that wants a curated
-# default. Once the user has saved ANY choice, even "show everything"
-# (an empty hidden set), that saved choice always wins -- see
+# Nothing hidden on a genuinely first run for every column EXCEPT the
+# ffprobe format-detail trio above -- matches this app's own behavior
+# before column management existed for every other column (shown by
+# default), but encoder/sample_rate/channels are a deliberate
+# exception: supplementary detail most people won't want cluttering the
+# table until they go looking for it (Settings > Add/Remove Columns...,
+# or right-click a header, same as any other column). Once the user
+# has saved ANY choice, even "show everything" (an empty hidden set),
+# that saved choice always wins over this default -- see
 # Settings.has_column_preference's own docstring.
-DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset()
+DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({"encoder", "sample_rate", "channels"})
 
 STATUS_COLORS = {
     STATUS_OK: Qt.GlobalColor.darkGreen,
@@ -209,10 +234,17 @@ class MainWindow(QMainWindow):
                 Separator(),
                 MenuAction("exit", "E&xit", self.close),
             ],
-            # Empty for now -- see module docstring. Still present so
-            # the menu shape matches every other Redactor project even
-            # before there's anything to put in it.
-            "Import": [],
+            # Brings external data IN -- previously empty (no
+            # external-metadata-source actions existed yet), now also
+            # home to bringing a different audio FORMAT in, converted
+            # to join this app's MP3-only library, which is the same
+            # "outside thing coming in" shape as a future cover-art/
+            # lyrics fetch would be.
+            "Import": [
+                MenuAction(
+                    "import_convert", "Import && &Convert to MP3...", self.import_and_convert_dialog
+                ),
+            ],
             "Operations": [
                 MenuAction(
                     "apply_bulk_edit", "&Apply to 0 selected file(s)", self.tag_panel.apply_bulk_edit
@@ -224,8 +256,16 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "fix_integrity", "&Fix Selected Files' Integrity Issues...", self.run_integrity_fix
                 ),
+                MenuAction(
+                    "deep_check",
+                    "&Deep Check Selected Files' Integrity (ffmpeg)...",
+                    self.run_deep_check,
+                ),
                 MenuAction("check_bpm", "Detect &BPM for Selected Files", self.run_bpm_check),
                 MenuAction("check_key", "Detect &Key for Selected Files", self.run_key_detection),
+                MenuAction(
+                    "measure_loudness", "Measure &Loudness for Selected Files", self.run_loudness_measurement
+                ),
                 Separator(),
                 MenuAction("undo", "&Undo", self.undo_last_action, shortcut="Ctrl+Z"),
             ],
@@ -256,8 +296,11 @@ class MainWindow(QMainWindow):
         self.action_apply_bulk_edit.setEnabled(False)
         self.action_check_integrity = actions["check_integrity"]
         self.action_fix_integrity = actions["fix_integrity"]
+        self.action_deep_check = actions["deep_check"]
         self.action_check_bpm = actions["check_bpm"]
         self.action_check_key = actions["check_key"]
+        self.action_measure_loudness = actions["measure_loudness"]
+        self.action_import_convert = actions["import_convert"]
         self.action_undo = actions["undo"]
         self.action_undo.setEnabled(False)
 
@@ -364,6 +407,126 @@ class MainWindow(QMainWindow):
         self.undo_manager.clear()
         self._update_undo_action()
         self._rebuild_table()
+
+    # -- import & convert --------------------------------------------------
+
+    def import_and_convert_dialog(self) -> None:
+        """Import menu > "Import & Convert to MP3..." -- brings a
+        non-MP3 audio file (FLAC/WAV/OGG/M4A/...) into the library by
+        converting it to .mp3 via ffmpeg's libmp3lame encoder
+        (core.mp3_converter), same directory, same base filename.
+
+        Deliberately ADDITIVE to self.files, unlike Load Files/Folder's
+        replace-wholesale semantics -- Import brings something new IN
+        alongside whatever's already loaded, it doesn't represent a
+        fresh "start over with this selection" the way Load does (see
+        this module's own docstring on the Import menu's intent)."""
+        extensions_filter = " ".join(f"*{ext}" for ext in sorted(IMPORTABLE_EXTENSIONS))
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Import & Convert to MP3",
+            resolve_start_directory(self.settings.last_directory),
+            f"Audio Files ({extensions_filter})",
+        )
+        if not paths:
+            return
+
+        bitrate_labels = [f"{kbps} kbps" for kbps in BITRATE_CHOICES_KBPS]
+        default_index = BITRATE_CHOICES_KBPS.index(DEFAULT_BITRATE_KBPS)
+        chosen_label, ok = QInputDialog.getItem(
+            self, "Convert to MP3", "Bitrate:", bitrate_labels, default_index, editable=False
+        )
+        if not ok:
+            return
+        bitrate_kbps = BITRATE_CHOICES_KBPS[bitrate_labels.index(chosen_label)]
+
+        conversions: list[tuple[Path, Path]] = []
+        skipped: list[Path] = []
+        for raw_path in paths:
+            src = Path(raw_path)
+            dest = src.with_suffix(".mp3")
+            if dest.exists():
+                # Refuse to silently clobber an existing file of that
+                # name -- same safety-first instinct as this app's
+                # other mutating actions (Fix Integrity's backup,
+                # discard-confirmation on Load).
+                skipped.append(dest)
+                continue
+            conversions.append((src, dest))
+
+        if skipped:
+            names = "\n".join(p.name for p in skipped)
+            proceed = QMessageBox.question(
+                self,
+                "Some Files Already Exist",
+                f"{len(skipped)} file(s) already have an .mp3 of the same name in that "
+                f"folder and will be skipped (not overwritten):\n\n{names}\n\n"
+                f"Convert the remaining {len(conversions)} file(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if proceed != QMessageBox.StandardButton.Yes:
+                return
+
+        if not conversions:
+            return
+
+        dialog = None
+        if len(conversions) >= 3:
+            dialog = QProgressDialog("Converting to MP3...", "Cancel", 0, len(conversions), self)
+            dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            dialog.setMinimumDuration(0)
+            dialog.show()
+
+        def on_progress(done: int, _total: int) -> None:
+            if dialog is not None:
+                dialog.setValue(done)
+                QApplication.processEvents()
+
+        def should_cancel() -> bool:
+            return dialog is not None and dialog.wasCanceled()
+
+        results = run_import_conversion(
+            conversions,
+            bitrate_kbps=bitrate_kbps,
+            progress=on_progress,
+            ffmpeg_path=self.settings.ffmpeg_path or None,
+            should_cancel=should_cancel,
+        )
+
+        if dialog is not None:
+            dialog.close()
+
+        self._remember_last_directory(paths[0])
+
+        succeeded_dests = [dest for _src, dest, status, _msg in results if status == STATUS_OK]
+        failed = [f"{src.name}: {msg}" for src, _dest, status, msg in results if status != STATUS_OK]
+
+        if succeeded_dests:
+            newly_loaded = load_files(succeeded_dests)
+            existing_by_path = {mp3.path.resolve(): i for i, mp3 in enumerate(self.files)}
+            for new_mp3 in newly_loaded:
+                resolved = new_mp3.path.resolve()
+                if resolved in existing_by_path:
+                    # A file already sitting at this exact dest path
+                    # (re-importing the same source, or the converted
+                    # name happens to match an already-loaded row) is
+                    # refreshed in place rather than duplicated.
+                    self.files[existing_by_path[resolved]] = new_mp3
+                else:
+                    self.files.append(new_mp3)
+            self._rebuild_table()
+
+        if failed:
+            QMessageBox.warning(
+                self,
+                "Some Files Failed to Convert",
+                f"{len(failed)} of {len(conversions)} file(s) could not be converted:\n\n"
+                f"{summarize_errors(failed)}",
+            )
+        elif succeeded_dests:
+            QMessageBox.information(
+                self, "Import Complete", f"Converted and loaded {len(succeeded_dests)} file(s)."
+            )
 
     # -- tag editing ------------------------------------------------------
 
@@ -687,9 +850,11 @@ class MainWindow(QMainWindow):
     def open_external_tools_dialog(self) -> None:
         dialog = ExternalToolsDialog(self.settings, self)
         if dialog.exec() == ExternalToolsDialog.DialogCode.Accepted:
-            mp3val_path, keyfinder_cli_path = dialog.result_paths()
+            mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path = dialog.result_paths()
             self.settings.mp3val_path = mp3val_path
             self.settings.keyfinder_cli_path = keyfinder_cli_path
+            self.settings.ffmpeg_path = ffmpeg_path
+            self.settings.ffprobe_path = ffprobe_path
             save_settings(self.settings)
 
     def run_integrity_check(self) -> None:
@@ -747,6 +912,21 @@ class MainWindow(QMainWindow):
             "Detecting key...",
             run_key_detection,
             keyfinder_cli_path=self.settings.keyfinder_cli_path or None,
+        )
+
+    def run_deep_check(self) -> None:
+        self._run_concurrent_check_with_progress(
+            "Deep-checking integrity (full decode)...",
+            run_deep_check,
+            ffmpeg_path=self.settings.ffmpeg_path or None,
+            ffprobe_path=self.settings.ffprobe_path or None,
+        )
+
+    def run_loudness_measurement(self) -> None:
+        self._run_concurrent_check_with_progress(
+            "Measuring loudness...",
+            run_loudness_measurement,
+            ffmpeg_path=self.settings.ffmpeg_path or None,
         )
 
     def _run_concurrent_check_with_progress(self, label: str, scan_fn, **extra_kwargs) -> None:
@@ -886,6 +1066,42 @@ class MainWindow(QMainWindow):
             key_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["key"], key_item)
 
+        deep_check_item = QTableWidgetItem(self._deep_check_display(mp3))
+        deep_check_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        deep_check_color = STATUS_COLORS.get(mp3.deep_check_status)
+        if deep_check_color is not None:
+            deep_check_item.setForeground(deep_check_color)
+        if mp3.deep_check_message:
+            deep_check_item.setToolTip(mp3.deep_check_message)
+        # No dirty highlight here -- unlike BPM/key/loudness, a deep
+        # check never writes anything to the file (see
+        # core.scan_service.run_deep_check()'s docstring), so it can
+        # never be part of what Save would act on.
+        self.table.setItem(row, self._col_index["deep_check"], deep_check_item)
+
+        loudness_item = QTableWidgetItem(mp3.display_loudness())
+        loudness_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        if mp3.loudness_gain_db is not None:
+            loudness_item.setToolTip(f"Track gain: {mp3.loudness_gain_db:+.2f} dB (ref. -18 LUFS)")
+        elif mp3.loudness_message:
+            loudness_item.setToolTip(mp3.loudness_message)
+        if mp3.dirty:
+            loudness_item.setBackground(DIRTY_COLOR)
+            loudness_item.setForeground(HIGHLIGHT_TEXT_COLOR)
+        self.table.setItem(row, self._col_index["loudness"], loudness_item)
+
+        encoder_item = QTableWidgetItem(mp3.audio_encoder)
+        encoder_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        self.table.setItem(row, self._col_index["encoder"], encoder_item)
+
+        sample_rate_item = QTableWidgetItem(mp3.display_sample_rate())
+        sample_rate_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        self.table.setItem(row, self._col_index["sample_rate"], sample_rate_item)
+
+        channels_item = QTableWidgetItem(str(mp3.channels) if mp3.channels is not None else "")
+        channels_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        self.table.setItem(row, self._col_index["channels"], channels_item)
+
     @staticmethod
     def _integrity_display(mp3: MP3File) -> str:
         if mp3.integrity_status == STATUS_TOOL_MISSING:
@@ -904,6 +1120,15 @@ class MainWindow(QMainWindow):
             return "TOOL MISSING"
         return mp3.key_value
 
+    @staticmethod
+    def _deep_check_display(mp3: MP3File) -> str:
+        # Same convention as _integrity_display() above -- shows the
+        # raw status word (including "UNCHECKED" for a file that's
+        # never been deep-checked), not blanked to an empty cell.
+        if mp3.deep_check_status == STATUS_TOOL_MISSING:
+            return "TOOL MISSING"
+        return mp3.deep_check_status
+
     # -- context menu -----------------------------------------------------
 
     def _show_context_menu(self, pos) -> None:
@@ -921,7 +1146,13 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "fix_integrity", "Fix Selected Files' Integrity Issues...", self.run_integrity_fix
                 ),
+                MenuAction(
+                    "deep_check", "Deep Check Selected Files' Integrity (ffmpeg)...", self.run_deep_check
+                ),
                 MenuAction("detect_bpm", "Detect BPM for Selected Files", self.run_bpm_check),
                 MenuAction("detect_key", "Detect Key for Selected Files", self.run_key_detection),
+                MenuAction(
+                    "measure_loudness", "Measure Loudness for Selected Files", self.run_loudness_measurement
+                ),
             ],
         )

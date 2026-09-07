@@ -6,19 +6,21 @@ mutagen is imported lazily/guarded the same way aubio is in
 bpm_detector.py: a missing dependency should degrade a specific
 capability, not crash file loading entirely.
 
-Also reads back TBPM/TKEY (see the bottom of load_tags() below) --
-these used to be write-only from this app's perspective: a detected
-BPM/key only ever showed up in the table for the rest of that session,
-because nothing read an *existing* TBPM/TKEY tag back on load. That
-made a successful save look like it silently failed -- reload the same
-file (or just restart the app) and the value you just wrote vanishes
-from the table again, even though it's genuinely sitting in the file's
-ID3 tag the whole time. See core/tag_writer.py's _write_bpm_frame()/
-_write_key_frame() for the write side of this same round trip.
+Also reads back TBPM/TKEY/TXXX:REPLAYGAIN_TRACK_GAIN (see the bottom
+of load_tags() below) -- these used to be write-only from this app's
+perspective: a detected BPM/key/loudness only ever showed up in the
+table for the rest of that session, because nothing read an *existing*
+tag back on load. That made a successful save look like it silently
+failed -- reload the same file (or just restart the app) and the value
+you just wrote vanishes from the table again, even though it's
+genuinely sitting in the file's ID3 tag the whole time. See
+core/tag_writer.py's _write_bpm_frame()/_write_key_frame()/
+_write_loudness_frame() for the write side of this same round trip.
 """
 
 from pathlib import Path
 
+from core.ffmpeg_probe import REPLAYGAIN_REFERENCE_LUFS
 from core.mp3_file import MP3File, STATUS_OK
 
 
@@ -78,6 +80,22 @@ def load_tags(mp3: MP3File) -> None:
             mp3.key_value = key_text
             mp3.key_status = STATUS_OK
             mp3.key_message = ""
+
+        gain_text = _first(tags, "TXXX:REPLAYGAIN_TRACK_GAIN")
+        if gain_text:
+            try:
+                # ReplayGain's own format: a signed number followed by
+                # " dB", e.g. "-3.20 dB" -- strip the suffix rather
+                # than assume nothing else could ever follow the
+                # number (some taggers add trailing whitespace/units
+                # variations).
+                gain_db = float(gain_text.replace("dB", "").strip())
+                mp3.loudness_gain_db = gain_db
+                mp3.loudness_lufs = REPLAYGAIN_REFERENCE_LUFS - gain_db
+                mp3.loudness_status = STATUS_OK
+                mp3.loudness_message = ""
+            except ValueError:
+                pass  # malformed tag from other software -- leave loudness unset rather than guess
 
     if audio.info is not None:
         mp3.duration_seconds = getattr(audio.info, "length", None)

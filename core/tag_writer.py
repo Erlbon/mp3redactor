@@ -3,11 +3,13 @@ Writes an MP3File's tag fields back to disk using mutagen -- the write
 counterpart to tag_reader.load_tags(). Uses the same raw ID3 frames
 tag_reader reads (TIT2/TPE1/TALB/TRCK/TDRC/TCON/TLAN), so a round-trip
 (load -> bulk-edit -> save -> load) reads back exactly what was written.
-Also writes TBPM and TKEY (see _write_bpm_frame()/_write_key_frame()
-below) -- a detected BPM/key (core.scan_service.run_bpm_check() /
-run_key_detection()) isn't a core.fields.FIELDS entry the bulk-edit
-panel exposes, it's a detection result, so neither goes through the
-generic string-field loop the way title/artist/etc. do.
+Also writes TBPM, TKEY, and TXXX:REPLAYGAIN_TRACK_GAIN (see
+_write_bpm_frame()/_write_key_frame()/_write_loudness_frame() below) --
+none of BPM/key/loudness is a core.fields.FIELDS entry the bulk-edit
+panel exposes, they're detection results (core.scan_service.
+run_bpm_check()/run_key_detection()/run_loudness_measurement()), so
+none of them goes through the generic string-field loop the way
+title/artist/etc. do.
 
 mutagen is imported lazily/guarded, same reasoning as tag_reader.py and
 bpm_detector.py: a missing dependency should degrade a specific
@@ -48,7 +50,7 @@ def save_tags(mp3: MP3File) -> bool:
     blank the field in the bulk-edit panel, tick it, Apply, Save.
     """
     try:
-        from mutagen.id3 import TALB, TBPM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TRCK
+        from mutagen.id3 import TALB, TBPM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TRCK, TXXX
         from mutagen.mp3 import MP3
     except ImportError:
         mp3.save_error = "mutagen is not installed"
@@ -82,6 +84,7 @@ def save_tags(mp3: MP3File) -> bool:
 
     _write_bpm_frame(tags, mp3, TBPM)
     _write_key_frame(tags, mp3, TKEY)
+    _write_loudness_frame(tags, mp3, TXXX)
 
     try:
         audio.save()
@@ -138,3 +141,27 @@ def _write_key_frame(tags, mp3: MP3File, tkey_cls) -> None:
         tags.setall("TKEY", [tkey_cls(encoding=3, text=mp3.key_value)])
     else:
         tags.delall("TKEY")
+
+
+def _write_loudness_frame(tags, mp3: MP3File, txxx_cls) -> None:
+    """mp3.loudness_gain_db is core.scan_service.run_loudness_measurement()'s
+    result -- written to the de facto standard TXXX:REPLAYGAIN_TRACK_GAIN
+    frame (there's no dedicated ID3v2 frame for ReplayGain; TXXX with
+    this exact description is what every ReplayGain-aware player and
+    tagger already looks for). TXXX's own key is "TXXX:<desc>", not a
+    plain 4-letter frame id, so this uses tags.delall()/tags.add()
+    rather than the setall(frame_id, ...) pattern the plain frames use.
+
+    Gated on loudness_status == STATUS_OK, same "only touch this once
+    we actually know something this session" reasoning as
+    _write_bpm_frame()/_write_key_frame(). loudness_gain_db can also be
+    None on an otherwise-successful measurement -- genuinely silent
+    audio has no meaningful gain to compute (see
+    core.ffmpeg_probe.measure_loudness()'s docstring) -- so that case
+    is also left alone rather than writing or clearing anything,
+    same as a None mp3.bpm.
+    """
+    if mp3.loudness_status != STATUS_OK or mp3.loudness_gain_db is None:
+        return
+    tags.delall("TXXX:REPLAYGAIN_TRACK_GAIN")
+    tags.add(txxx_cls(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=[f"{mp3.loudness_gain_db:+.2f} dB"]))

@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.ffmpeg_probe import FFMPEG_EXE_NAME, FFPROBE_EXE_NAME
 from core.mp3val_runner import MP3VAL_EXE_NAME
 from core.settings import Settings
 from core.tool_locator import find_tool
@@ -92,12 +93,12 @@ class ExternalToolsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Locate External Tools")
-        self.resize(560, 160)
+        self.resize(560, 220)
 
         header = QLabel(
-            "If mp3val or keyfinder-cli aren't on your system PATH, point "
-            "directly at their executables here. Leave blank to auto-detect "
-            "via PATH (the default)."
+            "If mp3val, keyfinder-cli, ffmpeg, or ffprobe aren't on your system "
+            "PATH, point directly at their executables here. Leave blank to "
+            "auto-detect via PATH (the default)."
         )
         header.setWordWrap(True)
 
@@ -107,6 +108,8 @@ class ExternalToolsDialog(QDialog):
         self._keyfinder_row = _ToolRow(
             grid, 1, "keyfinder-cli:", KEYFINDER_EXE_NAME, settings.keyfinder_cli_path
         )
+        self._ffmpeg_row = _ToolRow(grid, 2, "ffmpeg:", FFMPEG_EXE_NAME, settings.ffmpeg_path)
+        self._ffprobe_row = _ToolRow(grid, 3, "ffprobe:", FFPROBE_EXE_NAME, settings.ffprobe_path)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Done")
@@ -121,6 +124,11 @@ class ExternalToolsDialog(QDialog):
         button_row.addWidget(buttons)
         layout.addLayout(button_row)
 
-    def result_paths(self) -> tuple[str, str]:
-        """Returns (mp3val_path, keyfinder_cli_path)."""
-        return self._mp3val_row.current_path(), self._keyfinder_row.current_path()
+    def result_paths(self) -> tuple[str, str, str, str]:
+        """Returns (mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path)."""
+        return (
+            self._mp3val_row.current_path(),
+            self._keyfinder_row.current_path(),
+            self._ffmpeg_row.current_path(),
+            self._ffprobe_row.current_path(),
+        )

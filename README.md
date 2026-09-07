@@ -4,7 +4,7 @@ Windows GUI utility (Python/PyQt6) for bulk-checking and bulk-editing
 MP3 metadata. Sibling project to the EPUB and Video Redactors,
 mp3tag-inspired UX.
 
-## Status: v1 (integrity + BPM + key + basic tag editing)
+## Status: v1 (integrity + BPM + key + basic tag editing + ffmpeg-based deep check/loudness/import)
 
 Roadmap, in build order:
 
@@ -31,8 +31,31 @@ Roadmap, in build order:
    itself only carries the five everyday actions (Load Files, Load
    Folder, Save, Apply, Undo); Check Integrity/Detect BPM/Detect Key
    live in the Operations menu and right-click context menu only.
-5. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
-6. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
+5. **ffmpeg/ffprobe-based analysis** (`core/ffmpeg_probe.py`) -- three
+   more checks, same Operations-menu/right-click placement as the ones
+   above:
+   - **Deep Check Integrity** -- a real full decode (`ffmpeg -v error
+     -i ... -f null -`), catching corrupt/truncated audio data
+     mp3val's header-only scan can miss. Also grabs the actual
+     encoder, sample rate, and channel count via `ffprobe` while it's
+     at it (Encoder/Sample Rate/Channels columns, hidden by default --
+     Settings > Add/Remove Columns... or right-click a header to show
+     them).
+   - **Measure Loudness** -- single-pass `loudnorm` measurement,
+     written to the standard `TXXX:REPLAYGAIN_TRACK_GAIN` frame on
+     Save (relative to ReplayGain 2.0's -18 LUFS reference), so any
+     ReplayGain-aware player picks it up. Read back on load, same
+     round-trip BPM/key get.
+   - **Import & Convert to MP3** (Import menu) -- brings a non-MP3
+     file (FLAC/WAV/OGG/M4A/...) into the library by converting it via
+     `libmp3lame` (`core/mp3_converter.py`) at a chosen bitrate, then
+     loads the resulting .mp3 alongside whatever's already loaded
+     (additive, unlike Load Files/Folder's replace-wholesale).
+6. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
+7. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
+8. Duplicate detection via audio fingerprinting -- ffmpeg's bundled
+   `chromaprint` support could back this; not yet built, suggested as
+   a later addition
 
 ## Tooling decisions
 
@@ -46,17 +69,28 @@ Roadmap, in build order:
   requires MSVC Build Tools to build locally. `aubio-ledfx` is a fork
   that ships prebuilt Windows wheels; code still does `import aubio`
   unchanged.
-- **mp3val** and **keyfinder-cli** are shelled out to -- no Python
-  bindings exist for either. Both need to be either bundled in `tools/`
-  next to a frozen build, or present on PATH for dev-mode runs. See
-  `core/tool_locator.py`.
+- **mp3val**, **keyfinder-cli**, and **ffmpeg/ffprobe** are all shelled
+  out to -- no Python bindings exist for mp3val/keyfinder-cli, and
+  ffmpeg/ffprobe are used as real binaries (not a Python wrapper
+  package) so the exact same tool this project already bundles for
+  keyfinder-cli's dependency chain does double duty. All four need to
+  be either bundled in `tools/` next to a frozen build, or present on
+  PATH for dev-mode runs. See `core/tool_locator.py`.
+- Every `subprocess.run()` call against ffmpeg/ffprobe passes
+  `stdin=subprocess.DEVNULL` (`core/ffmpeg_probe.py`,
+  `core/mp3_converter.py`) -- unlike mp3val/keyfinder-cli, ffmpeg can
+  try to read stdin (interactive prompts, key-press handling) and hang
+  forever if it inherits an unreadable/absent stdin handle, which a
+  `--windowed` frozen app with no console can easily hand it. Found by
+  hitting exactly this hang during testing, not a defensive guess.
 
 ## Building the .exe (Windows only)
 
 PyInstaller can't cross-compile a Windows executable from another OS, so
 this has to be built on Windows itself.
 
-1. Get `mp3val.exe` and `keyfinder-cli.exe` (+ its 4 FFmpeg DLLs) into
+1. Get `mp3val.exe`, `keyfinder-cli.exe` (+ its 4 FFmpeg DLLs), and
+   `ffmpeg.exe`/`ffprobe.exe` (+ their own, larger DLL set) into
    `tools\`:
    - `mp3val.exe`: download the official Windows binary and place it at
      `tools\mp3val.exe`.
@@ -73,9 +107,24 @@ this has to be built on Windows itself.
      and extract all 5 files into `tools\`. That repo also
      has the build script, if `keyfinder-cli`/`libkeyfinder` ever need a
      newer version.
+   - `ffmpeg.exe`/`ffprobe.exe`: download gyan.dev's "full" shared
+     build -- `ffmpeg-release-full-shared.7z` from
+     [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/) --
+     and copy `bin\ffmpeg.exe`, `bin\ffprobe.exe`, and **all 7** DLLs
+     from that same `bin\` folder (`avcodec-*.dll`, `avdevice-*.dll`,
+     `avfilter-*.dll`, `avformat-*.dll`, `avutil-*.dll`,
+     `swresample-*.dll`, `swscale-*.dll`) into `tools\`. This is a
+     wider dependency set than keyfinder-cli.exe's narrower 4 --
+     `ffmpeg.exe` itself links against the full filter/device stack
+     (needed for the `loudnorm` filter Measure Loudness uses) even
+     though this app only ever asks it to do simple audio-in,
+     audio-out work. Unmodified, off-the-shelf download, no build step
+     or wrapper repo needed the way keyfinder-cli has -- see the
+     Licensing note below for why it's still GPLv3 even so.
    (The build still works without a `tools\` folder at all -- Check
-   Integrity/Detect Key will just report TOOL MISSING until the
-   relevant binary's added.)
+   Integrity/Detect Key/Deep Check/Measure Loudness/Import & Convert
+   will just report TOOL MISSING until the relevant binaries are
+   added.)
 2. Optionally bump the version first:
    ```
    python bump_version.py
@@ -93,27 +142,32 @@ this has to be built on Windows itself.
 Result: `dist\mp3redactor.exe` (+ `dist\tools\` if present) -- copy both
 anywhere and run, no Python install needed on the target machine.
 
-`mp3val.exe`/`keyfinder-cli.exe` are shelled-out binaries, not bundled
-data assets -- they're copied to sit next to the built exe rather than
-packed inside it, matching where `core/tool_locator.py` looks for them.
-If either isn't on PATH or bundled in `tools\`, point directly at it via
-Settings > Locate External Tools in the app itself.
+`mp3val.exe`/`keyfinder-cli.exe`/`ffmpeg.exe`/`ffprobe.exe` are
+shelled-out binaries, not bundled data assets -- they're copied to sit
+next to the built exe rather than packed inside it, matching where
+`core/tool_locator.py` looks for them. If any of them isn't on PATH or
+bundled in `tools\`, point directly at it via Settings > Locate
+External Tools in the app itself.
 
 ### Licensing note on the bundled tools
 
-`keyfinder-cli.exe` and its 4 FFmpeg DLLs are GPLv3 (`keyfinder-cli`,
-`libkeyfinder`, and this particular FFmpeg build are each GPLv3 --
-see `tools\NOTICE.txt` for the breakdown once they're in place).
-mp3redactor invokes `keyfinder-cli.exe` as a separate process (command-
-line args + stdout, never linked into mp3redactor.exe itself), so this
-doesn't affect mp3redactor's own licensing -- but if you distribute a
-build that bundles these binaries (e.g. as a zip alongside
-`dist\mp3redactor.exe`), GPLv3 requires the license text and source
-pointers to travel with them. `tools\LICENSE.txt` (the keyfinder-cli-windows release bundle's GPLv3
-text) and `tools\NOTICE.txt` exist for exactly that -- keep them in `tools\`
-alongside the binaries (`build_exe.bat`'s `xcopy` already carries the
-whole folder, text files included, into `dist\tools\`) rather than
-distributing the binaries on their own.
+`keyfinder-cli.exe`, `ffmpeg.exe`, `ffprobe.exe`, and every DLL in
+`tools\` are GPLv3 (`keyfinder-cli`, `libkeyfinder`, and this
+particular FFmpeg build are each GPLv3 -- see `tools\NOTICE.txt` for
+the per-binary breakdown once they're in place). mp3redactor invokes
+each of them as a separate process (command-line args + stdout/stderr,
+never linked into mp3redactor.exe itself), so this doesn't affect
+mp3redactor's own licensing -- but if you distribute a build that
+bundles these binaries (e.g. as a zip alongside `dist\mp3redactor.exe`,
+which is how this project's own GitHub Releases do it), GPLv3 requires
+the license text and source pointers to travel with them. `tools\LICENSE.txt`
+(the keyfinder-cli-windows release bundle's GPLv3 text -- the same
+license also covers the ffmpeg/ffprobe binaries, sourced directly from
+gyan.dev rather than through that repo) and `tools\NOTICE.txt` exist
+for exactly that -- keep them in `tools\` alongside the binaries
+(`build_exe.bat`'s `xcopy` already carries the whole folder, text
+files included, into `dist\tools\`) rather than distributing the
+binaries on their own.
 
 ## Setup (dev mode)
 
@@ -129,6 +183,10 @@ pytest
 ```
 
 Core logic (mp3val output parsing, BPM fallback math, file discovery)
-is unit-tested with mocked subprocess/aubio calls. The GUI layer, like
-the sibling projects, isn't visually testable in an automated way --
-only syntax-checked and code-reviewed.
+is unit-tested with mocked subprocess/aubio calls. The ffmpeg/ffprobe/
+mp3_converter tests additionally exercise the real bundled binaries
+when `tools\` has them (auto-skipped otherwise, e.g. a fresh clone
+that hasn't placed them there yet) -- a real process exercises the
+actual argument list and stdout/stderr parsing far more convincingly
+than a mock. The GUI layer, like the sibling projects, isn't visually
+testable in an automated way -- only syntax-checked and code-reviewed.

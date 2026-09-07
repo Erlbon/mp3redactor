@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-09-07#04
+
+- **Deep Check Integrity** (Operations menu/right-click) -- a real
+  full ffmpeg decode (`core/ffmpeg_probe.py`), catching corrupt/
+  truncated audio data mp3val's header-only scan can miss. Also grabs
+  the actual encoder, sample rate, and channel count via ffprobe in
+  the same pass (new Encoder/Sample Rate/Channels columns, hidden by
+  default -- Settings > Add/Remove Columns... or right-click a header
+  to show them). Read-only, like Check Integrity -- never marks a file
+  dirty.
+- **Measure Loudness** (Operations menu/right-click) -- single-pass
+  ffmpeg `loudnorm` measurement, new Loudness column (LUFS). A
+  successful measurement writes the ReplayGain-style track gain to
+  `TXXX:REPLAYGAIN_TRACK_GAIN` on Save (relative to ReplayGain 2.0's
+  -18 LUFS reference) -- any ReplayGain-aware player picks it up. Read
+  back on load, same round-trip BPM/key already got in #03. Genuinely
+  silent audio measures a real "-inf LUFS" result (not a failure) with
+  nothing finite to write, so it's correctly left un-dirtied rather
+  than writing a nonsense gain.
+- **Import & Convert to MP3** (Import menu, previously empty) --
+  brings a non-MP3 file (FLAC/WAV/OGG/M4A/AIFF/Opus/WMA/...) into the
+  library by converting it via ffmpeg's `libmp3lame` encoder
+  (`core/mp3_converter.py`) at a chosen bitrate (128/192/256/320
+  kbps), same directory, same base filename, then loads the result
+  alongside whatever's already loaded -- additive, unlike Load Files/
+  Folder's replace-wholesale semantics. Refuses to overwrite an
+  existing same-named .mp3 rather than silently clobbering it.
+- **Bundles ffmpeg.exe/ffprobe.exe** (`tools\`, GPLv3, see
+  `tools\NOTICE.txt`/README's licensing note) -- the same gyan.dev
+  "full" build already providing keyfinder-cli.exe's FFmpeg DLLs, now
+  also used directly by this app. Needs a wider DLL set than
+  keyfinder-cli.exe's narrower 4 (`avdevice`/`avfilter`/`swscale` in
+  addition) -- ffmpeg.exe itself links the full filter/device stack
+  even for pure audio-in/audio-out work.
+- **Fixed a real hang**: every ffmpeg/ffprobe `subprocess.run()` call
+  now passes `stdin=subprocess.DEVNULL`. Found by actually hitting it
+  during testing -- unlike mp3val/keyfinder-cli, ffmpeg can try to
+  read stdin (interactive prompts, key-press handling mid-run) and
+  block forever if it inherits an unreadable/absent stdin handle,
+  which a `--windowed` frozen app with no console can easily hand it.
+- New tests: `test_ffmpeg_probe.py`, `test_mp3_converter.py`,
+  `test_scan_service_deep_check.py`, `test_scan_service_loudness.py`,
+  `test_scan_service_import_conversion.py`, `test_tag_reader_loudness.py`,
+  plus loudness cases added to `test_tag_writer.py`. The ffmpeg/
+  ffprobe/converter tests run against the real bundled binaries (not
+  mocked), auto-skipping if `tools\` doesn't have them. Also verified
+  end-to-end with real `QAction.trigger()` calls against the real
+  binaries: Deep Check populating probe columns, Measure Loudness
+  showing the dirty highlight and surviving a simulated restart after
+  Save, and a full Import & Convert flow (mocked file-picker/bitrate
+  dialogs only) actually producing and loading a converted .mp3. Full
+  suite: 140/140.
+
 ## 2026-09-07#03
 
 - **Fixed: a saved BPM/key vanished from the table on reload, looking

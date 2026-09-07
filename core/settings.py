@@ -82,6 +82,8 @@ class Settings:
     # ffmpeg/MKVToolNix.
     mp3val_path: str = ""
     keyfinder_cli_path: str = ""
+    ffmpeg_path: str = ""
+    ffprobe_path: str = ""
 
     # Where Load Files/Load Folder's file dialogs start from -- set via
     # remember_last_directory() after a successful pick. Empty string
@@ -121,6 +123,8 @@ class Settings:
             "delete_backup_after_fix": str(self.delete_backup_after_fix),
             "mp3val_path": self.mp3val_path,
             "keyfinder_cli_path": self.keyfinder_cli_path,
+            "ffmpeg_path": self.ffmpeg_path,
+            "ffprobe_path": self.ffprobe_path,
             "last_directory": self.last_directory,
             "hidden_columns": _dump_list(self.hidden_columns),
             "column_order": _dump_list(self.column_order),
@@ -141,6 +145,8 @@ class Settings:
             delete_backup_after_fix=section.getboolean("delete_backup_after_fix", fallback=False),
             mp3val_path=section.get("mp3val_path", fallback=""),
             keyfinder_cli_path=section.get("keyfinder_cli_path", fallback=""),
+            ffmpeg_path=section.get("ffmpeg_path", fallback=""),
+            ffprobe_path=section.get("ffprobe_path", fallback=""),
             last_directory=section.get("last_directory", fallback=""),
             hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
             column_order=_load_str_list(section.get("column_order", fallback="")),
