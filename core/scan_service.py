@@ -145,6 +145,14 @@ def run_bpm_check(
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             mp3.bpm, mp3.bpm_status, mp3.bpm_message = future.result()
+            if mp3.bpm is not None:
+                # A detected BPM is new tag data, same as a manually
+                # typed field -- mark dirty so it actually reaches disk
+                # via the normal Save flow (core.tag_writer writes it to
+                # the TBPM frame). Previously this value only ever lived
+                # in memory/the table's BPM column and Save never wrote
+                # it -- see core/tag_writer.py's _FRAME_IDS.
+                mp3.dirty = True
             completed += 1
             if progress is not None:
                 progress(completed, total)

@@ -46,6 +46,33 @@ def test_run_bpm_check_reports_progress_sequentially_to_total(mock_detect):
     assert seen == [(1, 3), (2, 3), (3, 3)]
 
 
+@patch("core.scan_service.detect_bpm", side_effect=_fake_detect_bpm)
+def test_run_bpm_check_marks_files_dirty_so_save_writes_the_tag(mock_detect):
+    # A detected BPM used to only ever update the in-memory field/table
+    # column -- core.tag_writer.save_tags() had no way to know there was
+    # anything new to write, so Save silently never persisted it. dirty
+    # is the same signal a manual bulk-edit uses to reach Save.
+    files = [MP3File(path=Path("song.mp3"))]
+    assert files[0].dirty is False
+
+    run_bpm_check(files, max_workers=1)
+
+    assert files[0].dirty is True
+
+
+@patch(
+    "core.scan_service.detect_bpm",
+    side_effect=lambda path: (None, "TOOL MISSING", "aubio is not installed"),
+)
+def test_run_bpm_check_does_not_mark_dirty_when_detection_fails(mock_detect):
+    files = [MP3File(path=Path("song.mp3"))]
+
+    run_bpm_check(files, max_workers=1)
+
+    assert files[0].bpm is None
+    assert files[0].dirty is False
+
+
 def test_run_bpm_check_empty_list_is_a_noop():
     calls = []
     run_bpm_check([], progress=lambda d, t: calls.append((d, t)))

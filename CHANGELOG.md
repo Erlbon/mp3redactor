@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-07#01
+
+- **Fixed: a detected BPM was never actually written to the file.**
+  Detect BPM has always populated the table's BPM column and
+  `MP3File.bpm` in memory, but `core/tag_writer.py`'s frame map never
+  had a BPM entry, so Save silently had nothing to write for it --
+  BPM never round-tripped to disk no matter how many times you hit
+  Save. Detect BPM now marks the file dirty (same signal a manual
+  bulk-edit uses), and Save writes it to the standard ID3v2 `TBPM`
+  frame, rounded to the nearest whole beat per the frame's own spec
+  (e.g. aubio's `127.6` -> `"128"`). A file's existing `TBPM` tag (from
+  other software) is left alone until this app's own Detect BPM
+  actually runs on it -- this app has never read `TBPM` on load, so
+  there'd be no way to tell "never detected" apart from "detected as
+  empty" otherwise.
+- New tests: `run_bpm_check()` marking (and not marking) dirty,
+  `save_tags()` writing/rounding `TBPM` and leaving a pre-existing one
+  untouched -- verified via a real ID3 write/independent-mutagen-read
+  round trip, plus an end-to-end real-`QAction`-triggered Detect BPM ->
+  Save scenario confirming the row's dirty highlight and the actual
+  on-disk frame.
+
 ## 2026-09-06#07
 
 - **New "Path" column**, alongside Filename -- shows each file's full
