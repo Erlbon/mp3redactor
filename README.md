@@ -99,6 +99,22 @@ packed inside it, matching where `core/tool_locator.py` looks for them.
 If either isn't on PATH or bundled in `tools\`, point directly at it via
 Settings > Locate External Tools in the app itself.
 
+### Licensing note on the bundled tools
+
+`keyfinder-cli.exe` and its 4 FFmpeg DLLs are GPLv3 (`keyfinder-cli`,
+`libkeyfinder`, and this particular FFmpeg build are each GPLv3 --
+see `tools\NOTICE.txt` for the breakdown once they're in place).
+mp3redactor invokes `keyfinder-cli.exe` as a separate process (command-
+line args + stdout, never linked into mp3redactor.exe itself), so this
+doesn't affect mp3redactor's own licensing -- but if you distribute a
+build that bundles these binaries (e.g. as a zip alongside
+`dist\mp3redactor.exe`), GPLv3 requires the license text and source
+pointers to travel with them. `tools\LICENSE.txt` (the keyfinder-cli-windows release bundle's GPLv3
+text) and `tools\NOTICE.txt` exist for exactly that -- keep them in `tools\`
+alongside the binaries (`build_exe.bat`'s `xcopy` already carries the
+whole folder, text files included, into `dist\tools\`) rather than
+distributing the binaries on their own.
+
 ## Setup (dev mode)
 
 ```
