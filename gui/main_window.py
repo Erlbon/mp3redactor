@@ -200,7 +200,12 @@ class MainWindow(QMainWindow):
                 MenuAction("load_files", "&Load Files...", self.load_files_dialog),
                 MenuAction("load_folder", "Load &Folder...", self.load_folder_dialog),
                 Separator(),
-                MenuAction("save", "&Save Tags", self.save_changed, shortcut="Ctrl+S"),
+                # "Save File(s)", not "Save Tags" -- this writes to the
+                # actual file on disk (mutagen open+modify+re-save), not
+                # some separate sidecar/tag store, and user feedback was
+                # that "Tags" read as a smaller, less concrete action
+                # than what it actually does.
+                MenuAction("save", "&Save File(s)", self.save_changed, shortcut="Ctrl+S"),
                 Separator(),
                 MenuAction("exit", "E&xit", self.close),
             ],
@@ -858,6 +863,15 @@ class MainWindow(QMainWindow):
         bpm_item.setData(Qt.ItemDataRole.UserRole, mp3)
         if mp3.bpm_message:
             bpm_item.setToolTip(mp3.bpm_message)
+        # A detected/loaded BPM that hasn't been saved yet is exactly
+        # as "dirty" as a manually typed field -- the amber tint below
+        # was previously only applied to the FIELDS loop above, so a
+        # BPM/key-only change (no text field touched) showed no visual
+        # cue at all that Save had anything to do, easy to mistake for
+        # "this was already saved" -- see mp3.dirty's docstring.
+        if mp3.dirty:
+            bpm_item.setBackground(DIRTY_COLOR)
+            bpm_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["bpm"], bpm_item)
 
         key_item = QTableWidgetItem(self._key_display(mp3))
@@ -867,6 +881,9 @@ class MainWindow(QMainWindow):
             key_item.setForeground(key_color)
         if mp3.key_message:
             key_item.setToolTip(mp3.key_message)
+        if mp3.dirty:
+            key_item.setBackground(DIRTY_COLOR)
+            key_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["key"], key_item)
 
     @staticmethod

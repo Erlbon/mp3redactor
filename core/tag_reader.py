@@ -5,11 +5,21 @@ library used throughout this project -- no eyeD3, per project decision).
 mutagen is imported lazily/guarded the same way aubio is in
 bpm_detector.py: a missing dependency should degrade a specific
 capability, not crash file loading entirely.
+
+Also reads back TBPM/TKEY (see the bottom of load_tags() below) --
+these used to be write-only from this app's perspective: a detected
+BPM/key only ever showed up in the table for the rest of that session,
+because nothing read an *existing* TBPM/TKEY tag back on load. That
+made a successful save look like it silently failed -- reload the same
+file (or just restart the app) and the value you just wrote vanishes
+from the table again, even though it's genuinely sitting in the file's
+ID3 tag the whole time. See core/tag_writer.py's _write_bpm_frame()/
+_write_key_frame() for the write side of this same round trip.
 """
 
 from pathlib import Path
 
-from core.mp3_file import MP3File
+from core.mp3_file import MP3File, STATUS_OK
 
 
 def load_tags(mp3: MP3File) -> None:
@@ -50,6 +60,24 @@ def load_tags(mp3: MP3File) -> None:
         mp3.genre = _first(tags, "TCON")
         mp3.language = _first(tags, "TLAN")
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
+
+        # Deliberately does NOT set mp3.dirty here -- reading back a
+        # tag that's already on disk isn't an unsaved change, same as
+        # title/artist/etc. above never marking dirty on load either.
+        bpm_text = _first(tags, "TBPM")
+        if bpm_text:
+            try:
+                mp3.bpm = float(bpm_text)
+                mp3.bpm_status = STATUS_OK
+                mp3.bpm_message = ""
+            except ValueError:
+                pass  # malformed TBPM from other software -- leave bpm unset rather than guess
+
+        key_text = _first(tags, "TKEY")
+        if key_text:
+            mp3.key_value = key_text
+            mp3.key_status = STATUS_OK
+            mp3.key_message = ""
 
     if audio.info is not None:
         mp3.duration_seconds = getattr(audio.info, "length", None)

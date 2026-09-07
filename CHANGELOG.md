@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-09-07#03
+
+- **Fixed: a saved BPM/key vanished from the table on reload, looking
+  like the save silently failed.** `core/tag_reader.py`'s `load_tags()`
+  never read an existing `TBPM`/`TKEY` frame back into `mp3.bpm`/
+  `key_value` -- #01/#02 fixed *writing* those tags, but nothing read
+  them back on the next load (a fresh Load Files/Folder, or just
+  restarting the app), so a value that genuinely made it to disk still
+  disappeared from the BPM/Key columns the moment the file was
+  reloaded. It now reads both back (without marking the file dirty --
+  reading back what's already on disk isn't an unsaved change).
+- **Fixed: a BPM/key-only change showed no visual "unsaved" cue at
+  all.** The amber dirty highlight was only ever applied to the
+  Title/Artist/Album/etc. columns, never to BPM/Key -- so running
+  Detect BPM/Detect Key without touching any text field left the row
+  looking completely unchanged even though it genuinely needed saving,
+  easy to read as "it thinks this is already applied." The BPM and Key
+  cells now get the same amber tint as every other dirty field.
+- **Save Tags -> Save File(s)** -- renamed per feedback that "Tags"
+  undersold what the button (and Ctrl+S) actually does: open, modify,
+  and re-save the real file on disk, not some separate tag store.
+- New tests (`test_tag_reader_bpm_key.py`): reading an existing TBPM/
+  TKEY frame back into `mp3.bpm`/`key_value` without marking dirty,
+  ignoring a malformed TBPM rather than crashing the load, and a full
+  detect(-or-set) -> save -> reload-in-a-brand-new-MP3File round trip
+  for both fields. Also verified end-to-end with a real
+  `QAction.trigger()` scenario across two separate `MainWindow`
+  instances (simulating an actual app restart, not just reused
+  in-memory state): Detect BPM, confirmed the BPM cell itself shows
+  the dirty highlight, Save, confirmed it clears, then a fresh
+  `MainWindow` + fresh `load_files()` call on the same path confirmed
+  the BPM value and status survive the "restart" intact. Full suite:
+  97/97, real fixture untouched throughout.
+- Also independently double-checked #01/#02's actual fix reached the
+  shipped exe: extracted and disassembled `core.scan_service`'s
+  compiled bytecode directly out of the built `mp3redactor.exe`'s PYZ
+  archive and confirmed the dirty-marking logic is genuinely there,
+  then ran real (unmocked) aubio detection against a synthesized
+  120 BPM click track through the full detect -> dirty -> save ->
+  on-disk-TBPM pipeline -- it worked correctly. The write-side fix was
+  never actually broken; this release's fixes are the read-back and
+  visual-feedback gaps that made a working save look like it wasn't
+  happening.
+
 ## 2026-09-07#02
 
 - **Fixed: a detected key was never actually written to the file** --
