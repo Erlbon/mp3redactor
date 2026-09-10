@@ -105,6 +105,7 @@ from redactor_common.core.table_settings import is_column_visible, merge_column_
 from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
+from redactor_common.gui.auto_numbering_dialog import AutoNumberingDialog
 from redactor_common.gui.collapsible_splitter import SplitterPaneCollapser
 from redactor_common.gui.colors import DIRTY_COLOR, HIGHLIGHT_TEXT_COLOR, TABLE_SELECTION_STYLESHEET
 from redactor_common.gui.column_menu import show_column_header_context_menu
@@ -308,6 +309,8 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "measure_loudness", "Measure &Loudness for Selected Files", self.run_loudness_measurement
                 ),
+                Separator(),
+                MenuAction("auto_numbering", "Auto-&Numbering...", self.open_auto_numbering_dialog),
                 Separator(),
                 MenuAction("undo", "&Undo", self.undo_last_action, shortcut="Ctrl+Z"),
             ],
@@ -668,6 +671,41 @@ class MainWindow(QMainWindow):
         self._push_undo("Parse Filename", targets)
         for index, fields in changes.items():
             targets[index].apply_tags(fields)
+        self._rebuild_table()
+
+    def open_auto_numbering_dialog(self) -> None:
+        # Explicit selection required, same "no silent all-files
+        # fallback" reasoning as _require_targets's own docstring --
+        # doubly true here since this assigns a DIFFERENT value per
+        # row based on table order.
+        targets = self._require_targets("number")
+        if not targets:
+            return
+
+        # Only "track" gets numeric (direct-write) treatment -- the
+        # rest are prefixed onto their existing value, same
+        # conservative default video's own NUMERIC_FIELDS used (year/
+        # genre/etc aren't naturally "a number" the way a track
+        # position is).
+        fields = [(key, label, key == "track") for key, label, _multiline in FIELDS]
+        dialog = AutoNumberingDialog(
+            targets, fields,
+            get_value=lambda mp3, key: getattr(mp3, key, "") or "",
+            get_display_name=lambda mp3: mp3.filename,
+            item_noun="file",
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        changes = dialog.accepted_changes()  # index into targets -> new value
+        if not changes:
+            return
+
+        field_key = dialog.result_field_key()
+        self._push_undo("Auto-Numbering", targets)
+        for index, new_value in changes.items():
+            targets[index].apply_tags({field_key: new_value})
         self._rebuild_table()
 
     def _on_cell_double_clicked(self, row: int, col: int) -> None:
