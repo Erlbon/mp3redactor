@@ -101,6 +101,7 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
+from redactor_common.core.rename_pattern import rename_file_on_disk
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
 from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
@@ -217,6 +218,7 @@ class MainWindow(QMainWindow):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemSelectionChanged.connect(self._on_table_selection_changed)
+        self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
         self._setup_column_persistence()
         self.zoom = TableZoomController(self.table, parent=self)
 
@@ -666,6 +668,42 @@ class MainWindow(QMainWindow):
         self._push_undo("Parse Filename", targets)
         for index, fields in changes.items():
             targets[index].apply_tags(fields)
+        self._rebuild_table()
+
+    def _on_cell_double_clicked(self, row: int, col: int) -> None:
+        if col != self._col_index["filename"]:
+            return
+        item = self.table.item(row, col)
+        mp3 = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if mp3 is not None and not mp3.load_error:
+            self.rename_single_file(mp3)
+
+    def rename_single_file(self, mp3: MP3File) -> None:
+        """Quick, direct rename of a single file on disk -- for fixing a
+        typo or small mistake in the filename without going through the
+        pattern-based Rename/Export tool (open_rename_dialog()). Acts on
+        disk immediately, not staged until Save -- same as that tool's
+        own "rename in place" mode -- and, like that, isn't pushed onto
+        self.undo_manager, which only ever covers in-memory tag edits,
+        never physical file operations. Triggered by double-clicking a
+        Filename cell, or via the table's right-click menu."""
+        current_stem = mp3.path.stem
+        new_stem, ok = QInputDialog.getText(
+            self, "Rename File",
+            f'New filename for "{mp3.filename}" (the file extension is kept automatically):',
+            text=current_stem,
+        )
+        if not ok:
+            return
+        new_stem = new_stem.strip()
+        if new_stem == current_stem:
+            return
+        try:
+            new_path = rename_file_on_disk(str(mp3.path), new_stem)
+        except (ValueError, FileExistsError, OSError) as exc:
+            QMessageBox.warning(self, "Could Not Rename", str(exc))
+            return
+        mp3.path = Path(new_path)
         self._rebuild_table()
 
     # -- tag editing ------------------------------------------------------
@@ -1274,11 +1312,20 @@ class MainWindow(QMainWindow):
     def _show_context_menu(self, pos) -> None:
         # Selection-fix, and the generic Open Containing Folder/Copy Path
         # actions, are handled by the shared helper -- see its docstring.
-        show_table_context_menu(
-            self, self.table, pos,
-            get_selected_items=self._selected_files,
-            get_path=lambda mp3: mp3.path,
-            extra_items=lambda files: [
+        def extra_items(files: list[MP3File]) -> list:
+            items: list = []
+            if len(files) == 1 and not files[0].load_error:
+                # Only offered for a single file -- renaming several
+                # files to the same name doesn't make sense. Distinct
+                # from "Rename / Export Files..." (File menu): that's
+                # the pattern-based batch tool; this is the quick,
+                # direct fix for one typo at a time -- also reachable
+                # by double-clicking the Filename cell (see
+                # _on_cell_double_clicked()).
+                items.append(MenuAction(
+                    "rename_file", "Rename File...", lambda: self.rename_single_file(files[0])
+                ))
+            items.extend([
                 Separator(),
                 MenuAction(
                     "check_integrity", "Check Selected Files' Integrity", self.run_integrity_check
@@ -1294,5 +1341,12 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "measure_loudness", "Measure Loudness for Selected Files", self.run_loudness_measurement
                 ),
-            ],
+            ])
+            return items
+
+        show_table_context_menu(
+            self, self.table, pos,
+            get_selected_items=self._selected_files,
+            get_path=lambda mp3: mp3.path,
+            extra_items=extra_items,
         )

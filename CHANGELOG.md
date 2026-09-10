@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-09-10#02
+
+Quick single-file rename: double-click a Filename cell (or right-click
+> Rename File... for a single selected file) to fix a typo in one
+filename directly, without going through the pattern-based Rename/
+Export tool added in the previous release. epubredactor already had
+this (its own local, pre-`redactor_common` copy); mp3redactor, like
+cbzredactor and videoredactor, never picked it up. Built entirely on
+`redactor_common.core.rename_pattern.rename_file_on_disk()`, which was
+already generic (works on a plain path string, no project-specific
+book/file wrapper needed) -- no new core module required here.
+
+- Prompts for a new filename (extension kept automatically, current
+  name pre-filled), renames on disk immediately -- a physical file
+  operation, not staged until Save, and (like Rename/Export and Fix
+  Integrity) never pushed onto the in-memory undo stack.
+- Refuses silently-invalid names (illegal characters, reserved Windows
+  device names, trailing dot/space) and an already-existing filename
+  in the same folder, both with a clear message rather than a raw
+  exception or a silent overwrite.
+- Right-click menu only offers it for exactly one selected file
+  (renaming several files to the same name doesn't make sense) and
+  never for a file that failed to load.
+
+Verified end-to-end against a real on-disk file (not mocked): a real
+double-click dispatch through a real `QInputDialog`, a real `os.rename`,
+correct no-op when double-clicking any other column, a cancelled dialog
+leaving the file untouched, and a collision against an existing
+filename producing a warning instead of a crash or a clobber. No new
+permanent test file -- this project's GUI layer, like its siblings',
+has no automated test coverage (see README's Tests section); the
+underlying `rename_file_on_disk()`/`validate_filename_stem()` logic is
+already covered by `redactor_common`'s own test suite.
+
 ## 2026-09-10#01
 
 Rename/Export by Metadata Pattern, and its reverse, Parse Filename ->
