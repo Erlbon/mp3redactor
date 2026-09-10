@@ -215,3 +215,11 @@ that hasn't placed them there yet) -- a real process exercises the
 actual argument list and stdout/stderr parsing far more convincingly
 than a mock. The GUI layer, like the sibling projects, isn't visually
 testable in an automated way -- only syntax-checked and code-reviewed.
+
+## License
+
+Licensed under the [GNU General Public License v3.0 or later](LICENSE).
+The GUI is built on PyQt6, and BPM detection uses `aubio` in-process --
+both are GPL v3 (PyQt6 with a paid commercial alternative from
+Riverbank; aubio is GPL-only) -- this project ships under
+GPL-compatible terms to match.
