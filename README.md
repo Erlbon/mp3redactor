@@ -71,9 +71,11 @@ Roadmap, in build order:
      `pattern_history`) and default to `%track% - %artist% - %title%`.
    - **Quick single-file rename**: double-click a Filename cell, or
      right-click a single selected file > Rename File..., to fix a
-     typo directly without the pattern-based tool above -- built on
-     `redactor_common.core.rename_pattern.rename_file_on_disk()`,
-     already generic enough to need no project-specific wrapper.
+     typo directly without the pattern-based tool above -- the
+     prompt/validate/rename/error-report flow itself is
+     `redactor_common.gui.rename_single_file.rename_single_file()`
+     (promoted there from this project's own first version), built on
+     `core.rename_pattern.rename_file_on_disk()`.
 7. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
 8. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
 9. Duplicate detection via audio fingerprinting -- ffmpeg's bundled

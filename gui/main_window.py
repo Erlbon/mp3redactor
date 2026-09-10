@@ -101,7 +101,6 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
-from redactor_common.core.rename_pattern import rename_file_on_disk
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
 from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
@@ -117,6 +116,7 @@ from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import run_with_progress
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
+from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
 from redactor_common.gui.zoom_toolbar import TableZoomController
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
@@ -686,25 +686,17 @@ class MainWindow(QMainWindow):
         own "rename in place" mode -- and, like that, isn't pushed onto
         self.undo_manager, which only ever covers in-memory tag edits,
         never physical file operations. Triggered by double-clicking a
-        Filename cell, or via the table's right-click menu."""
-        current_stem = mp3.path.stem
-        new_stem, ok = QInputDialog.getText(
-            self, "Rename File",
-            f'New filename for "{mp3.filename}" (the file extension is kept automatically):',
-            text=current_stem,
-        )
-        if not ok:
-            return
-        new_stem = new_stem.strip()
-        if new_stem == current_stem:
-            return
-        try:
-            new_path = rename_file_on_disk(str(mp3.path), new_stem)
-        except (ValueError, FileExistsError, OSError) as exc:
-            QMessageBox.warning(self, "Could Not Rename", str(exc))
-            return
-        mp3.path = Path(new_path)
-        self._rebuild_table()
+        Filename cell, or via the table's right-click menu.
+
+        The prompt/validate/rename/error-report flow itself lives in
+        redactor_common.gui.rename_single_file (promoted from an
+        earlier, near-identical version of this exact method, imported
+        above as prompt_rename_single_file to avoid shadowing this
+        method's own name) -- this is now just the mp3-specific wiring:
+        where the path lives on MP3File, and what to do once it's
+        changed."""
+        if prompt_rename_single_file(self, str(mp3.path), lambda p: setattr(mp3, "path", Path(p))):
+            self._rebuild_table()
 
     # -- tag editing ------------------------------------------------------
 

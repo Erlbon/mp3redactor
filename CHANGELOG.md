@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-10#03
+
+The quick single-file rename added in the previous release is now
+built on a shared `redactor_common` function instead of a copy local
+to this project -- per explicit request ("that was my intention") once
+it became clear the feature would otherwise need writing a third and
+fourth time for cbzredactor/videoredactor too.
+
+- Bumps the `redactor_common` pin to `2026-09-10-01`, which adds
+  `gui/rename_single_file.py` (`rename_single_file()`) -- generalized
+  off this project's own `2026-09-10#02` method, the same "prompt via
+  QInputDialog, delegate to `core.rename_pattern.rename_file_on_disk()`,
+  report a failure via QMessageBox" flow, just parameterized via a
+  `set_path` callback instead of an `MP3File` directly.
+- `gui/main_window.py`'s `rename_single_file()` method is now a thin
+  wrapper (imported as `prompt_rename_single_file` to avoid shadowing
+  its own method name) -- same double-click/context-menu triggers,
+  same "physical file operation, not pushed onto the undo stack"
+  behavior, no user-visible change.
+
+Full suite: 138 passed, 9 skipped. Re-verified end-to-end against a
+real on-disk file through the new code path -- same checks as
+`2026-09-10#02`'s release notes, all still passing after the swap.
+
 ## 2026-09-10#02
 
 Quick single-file rename: double-click a Filename cell (or right-click
