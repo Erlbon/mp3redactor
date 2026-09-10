@@ -106,6 +106,7 @@ from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
 from redactor_common.gui.auto_numbering_dialog import AutoNumberingDialog
+from redactor_common.gui.quick_series_number import prompt_and_generate_series_numbers
 from redactor_common.gui.collapsible_splitter import SplitterPaneCollapser
 from redactor_common.gui.colors import DIRTY_COLOR, HIGHLIGHT_TEXT_COLOR, TABLE_SELECTION_STYLESHEET
 from redactor_common.gui.column_menu import show_column_header_context_menu
@@ -706,6 +707,23 @@ class MainWindow(QMainWindow):
         self._push_undo("Auto-Numbering", targets)
         for index, new_value in changes.items():
             targets[index].apply_tags({field_key: new_value})
+        self._rebuild_table()
+
+    def _quick_number_tracks(self, files: list[MP3File]) -> None:
+        """The table right-click's quick version of Auto-Numbering:
+        just prompts for a starting Track # (no field picker, no step,
+        no preview) and numbers the given files +1 per row from there,
+        in their current table order. For anything beyond the plain
+        "start here, count up by one" case on Track specifically --
+        a different field, a different step, or a look at what's
+        changing before it does -- use Operations -> Auto-Numbering...
+        instead."""
+        values = prompt_and_generate_series_numbers(self, len(files), field_label="Starting Track #")
+        if values is None:
+            return
+        self._push_undo("Number Tracks", files)
+        for mp3, new_value in zip(files, values):
+            mp3.apply_tags({"track": new_value})
         self._rebuild_table()
 
     def _on_cell_double_clicked(self, row: int, col: int) -> None:
@@ -1355,6 +1373,9 @@ class MainWindow(QMainWindow):
                 items.append(MenuAction(
                     "rename_file", "Rename File...", lambda: self.rename_single_file(files[0])
                 ))
+            items.append(MenuAction(
+                "number_tracks", "Number Tracks...", lambda: self._quick_number_tracks(files)
+            ))
             items.extend([
                 Separator(),
                 MenuAction(
