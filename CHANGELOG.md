@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-10#04 -- smaller download
+
+No functional changes. The built .exe is now noticeably smaller
+(~62.8MB -> ~50.6MB, about 20%), for two reasons:
+
+- UPX compression -- already configured in the PyInstaller spec
+  (`upx=True`) but never actually installed in the build environment,
+  so it had silently done nothing on every release so far -- is now
+  genuinely wired into `build_exe.bat`. Same fix applied across the
+  whole Redactor family.
+- BPM detection's `aubio` dependency pulls in `numpy`, whose own
+  `__init__.py` unconditionally imports `numpy.linalg` (confirmed:
+  blocking it makes even a plain `import numpy` fail), which is what
+  actually requires numpy's ~20MB vendored OpenBLAS DLL -- not
+  anything this app calls. `numpy.fft`/`polynomial`/`random`/`ma`/
+  `testing` are NOT required the same way and aren't used here either,
+  so they're now excluded from the build (a modest ~2MB on their own,
+  confirmed safe by the same test).
+
 ## 2026-09-10#03
 
 The quick single-file rename added in the previous release is now

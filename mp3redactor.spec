@@ -37,7 +37,16 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # aubio (BPM detection) pulls in numpy, whose own __init__.py
+    # unconditionally imports numpy.linalg (confirmed by blocking it
+    # in sys.modules -- `import numpy` itself then fails), which is
+    # what actually requires numpy's ~20MB vendored OpenBLAS DLL --
+    # not anything this app's own code calls. These five submodules
+    # are NOT required by numpy.__init__ (confirmed the same way) and
+    # this app never touches them either, so excluding them is a safe,
+    # if modest (~2MB), trim. The big win is UPX actually compressing
+    # that OpenBLAS DLL -- see build_exe.bat.
+    excludes=["numpy.fft", "numpy.polynomial", "numpy.random", "numpy.ma", "numpy.testing"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
