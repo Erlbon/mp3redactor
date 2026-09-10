@@ -35,6 +35,25 @@ from core.app_paths import base_dir
 SETTINGS_FILENAME = "mp3redactor_settings.ini"
 SECTION = "general"
 
+# Rename/Export <-> Parse Filename pattern history -- shared between both
+# dialogs (see gui/main_window.py's open_rename_dialog()/
+# open_parse_filename_dialog()), same idea as cbzredactor's QSettings-based
+# equivalent, just persisted through this project's plain-configparser
+# Settings object instead.
+MAX_PATTERN_HISTORY = 15
+
+
+def dedupe_and_trim_pattern_history(history: list[str], new_pattern: str) -> list[str]:
+    """Pure logic: move new_pattern to the front of history, deduped,
+    trimmed to MAX_PATTERN_HISTORY. Split out so it's testable without a
+    live Settings/ini round-trip."""
+    new_pattern = new_pattern.strip()
+    if not new_pattern:
+        return history
+    result = [p for p in history if p != new_pattern]
+    result.insert(0, new_pattern)
+    return result[:MAX_PATTERN_HISTORY]
+
 
 def _dump_list(value: list) -> str:
     return json.dumps(value)
@@ -117,8 +136,19 @@ class Settings:
     custom_languages: list[tuple[str, str]] = field(default_factory=list)
     hidden_default_languages: list[str] = field(default_factory=list)
 
+    # Rename/Export by Pattern and Parse Filename -> Metadata (both
+    # gui/main_window.py, backed by redactor_common's generic dialogs)
+    # share this history -- most-recently-used pattern first. See
+    # dedupe_and_trim_pattern_history() above.
+    pattern_history: list[str] = field(default_factory=list)
+
     def to_config(self) -> configparser.ConfigParser:
-        config = configparser.ConfigParser()
+        # interpolation=None -- pattern_history stores literal "%field%"
+        # tokens (see core.rename_pattern's docstring); configparser's
+        # default BasicInterpolation treats a bare "%" as the start of
+        # an interpolation reference and raises ValueError on write.
+        # Nothing else stored here ever used interpolation either way.
+        config = configparser.ConfigParser(interpolation=None)
         config[SECTION] = {
             "delete_backup_after_fix": str(self.delete_backup_after_fix),
             "mp3val_path": self.mp3val_path,
@@ -133,6 +163,7 @@ class Settings:
             "hidden_default_genres": _dump_list(self.hidden_default_genres),
             "custom_languages": _dump_list([list(pair) for pair in self.custom_languages]),
             "hidden_default_languages": _dump_list(self.hidden_default_languages),
+            "pattern_history": _dump_list(self.pattern_history),
         }
         return config
 
@@ -155,6 +186,7 @@ class Settings:
             hidden_default_genres=_load_str_list(section.get("hidden_default_genres", fallback="")),
             custom_languages=_load_pair_list(section.get("custom_languages", fallback="")),
             hidden_default_languages=_load_str_list(section.get("hidden_default_languages", fallback="")),
+            pattern_history=_load_str_list(section.get("pattern_history", fallback="")),
         )
 
 
@@ -166,7 +198,7 @@ def _settings_path(target_dir: Path | None = None) -> Path:
 def load_settings(target_dir: Path | None = None) -> Settings:
     """Returns defaults (all off) if no settings file exists yet, or it can't be read/parsed."""
     path = _settings_path(target_dir)
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)  # see to_config()'s comment
     try:
         if path.exists():
             config.read(path, encoding="utf-8")

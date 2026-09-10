@@ -25,15 +25,20 @@ reimplementing these independently the way this project originally
 did.
 
 Menu shape is File / Import / Operations / Settings / Help, matching
-every other Redactor project. Import is present but genuinely empty
-for now -- v1 has no external-metadata-source actions yet; it'll gain
-entries once cover-art and lyrics fetching (steps 4-5 of the roadmap)
-land, exactly the point those were always going to be Import actions
-rather than Operations (they bring external data IN, rather than
-analyzing the file's own content the way integrity/BPM/key do).
+every other Redactor project. Import brings external things IN --
+currently Parse Filename -> Metadata (extracting fields already
+implicit in a loaded file's own name) and Import & Convert to MP3;
+it'll also gain cover-art and lyrics fetching once those roadmap items
+land. File carries the reverse direction, Rename/Export by Metadata
+Pattern, alongside Load/Save, same grouping as every sibling project.
+Both pattern-based dialogs (redactor_common.gui.rename_pattern_dialog /
+parse_filename_dialog) were already generic, ready-to-consume modules
+there -- this project just hadn't wired them in yet, unlike epub/cbz.
 """
 
 import dataclasses
+import os
+import shutil
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -83,7 +88,14 @@ from core.scan_service import (
     run_loudness_measurement,
     save_dirty_tags,
 )
-from core.settings import Settings, directory_for, load_settings, resolve_start_directory, save_settings
+from core.settings import (
+    Settings,
+    dedupe_and_trim_pattern_history,
+    directory_for,
+    load_settings,
+    resolve_start_directory,
+    save_settings,
+)
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
@@ -100,8 +112,10 @@ from redactor_common.gui.column_settings_dialog import ColumnSettingsDialog
 from redactor_common.gui.manage_list_dialog import ManageListDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
 from redactor_common.gui.context_menu import show_table_context_menu
+from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import run_with_progress
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
+from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.zoom_toolbar import TableZoomController
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
@@ -149,6 +163,22 @@ PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to
 # that saved choice always wins over this default -- see
 # Settings.has_column_preference's own docstring.
 DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({"encoder", "sample_rate", "channels"})
+
+# Metadata fields offered as %placeholder% tokens in Rename/Export by
+# Pattern and Parse Filename -> Metadata (both redactor_common dialogs,
+# see open_rename_dialog()/open_parse_filename_dialog() below) -- the
+# exact same set as core.fields.FIELDS, so the table columns, the
+# bulk-edit panel, and these filename placeholders never drift out of
+# sync with each other.
+FILENAME_PLACEHOLDERS: list[tuple[str, str]] = [(key, label) for key, label, _m in FIELDS]
+# Fields Parse Filename should extract/coerce as numbers rather than
+# leaving as free-text strings, and that Rename/Export's zero-pad
+# checkbox can apply to (see redactor_common.core.rename_pattern.
+# zero_pad_numeric_value) -- Track ("3" -> "03") is the field that
+# actually benefits; Year is 4 digits already and never needs padding,
+# but is still worth parsing as numeric-shaped rather than arbitrary text.
+NUMERIC_FILENAME_FIELDS: frozenset[str] = frozenset({"track", "year"})
+DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
 
 STATUS_COLORS = {
     STATUS_OK: Qt.GlobalColor.darkGreen,
@@ -232,15 +262,25 @@ class MainWindow(QMainWindow):
                 # than what it actually does.
                 MenuAction("save", "&Save File(s)", self.save_changed, shortcut="Ctrl+S"),
                 Separator(),
+                MenuAction(
+                    "rename_files", "&Rename / Export Files...", self.open_rename_dialog, shortcut="F2"
+                ),
+                Separator(),
                 MenuAction("exit", "E&xit", self.close),
             ],
-            # Brings external data IN -- previously empty (no
-            # external-metadata-source actions existed yet), now also
-            # home to bringing a different audio FORMAT in, converted
-            # to join this app's MP3-only library, which is the same
-            # "outside thing coming in" shape as a future cover-art/
-            # lyrics fetch would be.
+            # Brings external things IN -- extracting metadata already
+            # implicit in a file's own name (Parse Filename), bringing a
+            # different audio FORMAT in converted to join this app's
+            # MP3-only library (Import & Convert), and eventually
+            # cover-art/lyrics fetching, all the same "outside thing
+            # coming in" shape. Rename/Export is the reverse direction
+            # (metadata -> filename) and lives in File instead, next to
+            # Load/Save, matching every sibling Redactor project.
             "Import": [
+                MenuAction(
+                    "parse_filename", "&Parse Filename...", self.open_parse_filename_dialog, shortcut="F3"
+                ),
+                Separator(),
                 MenuAction(
                     "import_convert", "Import && &Convert to MP3...", self.import_and_convert_dialog
                 ),
@@ -292,6 +332,8 @@ class MainWindow(QMainWindow):
         self.action_load_files = actions["load_files"]
         self.action_load_folder = actions["load_folder"]
         self.action_save = actions["save"]
+        self.action_rename_files = actions["rename_files"]
+        self.action_parse_filename = actions["parse_filename"]
         self.action_apply_bulk_edit = actions["apply_bulk_edit"]
         self.action_apply_bulk_edit.setEnabled(False)
         self.action_check_integrity = actions["check_integrity"]
@@ -527,6 +569,104 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self, "Import Complete", f"Converted and loaded {len(succeeded_dests)} file(s)."
             )
+
+    # -- rename/export by pattern, and the reverse: parse filename --------
+
+    def _remember_pattern_used(self, pattern: str) -> None:
+        self.settings.pattern_history = dedupe_and_trim_pattern_history(
+            self.settings.pattern_history, pattern
+        )
+        save_settings(self.settings)
+
+    def _require_targets(self, action_desc: str) -> list[MP3File]:
+        """Same "selection required, else a clear message" convention
+        every other Operations/File action in this app already uses
+        (_run_concurrent_check_with_progress) -- deliberately NOT the
+        "selected, or every loaded file if none selected" fallback some
+        sibling projects use for their own rename/lookup dialogs: Rename
+        physically renames files on disk, so asking for an explicit
+        choice here is the safer default, and Parse Filename stays
+        consistent with it rather than behaving differently action to
+        action within this same app."""
+        targets = self._selected_files()
+        if not targets:
+            if not self.files:
+                QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+            else:
+                QMessageBox.information(
+                    self, "No Files Selected", f"Select one or more files in the table to {action_desc}."
+                )
+        return targets
+
+    def open_rename_dialog(self) -> None:
+        targets = self._require_targets("rename")
+        if not targets:
+            return
+
+        def get_values(mp3: MP3File) -> dict[str, str]:
+            return {key: getattr(mp3, key, "") or "" for key, _label in FILENAME_PLACEHOLDERS}
+
+        dialog = RenamePatternDialog(
+            targets, FILENAME_PLACEHOLDERS, get_values, lambda mp3: str(mp3.path),
+            pattern_history=self.settings.pattern_history,
+            default_pattern=DEFAULT_RENAME_PATTERN,
+            title="Rename / Export by Metadata Pattern",
+            item_noun="file",
+            zero_pad_field="track",
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        self._remember_pattern_used(dialog.pattern_edit.text())
+        export_mode = dialog.is_export_mode()
+        errors: list[str] = []
+        # Rename is a physical file operation, deliberately not pushed
+        # onto self.undo_manager -- same "in-memory edits only" line
+        # this project already draws for Save/Fix Integrity (see the
+        # Undo section's own docstring above).
+        for mp3, old_path, new_path in dialog.planned_renames():
+            try:
+                if export_mode:
+                    shutil.copy2(old_path, new_path)
+                else:
+                    os.rename(old_path, new_path)
+                    mp3.path = Path(new_path)
+            except OSError as exc:
+                errors.append(f"{Path(old_path).name}: {exc}")
+
+        self._rebuild_table()
+        if errors:
+            QMessageBox.warning(self, "Some Files Failed", summarize_errors(errors))
+
+    def open_parse_filename_dialog(self) -> None:
+        targets = self._require_targets("parse")
+        if not targets:
+            return
+
+        dialog = ParseFilenameDialog(
+            targets, FILENAME_PLACEHOLDERS, lambda mp3: str(mp3.path),
+            pattern_history=self.settings.pattern_history,
+            default_pattern=DEFAULT_RENAME_PATTERN,
+            valid_field_keys={key for key, _label in FILENAME_PLACEHOLDERS},
+            numeric_fields=NUMERIC_FILENAME_FIELDS,
+            strip_leading_zeros_fields={"track"},
+            title="Parse Filename → Metadata",
+            item_noun="file",
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        self._remember_pattern_used(dialog.pattern_edit.text())
+        changes = dialog.accepted_changes()  # index into targets -> {field: value}
+        if not changes:
+            return
+
+        self._push_undo("Parse Filename", targets)
+        for index, fields in changes.items():
+            targets[index].apply_tags(fields)
+        self._rebuild_table()
 
     # -- tag editing ------------------------------------------------------
 

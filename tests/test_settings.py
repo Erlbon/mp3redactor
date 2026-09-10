@@ -1,5 +1,6 @@
 from core.settings import (
     Settings,
+    dedupe_and_trim_pattern_history,
     directory_for,
     load_settings,
     resolve_start_directory,
@@ -152,3 +153,39 @@ def test_load_settings_tolerates_malformed_list_values(tmp_path):
     settings = load_settings(target_dir=tmp_path)
     assert settings.hidden_columns == []
     assert settings.custom_genres == []
+
+
+def test_default_settings_have_empty_pattern_history():
+    assert Settings().pattern_history == []
+
+
+def test_save_then_load_round_trips_pattern_history(tmp_path):
+    save_settings(
+        Settings(pattern_history=["%artist% - %title%", "%track% - %title%"]),
+        target_dir=tmp_path,
+    )
+    loaded = load_settings(target_dir=tmp_path)
+    assert loaded.pattern_history == ["%artist% - %title%", "%track% - %title%"]
+
+
+def test_dedupe_and_trim_pattern_history_moves_repeat_to_front():
+    history = ["%artist% - %title%", "%track% - %title%"]
+    result = dedupe_and_trim_pattern_history(history, "%track% - %title%")
+    assert result == ["%track% - %title%", "%artist% - %title%"]
+
+
+def test_dedupe_and_trim_pattern_history_inserts_new_pattern_first():
+    result = dedupe_and_trim_pattern_history(["%artist% - %title%"], "%track% - %title%")
+    assert result == ["%track% - %title%", "%artist% - %title%"]
+
+
+def test_dedupe_and_trim_pattern_history_ignores_blank_pattern():
+    history = ["%artist% - %title%"]
+    assert dedupe_and_trim_pattern_history(history, "   ") == history
+
+
+def test_dedupe_and_trim_pattern_history_caps_length():
+    history = [f"%field{i}%" for i in range(20)]
+    result = dedupe_and_trim_pattern_history(history, "%new%")
+    assert len(result) == 15
+    assert result[0] == "%new%"

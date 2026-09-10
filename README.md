@@ -4,7 +4,7 @@ Windows GUI utility (Python/PyQt6) for bulk-checking and bulk-editing
 MP3 metadata. Sibling project to the EPUB and Video Redactors,
 mp3tag-inspired UX.
 
-## Status: v1 (integrity + BPM + key + basic tag editing + ffmpeg-based deep check/loudness/import)
+## Status: v1 (integrity + BPM + key + basic tag editing + ffmpeg-based deep check/loudness/import + rename/parse-filename)
 
 Roadmap, in build order:
 
@@ -51,9 +51,27 @@ Roadmap, in build order:
      `libmp3lame` (`core/mp3_converter.py`) at a chosen bitrate, then
      loads the resulting .mp3 alongside whatever's already loaded
      (additive, unlike Load Files/Folder's replace-wholesale).
-6. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
-7. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
-8. Duplicate detection via audio fingerprinting -- ffmpeg's bundled
+6. **Rename/Export by Metadata Pattern, and its reverse, Parse Filename
+   -> Metadata** -- via `redactor_common`'s generic
+   `gui/rename_pattern_dialog.py` / `gui/parse_filename_dialog.py`
+   (built on `core/rename_pattern.py` / `core/filename_parser.py`), the
+   same modules epubredactor/cbzredactor already use; this project just
+   hadn't wired them in yet.
+   - **Rename / Export Files...** (File menu, `F2`) -- build a filename
+     from a `%field%` pattern (Title/Artist/Album/Track/Year/Genre/
+     Language), preview it per selected file, then rename in place or
+     export renamed copies to a folder, originals untouched. Track gets
+     an optional zero-pad-to-2-digits checkbox.
+   - **Parse Filename...** (Import menu, `F3`) -- the reverse: extract
+     field values back out of a filename using the same pattern syntax,
+     preview per file, apply the accepted ones via the same
+     `MP3File.apply_tags()` bulk-edit path (undoable, `Ctrl+Z`, dirty-
+     highlighted, same as typing into the tag panel).
+   - Both dialogs share one pattern history (`core/settings.py`'s
+     `pattern_history`) and default to `%track% - %artist% - %title%`.
+7. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
+8. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
+9. Duplicate detection via audio fingerprinting -- ffmpeg's bundled
    `chromaprint` support could back this; not yet built, suggested as
    a later addition
 

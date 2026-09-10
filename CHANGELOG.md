@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-09-10#01
+
+Rename/Export by Metadata Pattern, and its reverse, Parse Filename ->
+Metadata -- both already generic, ready-to-consume modules in
+`redactor_common` (`gui/rename_pattern_dialog.py` /
+`gui/parse_filename_dialog.py`, built on `core/rename_pattern.py` /
+`core/filename_parser.py`) and already wired into epubredactor/
+cbzredactor, but never retrofitted into this project. Same gap
+`redactor_common`'s own README flags as "mandatory, not optional" for
+every Redactor-family app.
+
+- **Rename / Export Files...** (File menu, `F2`): builds a filename
+  from a `%field%` pattern (Title/Artist/Album/Track/Year/Genre/
+  Language -- `core/fields.py`'s own field list, so it can never drift
+  out of sync with the bulk-edit panel or table columns), previews it
+  for every selected file, then either renames the files in place or
+  exports renamed copies to a chosen folder, originals untouched.
+  Track gets an optional zero-pad-to-2-digits checkbox. A physical
+  file operation, like Save/Fix Integrity -- deliberately not pushed
+  onto the in-memory undo stack.
+- **Parse Filename...** (Import menu, `F3`): the reverse -- extracts
+  field values back out of a filename using the same pattern syntax,
+  previews what would be applied to each selected file (checkbox per
+  file to skip individual ones), then applies the accepted fields via
+  the same `MP3File.apply_tags()` bulk-edit path already used everywhere
+  else, so a parse-filename change is undoable (`Ctrl+Z`) and highlighted
+  dirty exactly like typing into the tag panel.
+- Both dialogs default to `%track% - %artist% - %title%` and share one
+  pattern history (`core/settings.py`'s new `pattern_history`, most-
+  recently-used first, capped at 15) -- describe your naming convention
+  once in either dialog and it's offered back in the other.
+- Both require an explicit file selection (same "No Files
+  Loaded"/"No Files Selected" convention every other Operations/File
+  action in this app already uses) rather than silently falling back to
+  "every loaded file" the way some sibling projects' equivalent dialogs
+  do -- Rename mutates files on disk, so asking for a deliberate choice
+  here is the safer default, and Parse Filename stays consistent with it.
+
+**Real bug found and fixed while adding this:** `core/settings.py`'s
+`ConfigParser()` used the default interpolation mode, which treats a
+bare `%` as the start of an interpolation reference -- writing a
+pattern like `%artist% - %title%` to the settings file raised
+`ValueError: invalid interpolation syntax` the moment a pattern was
+actually saved. Both `ConfigParser()` calls now pass
+`interpolation=None` (nothing else stored here ever used interpolation
+either way).
+
+6 new tests in `tests/test_settings.py` (pattern-history round-trip +
+`dedupe_and_trim_pattern_history()` logic). Also verified end-to-end
+against a real audio file outside the test suite: a real on-disk
+rename with zero-padding, and a real parse-then-apply that landed in
+`MP3File`'s actual tag attributes and set `dirty`.
+
 ## 2026-09-07#05
 
 A cross-repo review of `redactor_common` adoption found this project
