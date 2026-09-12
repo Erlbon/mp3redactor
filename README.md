@@ -20,9 +20,12 @@ Roadmap, in build order:
    Genres.../Add/Remove Languages...), and the table's columns are
    fully manageable -- drag a header to reorder, right-click for a
    show/hide checklist or Settings > Add/Remove Columns..., both
-   persisted across restarts. No cover art, extended tags (composer,
-   comment, ...), or external lookups yet -- those stay later roadmap
-   items, same as the two below.
+   persisted across restarts. Click a header to sort by that column
+   (click again to reverse) -- Track/Year/BPM/Loudness/Sample Rate/
+   Channels sort numerically, not as text
+   (`redactor_common.gui.sortable_table`). No cover art, extended tags
+   (composer, comment, ...), or external lookups yet -- those stay
+   later roadmap items, same as the two below.
 4. **Key detection** -- via `keyfinder-cli` (shelled out, `core/keyfinder_runner.py`).
    No prebuilt Windows binary exists upstream; see
    [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)

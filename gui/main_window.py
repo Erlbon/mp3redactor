@@ -119,6 +119,7 @@ from redactor_common.gui.progress import run_with_progress
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
+from redactor_common.gui.sortable_table import NumericTableWidgetItem, suspend_sorting
 from redactor_common.gui.zoom_toolbar import TableZoomController
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
@@ -216,6 +217,12 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        # Click a header to sort by that column -- safe here because row
+        # -> file mapping is Qt.UserRole-based, not list-index-based (see
+        # this module's own docstring); _rebuild_table() suspends this
+        # while it repopulates, see suspend_sorting()'s own docstring for
+        # why that's required, not just tidy.
+        self.table.setSortingEnabled(True)
         self.table.setStyleSheet(TABLE_SELECTION_STYLESHEET)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
@@ -1230,9 +1237,10 @@ class MainWindow(QMainWindow):
     # -- table ------------------------------------------------------------
 
     def _rebuild_table(self) -> None:
-        self.table.setRowCount(len(self.files))
-        for row, mp3 in enumerate(self.files):
-            self._populate_row(row, mp3)
+        with suspend_sorting(self.table):
+            self.table.setRowCount(len(self.files))
+            for row, mp3 in enumerate(self.files):
+                self._populate_row(row, mp3)
         # Rows were just torn down and rebuilt from scratch, so whatever
         # rows Qt now considers "selected" may not match what the tag
         # panel is showing -- keep the two in sync explicitly rather
@@ -1249,7 +1257,12 @@ class MainWindow(QMainWindow):
         self.table.setItem(row, self._col_index["path"], path_item)
 
         for key, _label, _m in FIELDS:
-            item = QTableWidgetItem(getattr(mp3, key, "") or "")
+            value = getattr(mp3, key, "") or ""
+            # Track/Year sort numerically ("2" before "10") -- everything
+            # else (Title/Artist/...) is genuinely textual, where a
+            # numeric compare would just always fall through to the same
+            # text compare anyway.
+            item = NumericTableWidgetItem(value) if key in NUMERIC_FILENAME_FIELDS else QTableWidgetItem(value)
             item.setData(Qt.ItemDataRole.UserRole, mp3)
             if mp3.dirty:
                 item.setBackground(DIRTY_COLOR)
@@ -1265,7 +1278,7 @@ class MainWindow(QMainWindow):
             integrity_item.setToolTip(mp3.integrity_message)
         self.table.setItem(row, self._col_index["integrity"], integrity_item)
 
-        bpm_item = QTableWidgetItem(self._bpm_display(mp3))
+        bpm_item = NumericTableWidgetItem(self._bpm_display(mp3))
         bpm_item.setData(Qt.ItemDataRole.UserRole, mp3)
         if mp3.bpm_message:
             bpm_item.setToolTip(mp3.bpm_message)
@@ -1305,7 +1318,7 @@ class MainWindow(QMainWindow):
         # never be part of what Save would act on.
         self.table.setItem(row, self._col_index["deep_check"], deep_check_item)
 
-        loudness_item = QTableWidgetItem(mp3.display_loudness())
+        loudness_item = NumericTableWidgetItem(mp3.display_loudness(), sort_value=mp3.loudness_lufs)
         loudness_item.setData(Qt.ItemDataRole.UserRole, mp3)
         if mp3.loudness_gain_db is not None:
             loudness_item.setToolTip(f"Track gain: {mp3.loudness_gain_db:+.2f} dB (ref. -18 LUFS)")
@@ -1320,11 +1333,12 @@ class MainWindow(QMainWindow):
         encoder_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["encoder"], encoder_item)
 
-        sample_rate_item = QTableWidgetItem(mp3.display_sample_rate())
+        sample_rate_sort = float(mp3.sample_rate_hz) if mp3.sample_rate_hz is not None else None
+        sample_rate_item = NumericTableWidgetItem(mp3.display_sample_rate(), sort_value=sample_rate_sort)
         sample_rate_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["sample_rate"], sample_rate_item)
 
-        channels_item = QTableWidgetItem(str(mp3.channels) if mp3.channels is not None else "")
+        channels_item = NumericTableWidgetItem(str(mp3.channels) if mp3.channels is not None else "")
         channels_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["channels"], channels_item)
 

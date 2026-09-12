@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-09-12#01 -- click a column header to sort
+
+Click any column header to sort the table by it (click again to
+reverse); epubredactor already had this, mp3redactor was missing it
+entirely. Safe here specifically because row->file mapping is
+`Qt.UserRole`-based, not list-index-based (see this module's own
+docstring) -- native Qt sorting physically relocates rows, which is
+exactly what makes it unsafe for a project like cbzredactor whose rows
+are `self.books[row]`-indexed (that project's own click-to-sort is
+deliberately a different, non-native implementation for that reason).
+
+- Numeric-looking columns (Track, Year, BPM, Loudness, Sample Rate,
+  Channels) sort as numbers, not text -- "2" before "9" before "10",
+  not "10" before "2" before "9". Loudness ("-14.2 LUFS") and Sample
+  Rate ("44100 Hz") pass their real underlying float explicitly rather
+  than relying on parsing it back out of the suffixed display text.
+- `_rebuild_table()` (called after every load/check/edit/save) now
+  suspends sorting while it repopulates and restores it after --
+  required, not just tidy: Qt re-sorts as items land when sorting is
+  live, which can relocate an earlier row's cells before a later row
+  is even written, silently scrambling which row ends up holding which
+  file's data.
+- Built on `redactor_common.gui.sortable_table`
+  (`NumericTableWidgetItem` + `suspend_sorting()`), promoted from
+  epubredactor's own version (nine hand-written copies of the disable/
+  restore pattern there, now one shared context manager). Bumps the
+  `redactor_common` pin to `2026-09-12-01`.
+
+Verified end-to-end against real MP3 files (not mocked): a real click-
+to-sort by Track producing numeric (not lexicographic) order, the same
+for BPM descending, `Qt.UserRole` row->file mapping staying correct
+after a real native sort, and a rebuild under an active sort neither
+desyncing rows nor leaving sorting disabled afterward. Full suite: 138
+passed, 9 skipped (environment-gated real-binary tests, unchanged).
+
 ## 2026-09-10#06 -- Quick "Number Tracks" on right-click
 
 - **New "Number Tracks..." in the table's right-click menu** -- the
