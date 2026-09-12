@@ -35,15 +35,24 @@ ProgressCallback = Callable[[int, int], None]  # (completed, total) -> None
 MP3_EXTENSIONS = {".mp3"}
 
 
-def find_mp3_files(paths: Iterable[Path]) -> list[Path]:
+def find_mp3_files(paths: Iterable[Path], recursive: bool = True) -> list[Path]:
     """
     Expands a mix of files and folders (as dropped/selected in the GUI)
     into a flat, de-duplicated, sorted list of .mp3 file paths.
+
+    recursive=True (the default, matching this function's original and
+    only behavior, used by Load Files/Folder) walks into subfolders;
+    pass recursive=False to only look at a folder's direct children --
+    what Refresh List wants (see gui/main_window.py's refresh_list()):
+    re-scanning already-loaded folders should notice a file dropped
+    right there, not go discover an entire new subfolder tree, which
+    stays Load Folder's job.
     """
     found: set[Path] = set()
     for p in paths:
         if p.is_dir():
-            for child in p.rglob("*"):
+            children = p.rglob("*") if recursive else p.iterdir()
+            for child in children:
                 if child.is_file() and child.suffix.lower() in MP3_EXTENSIONS:
                     found.add(child.resolve())
         elif p.is_file() and p.suffix.lower() in MP3_EXTENSIONS:

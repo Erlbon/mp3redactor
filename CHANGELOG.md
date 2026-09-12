@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-09-12#02 -- Refresh List (F5 / Ctrl+R)
+
+File > Refresh List (also F5/Ctrl+R) re-scans the folder(s) your
+currently-loaded files live in, picks up any new .mp3 dropped there
+since you loaded, and re-reads everything still present fresh from
+disk. epubredactor already had this; cbzredactor independently
+rewrote the same behavior from scratch; mp3redactor and videoredactor
+had neither.
+
+- Doesn't discover a brand-new subfolder you haven't loaded anything
+  from yet -- only folders already represented in the current list get
+  scanned, non-recursively (`core/scan_service.py`'s `find_mp3_files()`
+  gained a `recursive` parameter, defaulting to `True` so Load Files/
+  Folder are unaffected; Refresh passes `recursive=False`). Use Load
+  Folder for an actual new subfolder.
+- Discards unsaved in-memory edits (with confirmation first, same as
+  Load Files/Folder) and clears the undo stack, since its entries would
+  reference `MP3File` objects this replaces.
+- The "what's new on disk" logic itself is
+  `redactor_common.core.folder_refresh.find_new_files_in_loaded_folders()`
+  -- generalized off epubredactor's own version; this project's own
+  wiring is just how paths come out of `self.files` and what to do once
+  the new set is known. Bumps the `redactor_common` pin to
+  `2026-09-12-02`.
+
+1 new test for `find_mp3_files(recursive=False)`. Verified end-to-end
+against real files on disk (not mocked): a file dropped into an
+already-loaded folder is found, a file in an unloaded subfolder is
+correctly NOT found, "nothing new" produces the right message with the
+list left stable, unsaved changes trigger a discard-confirmation
+prompt, and both F5 and Ctrl+R fire the same action. Full suite: 139
+passed, 9 skipped (environment-gated real-binary tests, unchanged).
+
 ## 2026-09-12#01 -- click a column header to sort
 
 Click any column header to sort the table by it (click again to

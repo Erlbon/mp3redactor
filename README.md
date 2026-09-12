@@ -23,9 +23,12 @@ Roadmap, in build order:
    persisted across restarts. Click a header to sort by that column
    (click again to reverse) -- Track/Year/BPM/Loudness/Sample Rate/
    Channels sort numerically, not as text
-   (`redactor_common.gui.sortable_table`). No cover art, extended tags
-   (composer, comment, ...), or external lookups yet -- those stay
-   later roadmap items, same as the two below.
+   (`redactor_common.gui.sortable_table`). File > Refresh List (F5/
+   Ctrl+R) re-scans the folder(s) your loaded files live in and picks
+   up anything new dropped there since (`redactor_common.core.
+   folder_refresh`). No cover art, extended tags (composer, comment,
+   ...), or external lookups yet -- those stay later roadmap items,
+   same as the two below.
 4. **Key detection** -- via `keyfinder-cli` (shelled out, `core/keyfinder_runner.py`).
    No prebuilt Windows binary exists upstream; see
    [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)

@@ -101,6 +101,7 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
+from redactor_common.core.folder_refresh import find_new_files_in_loaded_folders
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
 from redactor_common.core.undo import UndoManager
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
@@ -277,6 +278,10 @@ class MainWindow(QMainWindow):
                     "rename_files", "&Rename / Export Files...", self.open_rename_dialog, shortcut="F2"
                 ),
                 Separator(),
+                MenuAction(
+                    "refresh_list", "Re&fresh List", self.refresh_list, shortcuts=["F5", "Ctrl+R"]
+                ),
+                Separator(),
                 MenuAction("exit", "E&xit", self.close),
             ],
             # Brings external things IN -- extracting metadata already
@@ -346,6 +351,7 @@ class MainWindow(QMainWindow):
         self.action_load_folder = actions["load_folder"]
         self.action_save = actions["save"]
         self.action_rename_files = actions["rename_files"]
+        self.action_refresh_list = actions["refresh_list"]
         self.action_parse_filename = actions["parse_filename"]
         self.action_apply_bulk_edit = actions["apply_bulk_edit"]
         self.action_apply_bulk_edit.setEnabled(False)
@@ -462,6 +468,55 @@ class MainWindow(QMainWindow):
         self.undo_manager.clear()
         self._update_undo_action()
         self._rebuild_table()
+
+    def refresh_list(self) -> None:
+        """Re-scans the folder(s) your currently-loaded files live in
+        (picking up new .mp3 files added there since you loaded), then
+        re-reads every file still present from disk. Doesn't discover a
+        brand-new subfolder you haven't loaded anything from yet (only
+        folders already represented in your current list get scanned,
+        non-recursively) -- use Load Folder for that. A file that's
+        disappeared from disk isn't silently dropped either; it shows
+        up as a load error on its row, same as any other unreadable
+        file, rather than vanishing without a trace.
+
+        Discards unsaved in-memory edits (with confirmation first) and
+        clears the undo stack, since its entries would reference
+        MP3File objects this replaces. The actual "what's new on disk"
+        logic is redactor_common.core.folder_refresh's -- this is just
+        the mp3-specific wiring: how paths are found in memory, and
+        what to do once the new set is known."""
+        if not self.files:
+            return
+        if self._count_dirty() and not self._confirm_discard(
+            "refresh the list (discarding unsaved changes)"
+        ):
+            return
+
+        existing_paths = [str(mp3.path) for mp3 in self.files]
+        new_paths = find_new_files_in_loaded_folders(
+            existing_paths,
+            lambda folder: find_mp3_files([Path(folder)], recursive=False),
+        )
+        all_paths = [Path(p) for p in existing_paths + new_paths]
+
+        loaded: list[MP3File] = []
+
+        def step(path, _index: int) -> None:
+            loaded.extend(load_files([path]))
+
+        run_with_progress(self, all_paths, step, "Refreshing...", threshold=3)
+        self.files = loaded
+        self.undo_manager.clear()
+        self._update_undo_action()
+        self._rebuild_table()
+
+        if new_paths:
+            QMessageBox.information(
+                self, "Refreshed", f"Found {len(new_paths)} new file(s) and reloaded everything else."
+            )
+        else:
+            QMessageBox.information(self, "Refreshed", "No new files found. Reloaded everything from disk.")
 
     # -- import & convert --------------------------------------------------
 
