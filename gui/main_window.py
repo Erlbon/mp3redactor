@@ -121,6 +121,7 @@ from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
 from redactor_common.gui.sortable_table import NumericTableWidgetItem, suspend_sorting
+from redactor_common.gui import standard_shortcuts as shortcuts
 from redactor_common.gui.zoom_toolbar import TableZoomController
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
 
@@ -264,24 +265,39 @@ class MainWindow(QMainWindow):
     def _build_menu_and_toolbar(self) -> None:
         specs = {
             "File": [
-                MenuAction("load_files", "&Load Files...", self.load_files_dialog),
-                MenuAction("load_folder", "Load &Folder...", self.load_folder_dialog),
+                MenuAction("load_files", "&Load Files...", self.load_files_dialog, shortcut=shortcuts.LOAD_FILES),
+                MenuAction(
+                    "load_folder", "Load &Folder...", self.load_folder_dialog, shortcut=shortcuts.LOAD_FOLDER
+                ),
                 Separator(),
                 # "Save File(s)", not "Save Tags" -- this writes to the
                 # actual file on disk (mutagen open+modify+re-save), not
                 # some separate sidecar/tag store, and user feedback was
                 # that "Tags" read as a smaller, less concrete action
                 # than what it actually does.
-                MenuAction("save", "&Save File(s)", self.save_changed, shortcut="Ctrl+S"),
+                MenuAction("save", "&Save File(s)", self.save_changed, shortcut=shortcuts.SAVE),
                 Separator(),
+                # Quick, direct rename of the one selected file -- matches
+                # Explorer's F2 exactly. Distinct from "rename_files"
+                # below (the pattern-based batch tool, moved off F2 to
+                # make room for this): see rename_selected_file().
                 MenuAction(
-                    "rename_files", "&Rename / Export Files...", self.open_rename_dialog, shortcut="F2"
+                    "rename_file", "&Rename File...", self.rename_selected_file,
+                    shortcut=shortcuts.RENAME_SINGLE_FILE,
+                ),
+                MenuAction(
+                    "rename_files", "Rename / &Export Files...", self.open_rename_dialog,
+                    shortcut=shortcuts.RENAME_EXPORT_BY_PATTERN,
                 ),
                 Separator(),
                 MenuAction(
-                    "refresh_list", "Re&fresh List", self.refresh_list, shortcuts=["F5", "Ctrl+R"]
+                    "refresh_list", "Re&fresh List", self.refresh_list, shortcuts=shortcuts.REFRESH_LIST
                 ),
                 Separator(),
+                # No explicit shortcut -- Alt+F4 already closes this (or
+                # any) plain QMainWindow at the OS level, verified
+                # directly (launch, send Alt+F4, confirm the process
+                # exits), independent of anything bound here.
                 MenuAction("exit", "E&xit", self.close),
             ],
             # Brings external things IN -- extracting metadata already
@@ -294,7 +310,8 @@ class MainWindow(QMainWindow):
             # Load/Save, matching every sibling Redactor project.
             "Import": [
                 MenuAction(
-                    "parse_filename", "&Parse Filename...", self.open_parse_filename_dialog, shortcut="F3"
+                    "parse_filename", "&Parse Filename...", self.open_parse_filename_dialog,
+                    shortcut=shortcuts.PARSE_FILENAME_TO_METADATA,
                 ),
                 Separator(),
                 MenuAction(
@@ -325,7 +342,8 @@ class MainWindow(QMainWindow):
                 Separator(),
                 MenuAction("auto_numbering", "Auto-&Numbering...", self.open_auto_numbering_dialog),
                 Separator(),
-                MenuAction("undo", "&Undo", self.undo_last_action, shortcut="Ctrl+Z"),
+                MenuAction("undo", "&Undo", self.undo_last_action, shortcut=shortcuts.UNDO),
+                MenuAction("redo", "&Redo", self.redo_last_action, shortcut=shortcuts.REDO),
             ],
             "Settings": [
                 MenuAction("preferences", "&Preferences...", self.open_settings_dialog),
@@ -340,7 +358,7 @@ class MainWindow(QMainWindow):
                 ),
             ],
             "Help": [
-                MenuAction("about", f"&About {APP_NAME}...", self.open_about_dialog),
+                MenuAction("about", f"&About {APP_NAME}...", self.open_about_dialog, shortcut=shortcuts.HELP),
                 MenuAction("changelog", "View &Changelog...", self.open_changelog_dialog),
                 MenuAction("credits", "&Credits...", self.open_credits_dialog),
             ],
@@ -350,6 +368,7 @@ class MainWindow(QMainWindow):
         self.action_load_files = actions["load_files"]
         self.action_load_folder = actions["load_folder"]
         self.action_save = actions["save"]
+        self.action_rename_file = actions["rename_file"]
         self.action_rename_files = actions["rename_files"]
         self.action_refresh_list = actions["refresh_list"]
         self.action_parse_filename = actions["parse_filename"]
@@ -364,6 +383,8 @@ class MainWindow(QMainWindow):
         self.action_import_convert = actions["import_convert"]
         self.action_undo = actions["undo"]
         self.action_undo.setEnabled(False)
+        self.action_redo = actions["redo"]
+        self.action_redo.setEnabled(False)
 
         # Toolbar carries only the everyday five (Load Files, Load
         # Folder, Save, Apply, Undo) -- everything else (Check
@@ -381,6 +402,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.action_apply_bulk_edit)
         toolbar.addSeparator()
         toolbar.addAction(self.action_undo)
+        toolbar.addAction(self.action_redo)
         toolbar.addSeparator()
 
         spacer = QWidget()
@@ -467,6 +489,7 @@ class MainWindow(QMainWindow):
         # restoring into them wouldn't reach anything still on screen.
         self.undo_manager.clear()
         self._update_undo_action()
+        self._update_redo_action()
         self._rebuild_table()
 
     def refresh_list(self) -> None:
@@ -509,6 +532,7 @@ class MainWindow(QMainWindow):
         self.files = loaded
         self.undo_manager.clear()
         self._update_undo_action()
+        self._update_redo_action()
         self._rebuild_table()
 
         if new_paths:
@@ -816,6 +840,16 @@ class MainWindow(QMainWindow):
         if prompt_rename_single_file(self, str(mp3.path), lambda p: setattr(mp3, "path", Path(p))):
             self._rebuild_table()
 
+    def rename_selected_file(self) -> None:
+        """F2 entry point (Explorer convention: select one item, press
+        F2, rename it directly) -- same guard the right-click "Rename
+        File..." item uses (exactly one file selected, no load error),
+        since F2 and that menu item are the same action reached two
+        ways."""
+        files = self._selected_files()
+        if len(files) == 1 and not files[0].load_error:
+            self.rename_single_file(files[0])
+
     # -- tag editing ------------------------------------------------------
 
     def _apply_bulk_edit(self, values: dict) -> None:
@@ -850,6 +884,7 @@ class MainWindow(QMainWindow):
     def _push_undo(self, label: str, targets: list[MP3File]) -> None:
         self.undo_manager.push(label, targets, self._snapshot_mp3)
         self._update_undo_action()
+        self._update_redo_action()  # push() clears any pending redo
 
     def _update_undo_action(self) -> None:
         can_undo = self.undo_manager.can_undo()
@@ -857,11 +892,28 @@ class MainWindow(QMainWindow):
         label = self.undo_manager.peek_label()
         self.action_undo.setText(f"&Undo {label}" if label else "&Undo")
 
+    def _update_redo_action(self) -> None:
+        can_redo = self.undo_manager.can_redo()
+        self.action_redo.setEnabled(can_redo)
+        label = self.undo_manager.peek_redo_label()
+        self.action_redo.setText(f"&Redo {label}" if label else "&Redo")
+
     def undo_last_action(self) -> None:
-        affected = self.undo_manager.undo(self._restore_mp3)
+        # snapshot_fn passed too (not just restore_fn) so the state
+        # being overwritten is captured onto the redo stack first --
+        # see redactor_common.core.undo's own docstring.
+        affected = self.undo_manager.undo(self._restore_mp3, self._snapshot_mp3)
         if affected:
             self._rebuild_table()
         self._update_undo_action()
+        self._update_redo_action()
+
+    def redo_last_action(self) -> None:
+        affected = self.undo_manager.redo(self._restore_mp3, self._snapshot_mp3)
+        if affected:
+            self._rebuild_table()
+        self._update_undo_action()
+        self._update_redo_action()
 
     def save_changed(self) -> None:
         # Catches a field that's ticked with a value typed in but not
@@ -1431,17 +1483,14 @@ class MainWindow(QMainWindow):
         # actions, are handled by the shared helper -- see its docstring.
         def extra_items(files: list[MP3File]) -> list:
             items: list = []
+            # Reuses the actual File-menu QAction (F2) rather than
+            # building a fresh one -- same object, so this shows the
+            # real shortcut hint and can never drift out of sync with
+            # it. Only offered for a single file -- renaming several to
+            # the same name doesn't make sense. Distinct from
+            # "Rename / Export Files..." (the pattern-based batch tool).
             if len(files) == 1 and not files[0].load_error:
-                # Only offered for a single file -- renaming several
-                # files to the same name doesn't make sense. Distinct
-                # from "Rename / Export Files..." (File menu): that's
-                # the pattern-based batch tool; this is the quick,
-                # direct fix for one typo at a time -- also reachable
-                # by double-clicking the Filename cell (see
-                # _on_cell_double_clicked()).
-                items.append(MenuAction(
-                    "rename_file", "Rename File...", lambda: self.rename_single_file(files[0])
-                ))
+                items.append(self.action_rename_file)
             items.append(MenuAction(
                 "number_tracks", "Number Tracks...", lambda: self._quick_number_tracks(files)
             ))

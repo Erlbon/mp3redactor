@@ -15,3 +15,7 @@ tools/*.dll
 # Runtime-generated: written next to the app on first run (dev mode:
 # the project root) via core.app_paths.base_dir() -- see core/settings.py.
 mp3redactor_settings.ini
+
+# Written next to the exe on an unhandled exception -- per-machine
+# diagnostic output, not something to ship in the repo.
+mp3redactor_crash.log

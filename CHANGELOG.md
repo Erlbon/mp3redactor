@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-09-13#01 -- hotkey audit: Redo, real F2, and family-wide alignment
+
+Full audit of keyboard shortcuts across the whole Redactor family
+against Qt's own Windows-standard bindings (verified via
+`QKeySequence.keyBindings()`, not assumed). Real changes here:
+
+- **Load Files and Load Folder finally have shortcuts at all**
+  (Ctrl+O / Ctrl+Shift+O) -- the single biggest gap the audit found:
+  this app's most-used action had no keyboard shortcut whatsoever,
+  unlike both its siblings that share this feature.
+- **New Redo** (Ctrl+Y, Operations menu and toolbar, right after Undo)
+  -- `redactor_common.core.undo.UndoManager` gained real redo support.
+- **F2 now directly renames the one selected file** (Explorer
+  convention) -- same action the right-click "Rename File..." already
+  did, now also reachable by keyboard. The pattern-based batch tool
+  ("Rename / Export Files...") moves to **Ctrl+Shift+R** to make room
+  -- matches videoredactor's own existing convention for the same
+  shape of feature.
+- **Parse Filename... moves from F3 to Ctrl+E** -- F3 is
+  `QKeySequence::FindNext` (search) everywhere else; a metadata tool
+  had no business sitting on it.
+- **About gains F1** (`QKeySequence::HelpContents`).
+- **Exit's shortcut hint removed** (it never had one to begin with,
+  now deliberately so) -- Alt+F4 already closes this (or any) app at
+  the OS level, verified with a real launch-and-close test.
+
+New shared `redactor_common.gui.standard_shortcuts` module is now the
+source of truth for all of the above, imported instead of literal key
+strings, so this doesn't drift again.
+
 ## 2026-09-12#02 -- Refresh List (F5 / Ctrl+R)
 
 File > Refresh List (also F5/Ctrl+R) re-scans the folder(s) your
