@@ -125,6 +125,18 @@ Roadmap, in build order:
 PyInstaller can't cross-compile a Windows executable from another OS, so
 this has to be built on Windows itself.
 
+**Published releases deliberately do NOT bundle `tools\`** -- an
+earlier release that did came out at ~226MB (vs. ~50MB without), and
+that's simply too much for what most people using this app actually
+need; Check Integrity/Detect Key/Deep Check/Measure Loudness/Import &
+Convert just report TOOL MISSING until someone points Settings >
+Locate External Tools at binaries on their own machine (or builds a
+personal copy with `tools\` populated, per the steps below, if they
+want a fully self-contained exe for themselves). This is a standing
+decision, not an oversight -- don't re-bundle for an official release.
+
+If you want a personal build with `tools\` populated anyway:
+
 1. Get `mp3val.exe`, `keyfinder-cli.exe` (+ its 4 FFmpeg DLLs), and
    `ffmpeg.exe`/`ffprobe.exe` (+ their own, larger DLL set) into
    `tools\`:
