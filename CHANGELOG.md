@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-13#02 -- Ctrl+E/Ctrl+I export/import shortcut pairing
+
+Rename / Export Files... moves from Ctrl+Shift+R (this morning's
+choice) to **Ctrl+E**, and Parse Filename... from Ctrl+E to **Ctrl+I**
+-- a deliberate export/import mnemonic pair for the two directions of
+the filename<->metadata relationship, requested explicitly. Applied
+family-wide via `redactor_common.gui.standard_shortcuts`.
+
 ## 2026-09-13#01 -- hotkey audit: Redo, real F2, and family-wide alignment
 
 Full audit of keyboard shortcuts across the whole Redactor family
