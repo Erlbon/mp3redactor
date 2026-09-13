@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-13#03 -- Save now shows which file it's on
+
+Saving Tags... already had a progress dialog; it now also shows the
+current filename ("Saving: foo.mp3") via
+`redactor_common.gui.run_with_progress`'s new `label_for` param, same
+as epub/video's save dialogs. Bumped `redactor_common` to
+`2026-09-13-03`.
+
 ## 2026-09-13#02 -- Ctrl+E/Ctrl+I export/import shortcut pairing
 
 Rename / Export Files... moves from Ctrl+Shift+R (this morning's

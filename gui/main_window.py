@@ -928,7 +928,10 @@ class MainWindow(QMainWindow):
         def step(mp3: MP3File, _index: int) -> None:
             save_dirty_tags([mp3])
 
-        run_with_progress(self, dirty_files, step, "Saving tags...", threshold=3)
+        run_with_progress(
+            self, dirty_files, step, "Saving tags...", threshold=3,
+            label_for=lambda mp3: f"Saving: {mp3.filename}",
+        )
         self._rebuild_table()
 
         failed = [f"{mp3.filename}: {mp3.save_error}" for mp3 in dirty_files if mp3.save_error]
