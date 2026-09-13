@@ -1,14 +1,29 @@
 """
 Writes an MP3File's tag fields back to disk using mutagen -- the write
 counterpart to tag_reader.load_tags(). Uses the same raw ID3 frames
-tag_reader reads (TIT2/TPE1/TALB/TRCK/TDRC/TCON/TLAN), so a round-trip
-(load -> bulk-edit -> save -> load) reads back exactly what was written.
+tag_reader reads, so a round-trip (load -> bulk-edit -> save -> load)
+reads back exactly what was written. Three shapes of core.fields.FIELDS
+entry, each handled differently:
+
+  - Plain 4-letter frames (TIT2/TPE1/TALB/... -- see _SIMPLE_FRAME_IDS)
+    go through one generic loop.
+  - The two TXXX-based "advanced" fields (AcoustID Fingerprint,
+    iTunesAdvisory -- see _TXXX_DESCRIPTIONS) aren't backed by a
+    dedicated frame id; TXXX's own key is "TXXX:<description>", so
+    these go through a second small loop using tags.delall()/tags.add()
+    rather than setall(frame_id, ...).
+  - Comment (COMM) needs its own function (_write_comment_frame()) --
+    its ID3 key encodes description+language too, but unlike TXXX a
+    file can carry several COMM frames from other software with
+    different desc/lang combinations, which the loop above's
+    single-key delall() can't clean up.
+
 Also writes TBPM, TKEY, and TXXX:REPLAYGAIN_TRACK_GAIN (see
 _write_bpm_frame()/_write_key_frame()/_write_loudness_frame() below) --
 none of BPM/key/loudness is a core.fields.FIELDS entry the bulk-edit
 panel exposes, they're detection results (core.scan_service.
 run_bpm_check()/run_key_detection()/run_loudness_measurement()), so
-none of them goes through the generic string-field loop the way
+none of them goes through the generic field loops above the way
 title/artist/etc. do.
 
 mutagen is imported lazily/guarded, same reasoning as tag_reader.py and
@@ -25,22 +40,40 @@ message would otherwise make look retriable.
 
 from redactor_common.core.save_errors import describe_save_error
 
-from core.mp3_file import MP3File, STATUS_OK
+from core.mp3_file import ACOUSTID_FINGERPRINT_DESC, ITUNESADVISORY_DESC, MP3File, STATUS_OK
 
-# attribute_key -> ID3 frame id for the fields core.fields.FIELDS
-# defines. A separate mapping from FIELDS itself (rather than reusing
-# it directly) since not every attribute core.fields could ever list
-# is necessarily backed by a single ID3 frame the same simple way --
-# keeping this explicit here means a future FIELDS entry doesn't
-# silently need writer support it doesn't have.
-_FRAME_IDS = {
+# attribute_key -> ID3 frame id for the FIELDS entries backed by a
+# plain 4-letter frame. A separate mapping from FIELDS itself (rather
+# than reusing it directly) since not every attribute core.fields
+# could ever list is necessarily backed by a single ID3 frame the same
+# simple way -- keeping this explicit here means a future FIELDS entry
+# doesn't silently need writer support it doesn't have.
+_SIMPLE_FRAME_IDS = {
     "title": "TIT2",
     "artist": "TPE1",
+    "albumartist": "TPE2",
     "album": "TALB",
     "track": "TRCK",
+    "discnumber": "TPOS",
     "year": "TDRC",
     "genre": "TCON",
+    "composer": "TCOM",
     "language": "TLAN",
+    "albumsort": "TSOA",
+    "artistsort": "TSOP",
+    "albumartistsort": "TSO2",
+}
+
+# attribute_key -> TXXX description, for the FIELDS entries with no
+# dedicated ID3 frame of their own. AcoustID Fingerprint's description
+# matches MusicBrainz Picard's own convention (the de facto standard
+# other taggers, including mp3tag, follow for interop); iTunesAdvisory
+# matches mp3tag's own mapping table. Shared with core/mp3_file.py so
+# the read side (core/tag_reader.py) can never drift onto a different
+# description string.
+_TXXX_DESCRIPTIONS = {
+    "acoustid_fingerprint": ACOUSTID_FINGERPRINT_DESC,
+    "itunesadvisory": ITUNESADVISORY_DESC,
 }
 
 
@@ -59,15 +92,19 @@ def save_tags(mp3: MP3File) -> bool:
     blank the field in the bulk-edit panel, tick it, Apply, Save.
     """
     try:
-        from mutagen.id3 import TALB, TBPM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TRCK, TXXX
+        from mutagen.id3 import (
+            COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
+            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX,
+        )
         from mutagen.mp3 import MP3
     except ImportError:
         mp3.save_error = "mutagen is not installed"
         return False
 
     frame_classes = {
-        "TIT2": TIT2, "TPE1": TPE1, "TALB": TALB, "TRCK": TRCK,
-        "TDRC": TDRC, "TCON": TCON, "TLAN": TLAN,
+        "TIT2": TIT2, "TPE1": TPE1, "TPE2": TPE2, "TALB": TALB, "TRCK": TRCK,
+        "TPOS": TPOS, "TDRC": TDRC, "TCON": TCON, "TCOM": TCOM, "TLAN": TLAN,
+        "TSOA": TSOA, "TSOP": TSOP, "TSO2": TSO2,
     }
 
     try:
@@ -84,13 +121,21 @@ def save_tags(mp3: MP3File) -> bool:
             return False
 
     tags = audio.tags
-    for key, frame_id in _FRAME_IDS.items():
+    for key, frame_id in _SIMPLE_FRAME_IDS.items():
         value = getattr(mp3, key, "") or ""
         if value:
             tags.setall(frame_id, [frame_classes[frame_id](encoding=3, text=value)])
         else:
             tags.delall(frame_id)
 
+    for key, desc in _TXXX_DESCRIPTIONS.items():
+        value = getattr(mp3, key, "") or ""
+        frame_key = f"TXXX:{desc}"
+        tags.delall(frame_key)
+        if value:
+            tags.add(TXXX(encoding=3, desc=desc, text=[value]))
+
+    _write_comment_frame(tags, mp3, COMM)
     _write_bpm_frame(tags, mp3, TBPM)
     _write_key_frame(tags, mp3, TKEY)
     _write_loudness_frame(tags, mp3, TXXX)
@@ -104,6 +149,31 @@ def save_tags(mp3: MP3File) -> bool:
     mp3.dirty = False
     mp3.save_error = ""
     return True
+
+
+def _write_comment_frame(tags, mp3: MP3File, comm_cls) -> None:
+    """Comment is a regular core.fields.FIELDS entry (bulk-editable,
+    blank-to-clear, like title/artist/...), but COMM's own ID3 key
+    encodes description+language (e.g. "COMM::eng"), so it can't go
+    through the plain setall(frame_id, ...)/delall(frame_id) loop the
+    way TIT2/TPE1/etc. do -- and unlike the TXXX-based fields above, a
+    file can carry more than one COMM frame at once (different
+    languages/descriptions) from other software, which a single-key
+    delall() wouldn't fully clean up.
+
+    This app treats Comment as one field, same as everywhere else in
+    the bulk-edit panel -- so ALL existing COMM frames (any desc/lang)
+    are cleared first, then at most one is written back (lang="eng",
+    empty description), rather than trying to preserve multiple
+    variants this app has no UI to distinguish between. See
+    core.tag_reader._first_comm()'s docstring for the read side of
+    this same simplification.
+    """
+    for key in [k for k in tags.keys() if k.startswith("COMM")]:
+        tags.delall(key)
+    value = mp3.comment or ""
+    if value:
+        tags.add(comm_cls(encoding=3, lang="eng", desc="", text=[value]))
 
 
 def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:

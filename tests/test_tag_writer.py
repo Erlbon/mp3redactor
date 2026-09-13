@@ -30,11 +30,20 @@ def test_save_tags_writes_and_round_trips(tmp_path):
         {
             "title": "Test Title",
             "artist": "Test Artist",
+            "albumartist": "Test Album Artist",
             "album": "Test Album",
             "track": "3",
+            "discnumber": "1",
             "year": "2026",
             "genre": "Electronic",
+            "composer": "Test Composer",
+            "comment": "Test Comment",
             "language": "eng",
+            "albumsort": "Test Album, The",
+            "artistsort": "Artist, Test",
+            "albumartistsort": "Album Artist, Test",
+            "acoustid_fingerprint": "AQADtEmybUqUJZCiIw...",
+            "itunesadvisory": "0",
         }
     )
 
@@ -46,11 +55,20 @@ def test_save_tags_writes_and_round_trips(tmp_path):
     load_tags(reloaded)
     assert reloaded.title == "Test Title"
     assert reloaded.artist == "Test Artist"
+    assert reloaded.albumartist == "Test Album Artist"
     assert reloaded.album == "Test Album"
     assert reloaded.track == "3"
+    assert reloaded.discnumber == "1"
     assert reloaded.year == "2026"
     assert reloaded.genre == "Electronic"
+    assert reloaded.composer == "Test Composer"
+    assert reloaded.comment == "Test Comment"
     assert reloaded.language == "eng"
+    assert reloaded.albumsort == "Test Album, The"
+    assert reloaded.artistsort == "Artist, Test"
+    assert reloaded.albumartistsort == "Album Artist, Test"
+    assert reloaded.acoustid_fingerprint == "AQADtEmybUqUJZCiIw..."
+    assert reloaded.itunesadvisory == "0"
 
 
 def test_save_tags_blank_value_removes_the_frame_entirely(tmp_path):
@@ -68,6 +86,129 @@ def test_save_tags_blank_value_removes_the_frame_entirely(tmp_path):
     load_tags(reloaded)
     assert reloaded.title == ""
     assert reloaded.artist == "Someone"  # untouched field survives
+
+
+def test_save_tags_writes_albumartist_to_the_tpe2_frame(tmp_path):
+    # Real frame-id checks (not just a round trip through this app's
+    # own reader) for the fields whose ID3 mapping is easy to get
+    # subtly wrong -- TPE2 specifically, since it's easy to confuse
+    # with TPE1 (Artist).
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"albumartist": "Various Artists"})
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TPE2"].text[0]) == "Various Artists"
+
+
+def test_save_tags_writes_discnumber_to_the_tpos_frame(tmp_path):
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"discnumber": "2/3"})
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TPOS"].text[0]) == "2/3"
+
+
+def test_save_tags_writes_comment_to_a_comm_frame_with_english_language(tmp_path):
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"comment": "A note about this track"})
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["COMM::eng"].text[0]) == "A note about this track"
+
+
+def test_save_tags_consolidates_multiple_pre_existing_comm_frames_into_one(tmp_path):
+    # Other software can leave several COMM frames behind (different
+    # languages/descriptions) -- this app treats Comment as one field,
+    # so saving must clean all of them up, not just the exact desc/lang
+    # combination it itself writes.
+    from mutagen.id3 import COMM, ID3
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.add(COMM(encoding=3, lang="eng", desc="", text=["old english comment"]))
+    tags.add(COMM(encoding=3, lang="deu", desc="Notiz", text=["alter Kommentar"]))
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"comment": "Replacement comment"})
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    comm_keys = [k for k in reloaded_tags.keys() if k.startswith("COMM")]
+    assert comm_keys == ["COMM::eng"]
+    assert str(reloaded_tags["COMM::eng"].text[0]) == "Replacement comment"
+
+
+def test_save_tags_blanking_comment_removes_every_comm_frame(tmp_path):
+    from mutagen.id3 import COMM, ID3
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.add(COMM(encoding=3, lang="eng", desc="", text=["will be cleared"]))
+    tags.add(COMM(encoding=3, lang="deu", desc="Notiz", text=["auch geloescht"]))
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"comment": ""})
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    assert not any(k.startswith("COMM") for k in reloaded_tags.keys())
+
+
+def test_save_tags_writes_acoustid_fingerprint_to_the_expected_txxx_frame(tmp_path):
+    # The exact description string matters for interop with MusicBrainz
+    # Picard/other taggers -- checked directly, not just round-tripped
+    # through this app's own reader.
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"acoustid_fingerprint": "AQADtEmybUqUJZCiIw..."})
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TXXX:Acoustid Fingerprint"].text[0]) == "AQADtEmybUqUJZCiIw..."
+
+
+def test_save_tags_writes_itunesadvisory_to_the_expected_txxx_frame(tmp_path):
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"itunesadvisory": "4"})
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["TXXX:ITUNESADVISORY"].text[0]) == "4"
+
+
+def test_save_tags_blanking_txxx_advanced_fields_removes_their_frames(tmp_path):
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"acoustid_fingerprint": "something", "itunesadvisory": "2"})
+    assert save_tags(mp3) is True
+
+    mp3.apply_tags({"acoustid_fingerprint": "", "itunesadvisory": ""})
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    reloaded_tags = ID3(path)
+    assert "TXXX:Acoustid Fingerprint" not in reloaded_tags
+    assert "TXXX:ITUNESADVISORY" not in reloaded_tags
 
 
 def test_save_tags_reports_save_error_for_unwritable_path(tmp_path):

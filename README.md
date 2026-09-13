@@ -10,25 +10,29 @@ Roadmap, in build order:
 
 1. **File integrity check** -- via `mp3val` (shelled out)
 2. **BPM detection** -- via `aubio`'s Python bindings (in-process)
-3. **Basic tag editing** -- Title/Artist/Album/Track/Year/Genre/Language,
-   via a bulk-edit panel (`gui/tag_panel.py`) and `mutagen` (in-process,
-   `core/tag_writer.py`) -- same mp3tag-style workflow as the epub
-   tool's fuller tag panel: select rows, tick a field, type a value,
-   Apply to the selection (undoable, `Ctrl+Z`), Save writes to disk.
-   Genre and Language each get a quick-pick "+" button (curated
+3. **Basic tag editing** -- Title/Artist/Album Artist/Album/Track/Disc
+   Number/Year/Genre/Composer/Comment/Language, plus mp3tag's own
+   "advanced" set (Album Sort/Artist Sort/Album Artist Sort/AcoustID
+   Fingerprint/iTunesAdvisory -- hidden by default, real fields just
+   less commonly needed; the full field list was checked directly
+   against mp3tag's own to fill real gaps, Album Artist foremost among
+   them), via a bulk-edit panel (`gui/tag_panel.py`) and `mutagen`
+   (in-process, `core/tag_writer.py`) -- same mp3tag-style workflow as
+   the epub tool's fuller tag panel: select rows, tick a field, type a
+   value, Apply to the selection (undoable, `Ctrl+Z`), Save writes to
+   disk. Genre and Language each get a quick-pick "+" button (curated
    defaults + custom entries, managed via Settings > Add/Remove
    Genres.../Add/Remove Languages...), and the table's columns are
    fully manageable -- drag a header to reorder, right-click for a
    show/hide checklist or Settings > Add/Remove Columns..., both
    persisted across restarts. Click a header to sort by that column
-   (click again to reverse) -- Track/Year/BPM/Loudness/Sample Rate/
-   Channels sort numerically, not as text
+   (click again to reverse) -- Track/Disc Number/Year/BPM/Loudness/
+   Sample Rate/Channels sort numerically, not as text
    (`redactor_common.gui.sortable_table`). File > Refresh List (F5/
    Ctrl+R) re-scans the folder(s) your loaded files live in and picks
    up anything new dropped there since (`redactor_common.core.
-   folder_refresh`). No cover art, extended tags (composer, comment,
-   ...), or external lookups yet -- those stay later roadmap items,
-   same as the two below.
+   folder_refresh`). No cover art or external lookups yet -- those
+   stay later roadmap items, same as the two below.
 4. **Key detection** -- via `keyfinder-cli` (shelled out, `core/keyfinder_runner.py`).
    No prebuilt Windows binary exists upstream; see
    [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)
@@ -64,10 +68,11 @@ Roadmap, in build order:
    same modules epubredactor/cbzredactor already use; this project just
    hadn't wired them in yet.
    - **Rename / Export Files...** (File menu, `F2`) -- build a filename
-     from a `%field%` pattern (Title/Artist/Album/Track/Year/Genre/
-     Language), preview it per selected file, then rename in place or
-     export renamed copies to a folder, originals untouched. Track gets
-     an optional zero-pad-to-2-digits checkbox.
+     from a `%field%` pattern (every field in `core/fields.py`, e.g.
+     `%artist% - %album%/%track% - %title%`), preview it per selected
+     file, then rename in place or export renamed copies to a folder,
+     originals untouched. Track gets an optional zero-pad-to-2-digits
+     checkbox.
    - **Parse Filename...** (Import menu, `F3`) -- the reverse: extract
      field values back out of a filename using the same pattern syntax,
      preview per file, apply the accepted ones via the same

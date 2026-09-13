@@ -21,7 +21,7 @@ _write_loudness_frame() for the write side of this same round trip.
 from pathlib import Path
 
 from core.ffmpeg_probe import REPLAYGAIN_REFERENCE_LUFS
-from core.mp3_file import MP3File, STATUS_OK
+from core.mp3_file import ACOUSTID_FINGERPRINT_DESC, ITUNESADVISORY_DESC, MP3File, STATUS_OK
 
 
 def load_tags(mp3: MP3File) -> None:
@@ -56,11 +56,20 @@ def load_tags(mp3: MP3File) -> None:
     if tags is not None:
         mp3.title = _first(tags, "TIT2")
         mp3.artist = _first(tags, "TPE1")
+        mp3.albumartist = _first(tags, "TPE2")
         mp3.album = _first(tags, "TALB")
         mp3.track = _first(tags, "TRCK")
+        mp3.discnumber = _first(tags, "TPOS")
         mp3.year = _first(tags, "TDRC")
         mp3.genre = _first(tags, "TCON")
+        mp3.composer = _first(tags, "TCOM")
+        mp3.comment = _first_comm(tags)
         mp3.language = _first(tags, "TLAN")
+        mp3.albumsort = _first(tags, "TSOA")
+        mp3.artistsort = _first(tags, "TSOP")
+        mp3.albumartistsort = _first(tags, "TSO2")
+        mp3.acoustid_fingerprint = _first(tags, f"TXXX:{ACOUSTID_FINGERPRINT_DESC}")
+        mp3.itunesadvisory = _first(tags, f"TXXX:{ITUNESADVISORY_DESC}")
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
 
         # Deliberately does NOT set mp3.dirty here -- reading back a
@@ -111,3 +120,23 @@ def _first(tags, frame_id: str) -> str:
         return str(frame.text[0]) if frame.text else ""
     except (AttributeError, IndexError):
         return str(frame)
+
+
+def _first_comm(tags) -> str:
+    """COMM's own ID3 key encodes description+language (e.g. "COMM::eng"
+    for an empty description and English), unlike the fixed-key frames
+    _first() handles -- and a file can carry more than one COMM frame
+    (different languages/descriptions) from other software. This app
+    treats Comment as a single field, same as every other bulk-edit
+    field, so this reads back whichever COMM frame comes first rather
+    than assuming one specific desc/lang combination -- see
+    core.tag_writer._write_comment_frame()'s docstring for the write
+    side of this same simplification."""
+    for key in tags.keys():
+        if key.startswith("COMM"):
+            frame = tags.get(key)
+            try:
+                return str(frame.text[0]) if frame.text else ""
+            except (AttributeError, IndexError):
+                return str(frame)
+    return ""

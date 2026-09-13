@@ -15,16 +15,36 @@ column in this tuple.
 Each tuple: (attribute_key, display_label, multiline). `attribute_key`
 matches an MP3File attribute name directly (see core/mp3_file.py) and
 an ID3 frame in core/tag_reader.py / core/tag_writer.py.
+
+2026-09-13: Album Artist/Disc Number/Composer/Comment (the mp3tag
+fields most commonly shown/used day to day -- checked against a real
+mp3tag column list) plus Album Sort/Artist Sort/Album Artist Sort/
+AcoustID Fingerprint/iTunesAdvisory (mp3tag's own "advanced" set,
+still real fields it exposes, just less commonly needed) were added to
+bring this in line with what mp3tag itself considers the standard MP3
+field set. Covers/Picture (embedded artwork) is deliberately NOT among
+these -- binary image data doesn't fit this plain-text-field shape at
+all; it's tracked as its own separate, not-yet-built roadmap item (see
+README.md), same as it always was.
 """
 
 FIELDS: list[tuple[str, str, bool]] = [
     ("title", "Title", False),
     ("artist", "Artist", False),
+    ("albumartist", "Album Artist", False),
     ("album", "Album", False),
     ("track", "Track", False),
+    ("discnumber", "Disc Number", False),
     ("year", "Year", False),
     ("genre", "Genre", False),
+    ("composer", "Composer", False),
+    ("comment", "Comment", True),
     ("language", "Language", False),
+    ("albumsort", "Album Sort", False),
+    ("artistsort", "Artist Sort", False),
+    ("albumartistsort", "Album Artist Sort", False),
+    ("acoustid_fingerprint", "AcoustID Fingerprint", False),
+    ("itunesadvisory", "iTunes Advisory", False),
 ]
 
 # Fields with a quick-pick "+" button in the bulk-edit panel, backed by

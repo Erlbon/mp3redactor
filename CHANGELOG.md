@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-09-13#04 -- missing mp3tag fields: Album Artist, Disc Number, Composer, Comment, + advanced set
+
+This app's field list was checked against mp3tag's own (the reference
+point most people already know this kind of app from) and found
+genuinely short -- Album Artist most visibly ("we need at least the
+Album Artist, but check for other that are missing"), but several
+others too. Added, all as real `core/fields.py` entries -- table
+column, bulk-edit panel row, and Rename/Export + Parse Filename
+`%placeholder%`, same as every existing field, no special-casing:
+
+- **Album Artist** (`TPE2`), **Disc Number** (`TPOS`, sorts/zero-pads
+  numerically like Track), **Composer** (`TCOM`), **Comment** (`COMM`)
+  -- shown by default, matching mp3tag's own commonly-visible column
+  set (checked against a real mp3tag column list).
+- **Album Sort** (`TSOA`), **Artist Sort** (`TSOP`), **Album Artist
+  Sort** (`TSO2`), **AcoustID Fingerprint** (`TXXX:Acoustid
+  Fingerprint`, matching MusicBrainz Picard's own convention for
+  interop), **iTunesAdvisory** (`TXXX:ITUNESADVISORY`) -- mp3tag's own
+  "advanced" set: real, editable fields, just less commonly needed, so
+  hidden by default (Settings > Add/Remove Columns... or right-click a
+  header to show them), same convention as the Encoder/Sample Rate/
+  Channels trio already gets.
+- **Comment** needed its own read/write handling, not the plain-frame
+  loop the others use -- ID3's `COMM` frame keys itself by
+  description+language (`"COMM::eng"`), and a file can carry more than
+  one from other software. This app treats Comment as a single field
+  like everywhere else in the bulk-edit panel, so saving clears every
+  existing `COMM` frame (any desc/lang) and writes back at most one
+  (`lang="eng"`, empty description).
+- **Not added: Covers/Picture.** Embedded artwork is binary image data
+  that doesn't fit this plain-text-field shape at all -- it stays its
+  own, separate, not-yet-built roadmap item (unchanged from before).
+
+8 new tests in `tests/test_tag_writer.py` (real frame-id checks via
+mutagen directly, not just round-tripped through this app's own reader
+-- including the multi-`COMM`-frame consolidation case), plus its main
+round-trip test extended to cover every new field. Verified end-to-end
+via a real GUI bulk-edit Apply -> Save -> reload for Album Artist
+specifically, plus confirming the advanced fields' columns exist but
+start hidden. Full suite: 156 passed.
+
 ## 2026-09-13#03 -- Save now shows which file it's on
 
 Saving Tags... already had a progress dialog; it now also shows the

@@ -159,16 +159,21 @@ ALL_COLUMN_KEYS: list[str] = (
 PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to tell rows apart
 
 # Nothing hidden on a genuinely first run for every column EXCEPT the
-# ffprobe format-detail trio above -- matches this app's own behavior
-# before column management existed for every other column (shown by
-# default), but encoder/sample_rate/channels are a deliberate
-# exception: supplementary detail most people won't want cluttering the
-# table until they go looking for it (Settings > Add/Remove Columns...,
-# or right-click a header, same as any other column). Once the user
-# has saved ANY choice, even "show everything" (an empty hidden set),
-# that saved choice always wins over this default -- see
+# ffprobe format-detail trio above and mp3tag's own "advanced" field
+# set (core/fields.py's 2026-09-13 note) -- matches this app's own
+# behavior before column management existed for every other column
+# (shown by default), but these are a deliberate exception:
+# supplementary detail most people won't want cluttering the table
+# until they go looking for it (Settings > Add/Remove Columns..., or
+# right-click a header, same as any other column). Once the user has
+# saved ANY choice, even "show everything" (an empty hidden set), that
+# saved choice always wins over this default -- see
 # Settings.has_column_preference's own docstring.
-DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({"encoder", "sample_rate", "channels"})
+DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({
+    "encoder", "sample_rate", "channels",
+    "albumsort", "artistsort", "albumartistsort",
+    "acoustid_fingerprint", "itunesadvisory",
+})
 
 # Metadata fields offered as %placeholder% tokens in Rename/Export by
 # Pattern and Parse Filename -> Metadata (both redactor_common dialogs,
@@ -180,10 +185,11 @@ FILENAME_PLACEHOLDERS: list[tuple[str, str]] = [(key, label) for key, label, _m 
 # Fields Parse Filename should extract/coerce as numbers rather than
 # leaving as free-text strings, and that Rename/Export's zero-pad
 # checkbox can apply to (see redactor_common.core.rename_pattern.
-# zero_pad_numeric_value) -- Track ("3" -> "03") is the field that
-# actually benefits; Year is 4 digits already and never needs padding,
-# but is still worth parsing as numeric-shaped rather than arbitrary text.
-NUMERIC_FILENAME_FIELDS: frozenset[str] = frozenset({"track", "year"})
+# zero_pad_numeric_value) -- Track/Disc Number ("3" -> "03") are the
+# fields that actually benefit; Year is 4 digits already and never
+# needs padding, but is still worth parsing as numeric-shaped rather
+# than arbitrary text.
+NUMERIC_FILENAME_FIELDS: frozenset[str] = frozenset({"track", "discnumber", "year"})
 DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
 
 STATUS_COLORS = {

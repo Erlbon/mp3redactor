@@ -19,6 +19,16 @@ STATUS_WARNING = "WARNING"
 STATUS_ERROR = "ERROR"
 STATUS_TOOL_MISSING = "TOOL MISSING"
 
+# TXXX frame descriptions for the two mp3tag "advanced" fields that
+# aren't backed by a dedicated 4-letter ID3 frame -- shared between
+# core/tag_reader.py and core/tag_writer.py so the two sides of the
+# round trip can never drift onto different description strings.
+# "Acoustid Fingerprint" matches MusicBrainz Picard's own convention
+# (the de facto standard other taggers, including mp3tag, follow for
+# interop); "ITUNESADVISORY" matches mp3tag's own mapping table.
+ACOUSTID_FINGERPRINT_DESC = "Acoustid Fingerprint"
+ITUNESADVISORY_DESC = "ITUNESADVISORY"
+
 
 @dataclass
 class MP3File:
@@ -27,11 +37,24 @@ class MP3File:
     # Tag fields (populated by core.tag_reader via mutagen)
     title: str = ""
     artist: str = ""
+    albumartist: str = ""
     album: str = ""
     track: str = ""
+    discnumber: str = ""
     year: str = ""
     genre: str = ""
+    composer: str = ""
+    comment: str = ""
     language: str = ""
+    # mp3tag's "advanced" field set -- see core/fields.py's 2026-09-13
+    # note. Real, editable fields (not detection results), just less
+    # commonly needed than the ones above -- hidden by default in the
+    # table (see gui/main_window.py's DEFAULT_HIDDEN_COLUMNS).
+    albumsort: str = ""
+    artistsort: str = ""
+    albumartistsort: str = ""
+    acoustid_fingerprint: str = ""
+    itunesadvisory: str = ""
     duration_seconds: float | None = None
     bitrate_kbps: int | None = None
 
