@@ -96,4 +96,3 @@ echo  That one file ^(plus the dist\tools folder alongside it, if
 echo  present^) can be copied anywhere and run with no Python install
 echo  needed.
 echo ================================================================
-pause
