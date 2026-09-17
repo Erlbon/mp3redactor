@@ -4,7 +4,7 @@ Windows GUI utility (Python/PyQt6) for bulk-checking and bulk-editing
 MP3 metadata. Sibling project to the EPUB and Video Redactors,
 mp3tag-inspired UX.
 
-## Status: v1 (integrity + BPM + key + basic tag editing + ffmpeg-based deep check/loudness/import + rename/parse-filename)
+## Status: v1 (integrity + BPM + key + basic tag editing + ffmpeg-based deep check/loudness/import + rename/parse-filename + lyrics fetch)
 
 Roadmap, in build order:
 
@@ -31,8 +31,9 @@ Roadmap, in build order:
    (`redactor_common.gui.sortable_table`). File > Refresh List (F5/
    Ctrl+R) re-scans the folder(s) your loaded files live in and picks
    up anything new dropped there since (`redactor_common.core.
-   folder_refresh`). No cover art or external lookups yet -- those
-   stay later roadmap items, same as the two below.
+   folder_refresh`). No cover art yet -- that stays a later roadmap
+   item (lyrics fetching, once a similar gap, has since landed -- item
+   7 below).
 4. **Key detection** -- via `keyfinder-cli` (shelled out, `core/keyfinder_runner.py`).
    No prebuilt Windows binary exists upstream; see
    [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)
@@ -87,8 +88,17 @@ Roadmap, in build order:
      `redactor_common.gui.rename_single_file.rename_single_file()`
      (promoted there from this project's own first version), built on
      `core.rename_pattern.rename_file_on_disk()`.
-7. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
-8. Lyrics fetch + write -- via `lyricy` (fetch) + `mutagen` (write) -- not yet built
+7. **Lyrics fetch + write** -- via `lyricy` (fetch, `core/lyrics_fetcher.py`,
+   LRCLIB provider -- free, no API key) + `mutagen` (write, the standard
+   ID3v2 `USLT` frame, `core/tag_writer.py`). Not a `core/fields.py`
+   entry -- full song lyrics are long, multi-line text that doesn't fit
+   the bulk-edit panel's single-line rows, so it gets its own dedicated
+   editor (`gui/lyrics_dialog.py`, double-click a file's Lyrics cell or
+   right-click > Edit Lyrics...) plus a bulk "Fetch Lyrics for Selected
+   Files" (Operations menu / right-click, thread-pooled across the
+   selection like Detect BPM/Key). Read back from an existing `USLT`
+   frame on load, same round-trip BPM/key/loudness get.
+8. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
 9. Duplicate detection via audio fingerprinting -- ffmpeg's bundled
    `chromaprint` support could back this; not yet built, suggested as
    a later addition

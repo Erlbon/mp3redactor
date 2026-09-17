@@ -28,9 +28,13 @@ Menu shape is File / Import / Operations / Settings / Help, matching
 every other Redactor project. Import brings external things IN --
 currently Parse Filename -> Metadata (extracting fields already
 implicit in a loaded file's own name) and Import & Convert to MP3;
-it'll also gain cover-art and lyrics fetching once those roadmap items
-land. File carries the reverse direction, Rename/Export by Metadata
-Pattern, alongside Load/Save, same grouping as every sibling project.
+it'll also gain cover-art fetching once that roadmap item lands.
+Lyrics fetching (Operations menu / right-click, same "outside thing
+coming in" shape) already landed but lives in Operations rather than
+Import, alongside the other per-file/per-selection checks it's most
+similar to in practice. File carries the reverse direction,
+Rename/Export by Metadata Pattern, alongside Load/Save, same grouping
+as every sibling project.
 Both pattern-based dialogs (redactor_common.gui.rename_pattern_dialog /
 parse_filename_dialog) were already generic, ready-to-consume modules
 there -- this project just hadn't wired them in yet, unlike epub/cbz.
@@ -46,6 +50,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QDialog,
     QFileDialog,
     QHeaderView,
     QInputDialog,
@@ -67,6 +72,7 @@ from core.mp3_file import (
     STATUS_ERROR,
     STATUS_OK,
     STATUS_TOOL_MISSING,
+    STATUS_UNCHECKED,
     STATUS_WARNING,
 )
 from core.mp3_converter import BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS
@@ -86,6 +92,7 @@ from core.scan_service import (
     run_integrity_fix,
     run_key_detection,
     run_loudness_measurement,
+    run_lyrics_fetch,
     save_dirty_tags,
 )
 from core.settings import (
@@ -98,6 +105,7 @@ from core.settings import (
 )
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
+from gui.lyrics_dialog import LyricsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
@@ -128,12 +136,13 @@ from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMM
 # Table columns, field-key based -- see redactor_common.core.
 # table_settings's own docstring for why (a persisted index-based
 # preference silently breaks the moment a column is added/removed/
-# reordered in code). "integrity"/"bpm"/"key"/"deep_check"/"loudness"
-# are synthetic (derived check results, not a tag field); everything
-# else is exactly core.fields.FIELDS.
+# reordered in code). "integrity"/"bpm"/"key"/"deep_check"/"loudness"/
+# "lyrics" are synthetic (derived check results, or -- for lyrics --
+# a field deliberately outside core.fields.FIELDS, see MP3File.lyrics'
+# own docstring); everything else is exactly core.fields.FIELDS.
 _STATUS_COLUMN_LABELS: dict[str, str] = {
     "integrity": "Integrity", "bpm": "BPM", "key": "Key",
-    "deep_check": "Deep Check", "loudness": "Loudness",
+    "deep_check": "Deep Check", "loudness": "Loudness", "lyrics": "Lyrics",
 }
 # Format details from ffprobe (core.scan_service.run_deep_check(), same
 # action that populates deep_check above) -- kept as their own group
@@ -310,8 +319,10 @@ class MainWindow(QMainWindow):
             # implicit in a file's own name (Parse Filename), bringing a
             # different audio FORMAT in converted to join this app's
             # MP3-only library (Import & Convert), and eventually
-            # cover-art/lyrics fetching, all the same "outside thing
-            # coming in" shape. Rename/Export is the reverse direction
+            # cover-art fetching, same "outside thing coming in" shape
+            # (lyrics fetching is the same shape too, but lives in
+            # Operations instead -- see this file's own module
+            # docstring for why). Rename/Export is the reverse direction
             # (metadata -> filename) and lives in File instead, next to
             # Load/Save, matching every sibling Redactor project.
             "Import": [
@@ -345,6 +356,10 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "measure_loudness", "Measure &Loudness for Selected Files", self.run_loudness_measurement
                 ),
+                MenuAction(
+                    "fetch_lyrics", "Fetch L&yrics for Selected Files", self.run_lyrics_fetch
+                ),
+                MenuAction("edit_lyrics", "&Edit Lyrics...", self.edit_lyrics_for_selection),
                 Separator(),
                 MenuAction("auto_numbering", "Auto-&Numbering...", self.open_auto_numbering_dialog),
                 Separator(),
@@ -819,12 +834,15 @@ class MainWindow(QMainWindow):
         self._rebuild_table()
 
     def _on_cell_double_clicked(self, row: int, col: int) -> None:
-        if col != self._col_index["filename"]:
-            return
         item = self.table.item(row, col)
         mp3 = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
-        if mp3 is not None and not mp3.load_error:
-            self.rename_single_file(mp3)
+        if mp3 is None:
+            return
+        if col == self._col_index["filename"]:
+            if not mp3.load_error:
+                self.rename_single_file(mp3)
+        elif col == self._col_index["lyrics"]:
+            self.open_lyrics_dialog(mp3)
 
     def rename_single_file(self, mp3: MP3File) -> None:
         """Quick, direct rename of a single file on disk -- for fixing a
@@ -1278,6 +1296,42 @@ class MainWindow(QMainWindow):
             ffmpeg_path=self.settings.ffmpeg_path or None,
         )
 
+    def run_lyrics_fetch(self) -> None:
+        self._run_concurrent_check_with_progress("Fetching lyrics...", run_lyrics_fetch)
+
+    def edit_lyrics_for_selection(self) -> None:
+        """Operations menu entry point for Edit Lyrics... -- same
+        "exactly one file" convention as rename_selected_file(), since
+        this opens a single-file dialog. The table's right-click menu
+        reaches the same dialog directly (see _show_context_menu's
+        extra_items()), already scoped to the clicked row(s)."""
+        files = self._selected_files()
+        if len(files) == 1:
+            self.open_lyrics_dialog(files[0])
+        elif not files:
+            QMessageBox.information(self, "No Files Selected", "Select a file in the table.")
+        else:
+            QMessageBox.information(self, "Select One File", "Select exactly one file to edit its lyrics.")
+
+    def open_lyrics_dialog(self, mp3: MP3File) -> None:
+        """Edit Lyrics... -- see gui/lyrics_dialog.py's own docstring
+        for why this is a dedicated dialog rather than a
+        core.fields.FIELDS row. Triggered by double-clicking a file's
+        Lyrics cell, or via the Operations menu / table's right-click
+        menu."""
+        dialog = LyricsDialog(mp3, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_lyrics = dialog.result_lyrics()
+        if new_lyrics == mp3.lyrics:
+            return
+        self._push_undo("Edit Lyrics", [mp3])
+        mp3.lyrics = new_lyrics
+        mp3.lyrics_status = STATUS_OK if new_lyrics else STATUS_UNCHECKED
+        mp3.lyrics_message = ""
+        mp3.dirty = True
+        self._rebuild_table()
+
     def _run_concurrent_check_with_progress(self, label: str, scan_fn, **extra_kwargs) -> None:
         """Shared driver for the two checks (run_bpm_check(),
         run_key_detection()) whose core.scan_service function runs a
@@ -1445,6 +1499,27 @@ class MainWindow(QMainWindow):
             loudness_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["loudness"], loudness_item)
 
+        lyrics_item = QTableWidgetItem(self._lyrics_display(mp3))
+        lyrics_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        lyrics_color = STATUS_COLORS.get(mp3.lyrics_status)
+        if lyrics_color is not None and not mp3.lyrics:
+            # Unlike bpm/key/integrity, STATUS_OK here just means
+            # "there's text in the cell" -- already obvious from the
+            # cell itself, so the green tint would be redundant. Only
+            # color this cell for the states that AREN'T self-evident
+            # from the text: TOOL MISSING (gray) and a fetch that came
+            # back with nothing (mp3.lyrics_status == STATUS_ERROR,
+            # cell reads blank the same as never-fetched otherwise).
+            lyrics_item.setForeground(lyrics_color)
+        if mp3.lyrics_message:
+            lyrics_item.setToolTip(mp3.lyrics_message)
+        elif mp3.lyrics:
+            lyrics_item.setToolTip("Double-click to view/edit")
+        if mp3.dirty:
+            lyrics_item.setBackground(DIRTY_COLOR)
+            lyrics_item.setForeground(HIGHLIGHT_TEXT_COLOR)
+        self.table.setItem(row, self._col_index["lyrics"], lyrics_item)
+
         encoder_item = QTableWidgetItem(mp3.audio_encoder)
         encoder_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["encoder"], encoder_item)
@@ -1475,6 +1550,17 @@ class MainWindow(QMainWindow):
         if mp3.key_status == STATUS_TOOL_MISSING:
             return "TOOL MISSING"
         return mp3.key_value
+
+    @staticmethod
+    def _lyrics_display(mp3: MP3File) -> str:
+        if mp3.lyrics_status == STATUS_TOOL_MISSING:
+            return "TOOL MISSING"
+        if mp3.lyrics:
+            line_count = mp3.lyrics.count("\n") + 1
+            return f"Yes ({line_count} lines)"
+        if mp3.lyrics_status == STATUS_ERROR:
+            return "Not found"
+        return ""
 
     @staticmethod
     def _deep_check_display(mp3: MP3File) -> str:
@@ -1519,7 +1605,12 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "measure_loudness", "Measure Loudness for Selected Files", self.run_loudness_measurement
                 ),
+                MenuAction("fetch_lyrics", "Fetch Lyrics for Selected Files", self.run_lyrics_fetch),
             ])
+            if len(files) == 1:
+                items.append(
+                    MenuAction("edit_lyrics", "Edit Lyrics...", lambda: self.open_lyrics_dialog(files[0]))
+                )
             return items
 
         show_table_context_menu(

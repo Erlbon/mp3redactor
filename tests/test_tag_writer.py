@@ -168,6 +168,62 @@ def test_save_tags_blanking_comment_removes_every_comm_frame(tmp_path):
     assert not any(k.startswith("COMM") for k in reloaded_tags.keys())
 
 
+def test_save_tags_writes_lyrics_to_a_uslt_frame_with_english_language(tmp_path):
+    # Lyrics isn't a core.fields.FIELDS entry (see gui/lyrics_dialog.py's
+    # docstring), so it's set directly rather than via apply_tags(),
+    # same as bpm/key/loudness above -- but unlike those, it's written
+    # unconditionally (no STATUS_OK gate), same blank-to-clear
+    # convention as Comment.
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.lyrics = "Line one\nLine two"
+    mp3.dirty = True
+
+    assert save_tags(mp3) is True
+
+    from mutagen.id3 import ID3
+
+    tags = ID3(path)
+    assert str(tags["USLT::eng"].text) == "Line one\nLine two"
+
+
+def test_save_tags_consolidates_multiple_pre_existing_uslt_frames_into_one(tmp_path):
+    from mutagen.id3 import ID3, USLT
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.add(USLT(encoding=3, lang="eng", desc="", text="old english lyrics"))
+    tags.add(USLT(encoding=3, lang="deu", desc="Text", text="alter deutscher Text"))
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.lyrics = "Replacement lyrics"
+    mp3.dirty = True
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    uslt_keys = [k for k in reloaded_tags.keys() if k.startswith("USLT")]
+    assert uslt_keys == ["USLT::eng"]
+    assert str(reloaded_tags["USLT::eng"].text) == "Replacement lyrics"
+
+
+def test_save_tags_blanking_lyrics_removes_every_uslt_frame(tmp_path):
+    from mutagen.id3 import ID3, USLT
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.add(USLT(encoding=3, lang="eng", desc="", text="will be cleared"))
+    tags.save(path)
+
+    mp3 = MP3File(path=path)
+    mp3.lyrics = ""
+    mp3.dirty = True
+    assert save_tags(mp3) is True
+
+    reloaded_tags = ID3(path)
+    assert not any(k.startswith("USLT") for k in reloaded_tags.keys())
+
+
 def test_save_tags_writes_acoustid_fingerprint_to_the_expected_txxx_frame(tmp_path):
     # The exact description string matters for interop with MusicBrainz
     # Picard/other taggers -- checked directly, not just round-tripped

@@ -26,6 +26,12 @@ run_bpm_check()/run_key_detection()/run_loudness_measurement()), so
 none of them goes through the generic field loops above the way
 title/artist/etc. do.
 
+Lyrics (USLT) is a fourth case, written by _write_lyrics_frame() --
+also not a FIELDS entry (it gets its own editor, gui/lyrics_dialog.py,
+rather than a bulk-edit panel row), but unlike BPM/key/loudness it's a
+plain user-facing value with the same blank-to-clear convention as
+Comment, not a detection result -- see that function's own docstring.
+
 mutagen is imported lazily/guarded, same reasoning as tag_reader.py and
 bpm_detector.py: a missing dependency should degrade a specific
 capability (here: saving), not crash the app.
@@ -94,7 +100,7 @@ def save_tags(mp3: MP3File) -> bool:
     try:
         from mutagen.id3 import (
             COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
-            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX,
+            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, USLT,
         )
         from mutagen.mp3 import MP3
     except ImportError:
@@ -136,6 +142,7 @@ def save_tags(mp3: MP3File) -> bool:
             tags.add(TXXX(encoding=3, desc=desc, text=[value]))
 
     _write_comment_frame(tags, mp3, COMM)
+    _write_lyrics_frame(tags, mp3, USLT)
     _write_bpm_frame(tags, mp3, TBPM)
     _write_key_frame(tags, mp3, TKEY)
     _write_loudness_frame(tags, mp3, TXXX)
@@ -174,6 +181,29 @@ def _write_comment_frame(tags, mp3: MP3File, comm_cls) -> None:
     value = mp3.comment or ""
     if value:
         tags.add(comm_cls(encoding=3, lang="eng", desc="", text=[value]))
+
+
+def _write_lyrics_frame(tags, mp3: MP3File, uslt_cls) -> None:
+    """Lyrics (fetched via core/lyrics_fetcher.py, or hand-edited/
+    cleared in gui/lyrics_dialog.py) is stored in the standard ID3v2
+    USLT ("Unsynchronised lyrics/text transcription") frame -- the same
+    multi-desc/lang key shape as COMM (e.g. "USLT::eng"), so this
+    follows _write_comment_frame()'s approach: clear every existing
+    USLT frame first (a file can carry more than one from other
+    software), then write at most one back (lang="eng", empty
+    description), since this app has no UI to distinguish multiple
+    variants -- same simplification Comment already makes.
+
+    A blank mp3.lyrics clears the frame entirely rather than writing an
+    empty one -- same blank-to-clear convention as every FIELDS entry,
+    even though lyrics isn't itself a FIELDS entry (see
+    gui/lyrics_dialog.py's docstring for why: full song lyrics don't
+    fit a single-line field the way every FIELDS entry does)."""
+    for key in [k for k in tags.keys() if k.startswith("USLT")]:
+        tags.delall(key)
+    value = mp3.lyrics or ""
+    if value:
+        tags.add(uslt_cls(encoding=3, lang="eng", desc="", text=value))
 
 
 def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:

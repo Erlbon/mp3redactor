@@ -4,16 +4,16 @@ progress via a callback so the GUI can drive a QProgressDialog the same
 way the epub tool does for its load/save/rebuild operations.
 
 Kept deliberately separate from any specific check (tags, integrity,
-BPM, key) so a later addition -- cover, lyrics -- is just another
+BPM, key, lyrics) so a later addition -- cover -- is just another
 function with the same (mp3, ) -> None mutate-in-place shape, plugged
-in alongside the existing ones rather than a rewrite. run_bpm_check()
-and run_key_detection() are the two exceptions to "one file at a time"
--- both run a thread pool across the whole batch instead, since each
-file's work is independent and (measured, not assumed) genuinely
-benefits from it. See either one's own docstring for why. mp3val's
-integrity check stays sequential -- its header-scan-only cost per file
-is small enough that thread-pool overhead isn't obviously worth it, and
-it hasn't been asked for or measured the way these two were.
+in alongside the existing ones rather than a rewrite. run_bpm_check(),
+run_key_detection(), and run_lyrics_fetch() are exceptions to "one file
+at a time" -- each runs a thread pool across the whole batch instead,
+since each file's work is independent and (measured, not assumed for
+BPM/key -- see either one's own docstring) genuinely benefits from it.
+mp3val's integrity check stays sequential -- its header-scan-only cost
+per file is small enough that thread-pool overhead isn't obviously
+worth it, and it hasn't been asked for or measured the way these are.
 """
 
 import os
@@ -24,6 +24,7 @@ from pathlib import Path
 from core.bpm_detector import detect_bpm
 from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
 from core.keyfinder_runner import detect_key
+from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_converter import DEFAULT_BITRATE_KBPS, convert_to_mp3
 from core.mp3_file import MP3File, STATUS_OK
 from core.mp3val_runner import check_integrity, fix_integrity
@@ -265,6 +266,51 @@ def run_key_detection(
             if should_cancel is not None and should_cancel():
                 # Drops every not-yet-started future; anything already
                 # running keeps going (see docstring above).
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
+
+
+def run_lyrics_fetch(
+    files: list[MP3File],
+    progress: ProgressCallback | None = None,
+    max_workers: int | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> None:
+    """
+    Mutates each file's lyrics/lyrics_status/lyrics_message in place via
+    core.lyrics_fetcher.fetch_lyrics(). Thread-pooled like
+    run_bpm_check()/run_key_detection() -- each lyricy search+fetch is a
+    network round trip (LRCLIB, see core.lyrics_fetcher), the same
+    "blocked on I/O, not CPU" shape that already justifies a thread pool
+    for those two, even more so here: no GIL nuance to reason about at
+    all, `requests` releases it like any blocking socket call.
+
+    should_cancel behaves exactly as in run_key_detection() -- polled
+    after each file completes; any lyricy requests already in flight
+    are left to finish naturally rather than aborted mid-request.
+    """
+    if not files:
+        return
+    total = len(files)
+    workers = max_workers or min(total, os.cpu_count() or 4)
+    completed = 0
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_mp3 = {
+            executor.submit(fetch_lyrics, build_query(mp3)): mp3 for mp3 in files
+        }
+        for future in as_completed(future_to_mp3):
+            mp3 = future_to_mp3[future]
+            mp3.lyrics, mp3.lyrics_status, mp3.lyrics_message = future.result()
+            if mp3.lyrics_status == STATUS_OK:
+                # Fetched lyrics are new tag data, same as a manually
+                # typed field -- mark dirty so it reaches disk via the
+                # normal Save flow (core.tag_writer._write_lyrics_frame()).
+                mp3.dirty = True
+            completed += 1
+            if progress is not None:
+                progress(completed, total)
+            if should_cancel is not None and should_cancel():
                 executor.shutdown(wait=False, cancel_futures=True)
                 break
 

@@ -72,6 +72,16 @@ def load_tags(mp3: MP3File) -> None:
         mp3.itunesadvisory = _first(tags, f"TXXX:{ITUNESADVISORY_DESC}")
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
 
+        # Same "read back what's already on disk" reasoning as
+        # TBPM/TKEY/TXXX:REPLAYGAIN_TRACK_GAIN below -- a lyrics fetch
+        # from a previous session (or another tagger entirely) should
+        # show up here, not just for the rest of that one session.
+        lyrics_text = _first_uslt(tags)
+        if lyrics_text:
+            mp3.lyrics = lyrics_text
+            mp3.lyrics_status = STATUS_OK
+            mp3.lyrics_message = ""
+
         # Deliberately does NOT set mp3.dirty here -- reading back a
         # tag that's already on disk isn't an unsaved change, same as
         # title/artist/etc. above never marking dirty on load either.
@@ -120,6 +130,23 @@ def _first(tags, frame_id: str) -> str:
         return str(frame.text[0]) if frame.text else ""
     except (AttributeError, IndexError):
         return str(frame)
+
+
+def _first_uslt(tags) -> str:
+    """USLT's own ID3 key encodes description+language too (e.g.
+    "USLT::eng"), same shape as COMM -- see _first_comm()'s docstring
+    for why this reads back whichever USLT frame comes first rather
+    than assuming one specific desc/lang combination. See
+    core.tag_writer._write_lyrics_frame()'s docstring for the write
+    side of this same simplification."""
+    for key in tags.keys():
+        if key.startswith("USLT"):
+            frame = tags.get(key)
+            try:
+                return str(frame.text) if frame.text else ""
+            except AttributeError:
+                return str(frame)
+    return ""
 
 
 def _first_comm(tags) -> str:

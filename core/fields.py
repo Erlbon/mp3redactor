@@ -16,6 +16,12 @@ Each tuple: (attribute_key, display_label, multiline). `attribute_key`
 matches an MP3File attribute name directly (see core/mp3_file.py) and
 an ID3 frame in core/tag_reader.py / core/tag_writer.py.
 
+Lyrics is a real, editable, ID3-backed field (USLT) too, but is
+deliberately NOT among these -- full song lyrics are long, multi-line
+text that doesn't fit this list's single-line bulk-edit-panel-row shape
+at all (see gui/lyrics_dialog.py), same "doesn't fit this shape" reason
+Covers/Picture stays out below.
+
 2026-09-13: Album Artist/Disc Number/Composer/Comment (the mp3tag
 fields most commonly shown/used day to day -- checked against a real
 mp3tag column list) plus Album Sort/Artist Sort/Album Artist Sort/

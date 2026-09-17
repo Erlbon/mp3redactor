@@ -1,9 +1,9 @@
 """
 MP3File: the per-row data object backing the file table, analogous to
 EpubBook in the epub tool. Holds tag fields plus the results of the
-file-integrity, BPM, and key checks; cover/lyrics fields are reserved
-here now so those later versions don't need a schema migration, but are
-left unset/unused until those features land.
+file-integrity, BPM, key, and lyrics checks; the cover field is still
+reserved here now so that later version doesn't need a schema
+migration, but is left unset/unused until that feature lands.
 """
 
 from dataclasses import dataclass, field
@@ -102,9 +102,21 @@ class MP3File:
     sample_rate_hz: int | None = None
     channels: int | None = None
 
-    # Reserved for later versions -- deliberately present but unused in v1
+    # Reserved for a later version -- deliberately present but unused in v1
     has_cover: bool | None = None
+
+    # Lyrics (core.lyrics_fetcher.fetch_lyrics(), via the `lyricy`
+    # package's LRCLIB provider -- free, no API key) -- read back from
+    # an existing ID3v2 USLT frame on load same as BPM/key/loudness
+    # (core/tag_reader.py), written back on Save (core/tag_writer.py's
+    # _write_lyrics_frame()). Not a core.fields.FIELDS entry -- full
+    # song lyrics are long, multi-line text, so this gets its own
+    # dedicated editor (gui/lyrics_dialog.py) instead of a single-line
+    # bulk-edit panel row. lyrics_status/lyrics_message follow the same
+    # STATUS_* vocabulary as bpm_status/key_status above.
     lyrics: str = ""
+    lyrics_status: str = STATUS_UNCHECKED
+    lyrics_message: str = ""
 
     # Load/save error tracking, same distinction the epub tool draws:
     # a well-formed file can still fail to WRITE for reasons unrelated

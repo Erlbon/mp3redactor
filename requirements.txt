@@ -1,6 +1,16 @@
 PyQt6>=6.6
 mutagen>=1.47
 
+# Lyrics fetching (core/lyrics_fetcher.py) -- wraps LRCLIB (lrclib.net),
+# a free, keyless lyrics API; no API key/config needed for the default
+# provider this app uses. Pulls in a few of its own dependencies
+# (requests, beautifulsoup4, music_tag, pylrc, rich, click) for
+# capabilities this app doesn't use (its other providers, its own CLI,
+# its own direct-tag-write path -- this app writes the USLT frame
+# itself via mutagen/core/tag_writer.py instead, same single-tag-
+# writing-path reasoning as every other field).
+lyricy
+
 # Shared UI/core code with the epub and video Redactor tools -- a real
 # pip dependency (github.com/Erlbon/redactor_common), not a vendored
 # copy: previously each of the three projects hand-copied this file
@@ -33,6 +43,3 @@ pyinstaller>=6.3
 # build, or have them on PATH for dev-mode runs:
 #   mp3val        https://mp3val.sourceforge.net/
 #   keyfinder-cli https://github.com/EvanPurkhiser/keyfinder-cli   (v2+)
-
-# Pulled in when lyrics support (v4 in the roadmap) lands -- not needed yet:
-# lyricy

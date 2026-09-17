@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-09-17#01 -- lyrics fetch + write (roadmap item 7)
+
+Implements the long-planned "Lyrics fetch + write" roadmap item:
+
+- **Fetch** via the `lyricy` package's LRCLIB provider
+  (`core/lyrics_fetcher.py`) -- a free, keyless REST API (lrclib.net),
+  no Settings/API key needed. Searches "`<artist> <title>`" from the
+  file's current tags, falling back to the filename when untagged.
+- **Write** to the standard ID3v2 `USLT` ("Unsynchronised lyrics/text
+  transcription") frame via `mutagen` (`core/tag_writer.py`'s
+  `_write_lyrics_frame()`) -- same multi-desc/lang consolidation and
+  blank-to-clear convention Comment already uses for its own `COMM`
+  frame. Read back on load (`core/tag_reader.py`), same round trip
+  BPM/key/loudness get, so a saved fetch doesn't look like it silently
+  failed the next time the file is loaded.
+- **Not** a `core/fields.py` bulk-edit-panel entry -- full song lyrics
+  are long, multi-line text that doesn't fit that panel's single-line
+  rows (even Comment's, despite its own unused "multiline" flag).
+  Instead: a dedicated **Lyrics editor dialog** (`gui/lyrics_dialog.py`)
+  with a real multi-line text box and its own "Fetch from LRCLIB"
+  button -- double-click a file's new **Lyrics** table column, or
+  Operations menu / right-click > **Edit Lyrics...** (single file).
+  A new **Lyrics** table column shows a short "Yes (N lines)"/"Not
+  found"/blank indicator, not the full text.
+- A bulk **Fetch Lyrics for Selected Files** (Operations menu /
+  right-click) fetches for many files at once, thread-pooled across the
+  selection like Detect BPM/Detect Key -- each fetch is a network round
+  trip, the same "blocked on I/O" shape that already justifies a thread
+  pool for those two checks.
+
 ## 2026-09-13#04 -- missing mp3tag fields: Album Artist, Disc Number, Composer, Comment, + advanced set
 
 This app's field list was checked against mp3tag's own (the reference
