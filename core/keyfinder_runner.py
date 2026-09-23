@@ -54,6 +54,8 @@ def detect_key(
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
+            # Never let a console tool wait on an inherited stdin handle.
+            stdin=subprocess.DEVNULL,
             **no_window_kwargs(),
         )
     except subprocess.TimeoutExpired:

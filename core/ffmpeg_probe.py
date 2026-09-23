@@ -11,10 +11,10 @@ can't give:
 
 Same external-tool conventions as core/mp3val_runner.py and
 core/keyfinder_runner.py: core.tool_locator.find_tool() for bundled/
-PATH/override resolution, core.subprocess_utils.no_window_kwargs() so
-neither binary pops up a console window from this --windowed app.
-
-Every subprocess.run() call here also passes stdin=subprocess.DEVNULL
+PATH/override resolution. Every call goes through redactor_common's
+run_tool() (2026-09-23): no console window from this --windowed app,
+UTF-8 decoding of ffprobe's JSON (the locale default, cp1252, garbled
+non-ASCII tag text), and stdin=subprocess.DEVNULL
 -- unlike mp3val/keyfinder-cli, ffmpeg/ffprobe can try to read from
 stdin (interactive "y/N" prompts, key-press handling mid-run), and
 inheriting whatever stdin this process happens to have (invalid/absent
@@ -30,7 +30,7 @@ import subprocess
 from pathlib import Path
 
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
-from core.subprocess_utils import no_window_kwargs
+from redactor_common.core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
 FFMPEG_EXE_NAME = "ffmpeg.exe"
@@ -71,13 +71,9 @@ def deep_check_integrity(
         return STATUS_TOOL_MISSING, "ffmpeg.exe not found (not bundled and not on PATH)"
 
     try:
-        result = subprocess.run(
+        result = run_tool(
             [str(exe), "-v", "error", "-i", str(path), "-f", "null", "-"],
-            capture_output=True,
-            text=True,
             timeout=DEEP_CHECK_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL,
-            **no_window_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return STATUS_ERROR, f"ffmpeg timed out after {DEEP_CHECK_TIMEOUT_SECONDS}s"
@@ -120,13 +116,9 @@ def measure_loudness(
         return None, None, STATUS_TOOL_MISSING, "ffmpeg.exe not found (not bundled and not on PATH)"
 
     try:
-        result = subprocess.run(
+        result = run_tool(
             [str(exe), "-i", str(path), "-af", "loudnorm=print_format=json", "-f", "null", "-"],
-            capture_output=True,
-            text=True,
             timeout=LOUDNESS_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL,
-            **no_window_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return None, None, STATUS_ERROR, f"ffmpeg timed out after {LOUDNESS_TIMEOUT_SECONDS}s"
@@ -181,16 +173,12 @@ def probe_format(
         return "", None, None, STATUS_TOOL_MISSING, "ffprobe.exe not found (not bundled and not on PATH)"
 
     try:
-        result = subprocess.run(
+        result = run_tool(
             [
                 str(exe), "-v", "quiet", "-print_format", "json",
                 "-show_format", "-show_streams", "-select_streams", "a:0", str(path),
             ],
-            capture_output=True,
-            text=True,
             timeout=PROBE_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL,
-            **no_window_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return "", None, None, STATUS_ERROR, f"ffprobe timed out after {PROBE_TIMEOUT_SECONDS}s"

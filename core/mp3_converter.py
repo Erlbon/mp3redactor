@@ -19,7 +19,7 @@ import subprocess
 from pathlib import Path
 
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
-from core.subprocess_utils import no_window_kwargs
+from redactor_common.core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
 FFMPEG_EXE_NAME = "ffmpeg.exe"
@@ -63,17 +63,13 @@ def convert_to_mp3(
         return STATUS_TOOL_MISSING, "ffmpeg.exe not found (not bundled and not on PATH)"
 
     try:
-        result = subprocess.run(
+        result = run_tool(
             [
                 str(exe), "-y", "-i", str(src_path),
                 "-codec:a", "libmp3lame", "-b:a", f"{bitrate_kbps}k",
                 str(dest_path),
             ],
-            capture_output=True,
-            text=True,
             timeout=CONVERT_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL,
-            **no_window_kwargs(),
         )
     except subprocess.TimeoutExpired:
         return STATUS_ERROR, f"ffmpeg timed out after {CONVERT_TIMEOUT_SECONDS}s"

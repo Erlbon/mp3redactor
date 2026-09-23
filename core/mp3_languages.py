@@ -17,47 +17,18 @@ typed directly, or added as a custom entry via Settings > Add/Remove
 Languages.
 """
 
-DEFAULT_LANGUAGES: list[tuple[str, str]] = [
-    ("eng", "English"),
-    ("nor", "Norwegian"),
-    ("swe", "Swedish"),
-    ("dan", "Danish"),
-    ("fin", "Finnish"),
-    ("deu", "German"),
-    ("fra", "French"),
-    ("spa", "Spanish"),
-    ("ita", "Italian"),
-    ("por", "Portuguese"),
-    ("nld", "Dutch"),
-    ("rus", "Russian"),
-    ("jpn", "Japanese"),
-    ("kor", "Korean"),
-    ("zho", "Chinese"),
-    ("ara", "Arabic"),
-    ("pol", "Polish"),
-    ("und", "Undetermined"),
-]
+from redactor_common.core.languages import language_pairs
+from redactor_common.core.managed_list import exclude_hidden_codes, merge_pairs
 
+# (ISO 639-2/T code, English name) from redactor_common's shared ISO 639
+# table -- the same table epub and cbz build their 2-letter lists from.
+DEFAULT_LANGUAGES: list[tuple[str, str]] = language_pairs(
+    ["eng", "nor", "swe", "dan", "fin", "deu", "fra", "spa", "ita", "por",
+     "nld", "rus", "jpn", "kor", "zho", "ara", "pol", "und"],
+    "alpha3",
+)
 
-def merge_languages(
-    defaults: list[tuple[str, str]], custom: list[tuple[str, str]]
-) -> list[tuple[str, str]]:
-    """Visible defaults plus custom entries whose code isn't already
-    present, custom entries appended in the order given."""
-    seen_codes = {code for code, _name in defaults}
-    result = list(defaults)
-    for code, name in custom:
-        code = code.strip()
-        name = name.strip()
-        if not code or not name or code in seen_codes:
-            continue
-        seen_codes.add(code)
-        result.append((code, name))
-    return result
-
-
-def exclude_hidden(
-    defaults: list[tuple[str, str]], hidden_codes: list[str]
-) -> list[tuple[str, str]]:
-    hidden = set(hidden_codes)
-    return [(code, name) for code, name in defaults if code not in hidden]
+# The hideable-defaults-plus-custom merge rules are shared too
+# (redactor_common.core.managed_list); kept under their original names.
+merge_languages = merge_pairs
+exclude_hidden = exclude_hidden_codes

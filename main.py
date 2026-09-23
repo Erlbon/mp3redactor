@@ -1,32 +1,32 @@
 """
-Entry point. Crash logging is installed before anything else -- including
-the Qt import -- so a failure anywhere downstream, Qt itself included,
-still gets logged.
+Entry point. Startup (crash logging, taskbar icon ID, theme, message-box
+width) is redactor_common.gui.app_bootstrap.run_app(), shared with the
+other Redactor apps. Crash logging is installed before MainWindow (and
+the rest of the GUI) is even imported, so a failure there is logged too.
 """
 
 import sys
 
 from core import crash_log
+from core.app_paths import asset_path
+from core.version import APP_NAME
+from redactor_common.gui.app_bootstrap import run_app
 
-crash_log.install()
 
-from PyQt6.QtGui import QIcon  # noqa: E402 -- must follow crash_log.install()
-from PyQt6.QtWidgets import QApplication  # noqa: E402 -- must follow crash_log.install()
+def _window():
+    from gui.main_window import MainWindow
 
-from core.app_paths import asset_path  # noqa: E402
-from gui.main_window import MainWindow  # noqa: E402
-from redactor_common.gui.qmessagebox_style import apply_message_box_style  # noqa: E402
-from redactor_common.gui.theme import apply_theme  # noqa: E402
+    return MainWindow()
 
 
 def main() -> int:
-    app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon(str(asset_path("assets/icon.ico"))))
-    apply_theme(app)  # Fusion + a WCAG-contrast-verified light/dark palette -- see redactor_common/gui/theme.py
-    apply_message_box_style(app)
-    window = MainWindow()
-    window.show()
-    return app.exec()
+    return run_app(
+        app_name=APP_NAME,
+        window_factory=_window,
+        crash_log_path=crash_log.log_path(),
+        app_user_model_id="Erlbon.Mp3Redactor.GUI.1",
+        icon_path=asset_path("assets/icon.ico"),
+    )
 
 
 if __name__ == "__main__":

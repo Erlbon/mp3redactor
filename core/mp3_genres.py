@@ -21,6 +21,9 @@ Language, not append-with-dedupe the way epub/cbz's multi-valued
 Genre works.
 """
 
+from redactor_common.core.managed_list import exclude_hidden_names, merge_names
+
+
 COMMON_MP3_GENRES: list[str] = sorted([
     "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk",
     "Grunge", "Hip-Hop", "Jazz", "Metal", "New Age", "Oldies", "Other",
@@ -43,20 +46,8 @@ COMMON_MP3_GENRES: list[str] = sorted([
 ])
 
 
-def merge_genres(defaults: list[str], custom: list[str]) -> list[str]:
-    """Visible defaults plus custom entries not already present
-    (case-insensitively), custom entries appended in the order given."""
-    seen = {g.lower() for g in defaults}
-    result = list(defaults)
-    for genre in custom:
-        genre = genre.strip()
-        if not genre or genre.lower() in seen:
-            continue
-        seen.add(genre.lower())
-        result.append(genre)
-    return result
-
-
-def exclude_hidden(defaults: list[str], hidden: list[str]) -> list[str]:
-    hidden_lower = {g.lower() for g in hidden}
-    return [g for g in defaults if g.lower() not in hidden_lower]
+# The hideable-defaults-plus-custom merge rules live in
+# redactor_common.core.managed_list (shared with epub and cbz); kept
+# under their original names here.
+merge_genres = merge_names
+exclude_hidden = exclude_hidden_names

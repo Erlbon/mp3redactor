@@ -49,14 +49,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QDialog,
     QFileDialog,
     QHeaderView,
     QInputDialog,
     QMainWindow,
     QMessageBox,
-    QProgressDialog,
     QSizePolicy,
     QSplitter,
     QTableWidget,
@@ -124,7 +122,7 @@ from redactor_common.gui.manage_list_dialog import ManageListDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
-from redactor_common.gui.progress import run_with_progress
+from redactor_common.gui.progress import ProgressReporter, run_with_progress
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
@@ -625,31 +623,16 @@ class MainWindow(QMainWindow):
         if not conversions:
             return
 
-        dialog = None
-        if len(conversions) >= 3:
-            dialog = QProgressDialog("Converting to MP3...", "Cancel", 0, len(conversions), self)
-            dialog.setWindowModality(Qt.WindowModality.WindowModal)
-            dialog.setMinimumDuration(0)
-            dialog.show()
-
-        def on_progress(done: int, _total: int) -> None:
-            if dialog is not None:
-                dialog.setValue(done)
-                QApplication.processEvents()
-
-        def should_cancel() -> bool:
-            return dialog is not None and dialog.wasCanceled()
-
-        results = run_import_conversion(
-            conversions,
-            bitrate_kbps=bitrate_kbps,
-            progress=on_progress,
-            ffmpeg_path=self.settings.ffmpeg_path or None,
-            should_cancel=should_cancel,
-        )
-
-        if dialog is not None:
-            dialog.close()
+        # Shared progress dialog (fixed width, threshold-gated, working
+        # Cancel), fed through run_import_conversion()'s own callbacks.
+        with ProgressReporter(self, len(conversions), "Converting to MP3...") as reporter:
+            results = run_import_conversion(
+                conversions,
+                bitrate_kbps=bitrate_kbps,
+                progress=reporter.on_progress,
+                ffmpeg_path=self.settings.ffmpeg_path or None,
+                should_cancel=reporter.should_cancel,
+            )
 
         self._remember_last_directory(paths[0])
 
@@ -1357,25 +1340,11 @@ class MainWindow(QMainWindow):
                 )
             return
 
-        dialog = None
-        if len(targets) >= 3:
-            dialog = QProgressDialog(label, "Cancel", 0, len(targets), self)
-            dialog.setWindowModality(Qt.WindowModality.WindowModal)
-            dialog.setMinimumDuration(0)
-            dialog.show()
-
-        def on_progress(done: int, _total: int) -> None:
-            if dialog is not None:
-                dialog.setValue(done)
-                QApplication.processEvents()
-
-        def should_cancel() -> bool:
-            return dialog is not None and dialog.wasCanceled()
-
-        scan_fn(targets, progress=on_progress, should_cancel=should_cancel, **extra_kwargs)
-
-        if dialog is not None:
-            dialog.close()
+        with ProgressReporter(self, len(targets), label) as reporter:
+            scan_fn(
+                targets, progress=reporter.on_progress,
+                should_cancel=reporter.should_cancel, **extra_kwargs,
+            )
         self._rebuild_table()
 
     def _selected_files(self) -> list[MP3File]:

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-23#01 -- Shared-code consolidation
+
+Moves onto redactor_common 2026-09-23-01 (was pinned at 2026-09-13-03,
+missing ten days of shared fixes -- including the progress dialog that
+jumped in size with long filenames).
+
+- **ffprobe/ffmpeg output decoded as UTF-8** via the shared `run_tool()`
+  -- the Windows locale default (cp1252) garbled non-ASCII tag text in
+  ffprobe's JSON. `mp3val`/`keyfinder-cli` now also get
+  `stdin=DEVNULL`.
+- **Progress dialogs:** Import & Convert to MP3 and the BPM/key checks
+  now use the shared fixed-width `ProgressReporter` instead of two
+  hand-rolled dialogs.
+- **Crash log** trims whole entries (it used to cut the oldest one off
+  mid-traceback) and shows an "Unexpected Error" dialog; startup, app
+  paths, pattern history, the Genre/Language list rules and the version
+  bump are the shared implementations now. Language names come from the
+  family's shared ISO 639 table (same codes and names as before).
+
 ## 2026-09-17#01 -- lyrics fetch + write (roadmap item 7)
 
 Implements the long-planned "Lyrics fetch + write" roadmap item:

@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.app_paths import base_dir
+from redactor_common.core.pattern_history import dedupe_and_trim
 
 SETTINGS_FILENAME = "mp3redactor_settings.ini"
 SECTION = "general"
@@ -44,15 +45,10 @@ MAX_PATTERN_HISTORY = 15
 
 
 def dedupe_and_trim_pattern_history(history: list[str], new_pattern: str) -> list[str]:
-    """Pure logic: move new_pattern to the front of history, deduped,
-    trimmed to MAX_PATTERN_HISTORY. Split out so it's testable without a
-    live Settings/ini round-trip."""
-    new_pattern = new_pattern.strip()
-    if not new_pattern:
-        return history
-    result = [p for p in history if p != new_pattern]
-    result.insert(0, new_pattern)
-    return result[:MAX_PATTERN_HISTORY]
+    """Move new_pattern to the front of history, deduped, trimmed to
+    MAX_PATTERN_HISTORY -- redactor_common.core.pattern_history's rule,
+    shared with the other apps."""
+    return dedupe_and_trim(history, new_pattern, MAX_PATTERN_HISTORY)
 
 
 def _dump_list(value: list) -> str:
