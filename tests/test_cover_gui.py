@@ -170,3 +170,18 @@ def test_thumbnails_load_only_for_visible_rows(window, tmp_path, monkeypatch):
     for _ in range(20):
         _app.processEvents()
     assert reads == []  # Cover column hidden: nothing loaded
+
+
+def test_cover_area_is_resizable(window):
+    """The cover sits in redactor_common's ImagePanelSplitter: dragging
+    the divider grows it well past the old fixed 260 px, and back down."""
+    splitter = window.tag_panel.splitter
+    window.resize(1100, 1000)
+    _app.processEvents()
+    total = sum(splitter.sizes())
+    splitter.setSizes([100, total - 100])
+    _app.processEvents()
+    assert window.tag_panel.cover_label.height() > 400
+    splitter.setSizes([total - 100, 100])
+    _app.processEvents()
+    assert window.tag_panel.cover_label.height() < 100

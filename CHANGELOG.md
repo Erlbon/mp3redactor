@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-23#03 -- resizable cover area
+
+The cover in the side panel is now resizable: drag the divider between
+the tag fields and the cover to make the image as big (or small) as you
+like -- it used to be capped at a fixed 260 px. The fields scroll rather
+than squash when the cover takes more room. Built on redactor_common's
+shared `ImagePanelSplitter`/`ImagePreviewBox` (2026-09-23-02), the same
+resizable image area cbz, epub and video now use.
+
 ## 2026-09-23#02 -- cover art (roadmap item 8)
 
 Embedded cover art (ID3v2 `APIC`), read and written with `mutagen`:

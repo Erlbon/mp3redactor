@@ -38,8 +38,8 @@ set_picked_value() back to apply the result.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QImage
 from PyQt6.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -57,11 +57,10 @@ from core.fields import FIELDS, QUICK_PICK_FIELDS
 from core.mp3_file import MP3File
 from redactor_common.gui.collapsible_splitter import CollapseToggleButton
 from redactor_common.gui.grid_utils import absorb_extra_row_space
-from redactor_common.gui.image_label import AspectRatioImageLabel
+from redactor_common.gui.image_pane import ImagePanelSplitter, ImagePreviewBox
 
 MULTIPLE_VALUES_PLACEHOLDER = "<multiple values>"
 COLLAPSE_BUTTON_WIDTH = 26
-COVER_PREVIEW_MAX_HEIGHT = 260
 
 
 class MultiValueLineEdit(QLineEdit):
@@ -183,26 +182,23 @@ class TagPanel(QWidget):
         # window/panel is resized taller -- see grid_utils.py's docstring.
         absorb_extra_row_space(grid, len(FIELDS))
 
-        outer.addWidget(fields_box, 1)
-        outer.addWidget(self._build_cover_box())
+        # Fields on top, cover below, with a draggable divider between --
+        # redactor_common's ImagePanelSplitter, the same resizable image
+        # area every Redactor side panel uses.
+        self.splitter = ImagePanelSplitter(fields_box, self._build_cover_box(), initial_sizes=(520, 280))
+        outer.addWidget(self.splitter, 1)
 
-    def _build_cover_box(self) -> QGroupBox:
+    def _build_cover_box(self) -> ImagePreviewBox:
         """The selected file's embedded cover, plus the cover actions.
         The image is read and decoded in the background by MainWindow
         (redactor_common's AsyncPreviewLoader) -- this only displays it."""
-        box = QGroupBox("Cover")
-        layout = QVBoxLayout(box)
-        self.cover_label = AspectRatioImageLabel()
-        self.cover_label.setMinimumSize(80, 80)
-        self.cover_label.setMaximumHeight(COVER_PREVIEW_MAX_HEIGHT)
-        self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.cover_label.setStyleSheet("background-color: palette(base); border: 1px solid palette(mid);")
-        layout.addWidget(self.cover_label, 1)
+        self.cover_box = ImagePreviewBox("Cover")
+        self.cover_label = self.cover_box.image_label
 
         self.cover_note = QLabel("")
         self.cover_note.setStyleSheet("color: gray; font-size: 11px;")
         self.cover_note.setWordWrap(True)
-        layout.addWidget(self.cover_note)
+        self.cover_box.add_widget(self.cover_note)
 
         buttons = QHBoxLayout()
         self.cover_set_btn = QPushButton("Set\u2026")
@@ -221,26 +217,21 @@ class TagPanel(QWidget):
         self.cover_export_btn.clicked.connect(self.coverExportRequested.emit)
         for button in (self.cover_set_btn, self.cover_folder_btn, self.cover_remove_btn, self.cover_export_btn):
             buttons.addWidget(button)
-        layout.addLayout(buttons)
+        self.cover_box.add_layout(buttons)
         self.show_cover_message("No file selected")
-        return box
+        return self.cover_box
 
     # -- cover display (driven by MainWindow) ----------------------------
 
     def show_cover_message(self, text: str, note: str = "") -> None:
-        self.cover_label.set_original_pixmap(None)
-        self.cover_label.setText(text)
+        self.cover_box.show_message(text)
         self.cover_note.setText(note)
 
     def show_cover_loading(self, note: str = "") -> None:
         self.show_cover_message("Loading cover\u2026", note)
 
     def show_cover_image(self, image: QImage | None, note: str = "") -> None:
-        if image is None or image.isNull():
-            self.show_cover_message("Cover unreadable", note)
-            return
-        self.cover_label.setText("")
-        self.cover_label.set_original_pixmap(QPixmap.fromImage(image))
+        self.cover_box.show_image(image, "Cover unreadable")
         self.cover_note.setText(note)
 
     def set_cover_actions_enabled(self, any_selected: bool, any_cover: bool, single_with_cover: bool) -> None:
