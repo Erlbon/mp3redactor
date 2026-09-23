@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-23#02 -- cover art (roadmap item 8)
+
+Embedded cover art (ID3v2 `APIC`), read and written with `mutagen`:
+
+- **Cover column** -- Yes/No plus a thumbnail. Thumbnails load lazily
+  and in the background: only rows on screen ever read or decode a
+  cover (the same mechanism epub/cbz use), and none at all while the
+  column is hidden.
+- **Cover preview** in the side panel for the selected file, read and
+  downscaled off the GUI thread.
+- **Set Cover from Image File...** -- JPEG/PNG embedded exactly as-is;
+  WebP/BMP/GIF/TIFF converted (PNG if transparent, else JPEG).
+- **Set Cover from Folder Image** -- each selected file gets the
+  `cover.jpg` / `folder.jpg` / `front.jpg` (etc.) sitting next to it, so
+  a selection spanning several albums gets each album's own art at once.
+- **Remove Cover** and **Export Cover to Image File...**
+- Operations > Cover, the table's right-click menu, and buttons under the
+  panel's cover. Undoable like any edit; written on Save as a single
+  front cover (replacing any existing pictures). Saving other tags never
+  touches existing pictures.
+- Covers are not held in memory for every loaded file -- only a pending,
+  unsaved change is -- so a large library costs no extra memory.
+
 ## 2026-09-23#01 -- Shared-code consolidation
 
 Moves onto redactor_common 2026-09-23-01 (was pinned at 2026-09-13-03,

@@ -46,6 +46,7 @@ message would otherwise make look retriable.
 
 from redactor_common.core.save_errors import describe_save_error
 
+from core.cover_art import FRONT_COVER
 from core.mp3_file import ACOUSTID_FINGERPRINT_DESC, ITUNESADVISORY_DESC, MP3File, STATUS_OK
 
 # attribute_key -> ID3 frame id for the FIELDS entries backed by a
@@ -99,7 +100,7 @@ def save_tags(mp3: MP3File) -> bool:
     """
     try:
         from mutagen.id3 import (
-            COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
+            APIC, COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
             TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, USLT,
         )
         from mutagen.mp3 import MP3
@@ -146,6 +147,7 @@ def save_tags(mp3: MP3File) -> bool:
     _write_bpm_frame(tags, mp3, TBPM)
     _write_key_frame(tags, mp3, TKEY)
     _write_loudness_frame(tags, mp3, TXXX)
+    _write_cover_frame(tags, mp3, APIC)
 
     try:
         audio.save()
@@ -153,9 +155,26 @@ def save_tags(mp3: MP3File) -> bool:
         mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
         return False
 
+    mp3.mark_cover_saved()
     mp3.dirty = False
     mp3.save_error = ""
     return True
+
+
+def _write_cover_frame(tags, mp3: MP3File, apic_cls) -> None:
+    """A pending cover change only (see core/cover_art.py): a new image
+    replaces every existing picture frame with a single front cover; a
+    removal clears them all. With nothing pending, existing pictures
+    (including ones this app never displays, e.g. a back cover) are left
+    exactly as they are."""
+    if not mp3.cover_change_pending:
+        return
+    tags.delall("APIC")
+    if mp3.cover_pending is not None:
+        tags.add(apic_cls(
+            encoding=3, mime=mp3.cover_pending_mime or "image/jpeg",
+            type=FRONT_COVER, desc="Cover", data=mp3.cover_pending,
+        ))
 
 
 def _write_comment_frame(tags, mp3: MP3File, comm_cls) -> None:

@@ -38,7 +38,8 @@ set_picked_value() back to apply the result.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -46,6 +47,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -55,9 +57,11 @@ from core.fields import FIELDS, QUICK_PICK_FIELDS
 from core.mp3_file import MP3File
 from redactor_common.gui.collapsible_splitter import CollapseToggleButton
 from redactor_common.gui.grid_utils import absorb_extra_row_space
+from redactor_common.gui.image_label import AspectRatioImageLabel
 
 MULTIPLE_VALUES_PLACEHOLDER = "<multiple values>"
 COLLAPSE_BUTTON_WIDTH = 26
+COVER_PREVIEW_MAX_HEIGHT = 260
 
 
 class MultiValueLineEdit(QLineEdit):
@@ -107,6 +111,12 @@ class TagPanel(QWidget):
     selectionCountChanged = pyqtSignal(int)  # lets MainWindow mirror this in its toolbar Apply action
     collapseToggleRequested = pyqtSignal()  # the panel doesn't control its own width -- MainWindow does
     quickPickRequested = pyqtSignal(str)  # field_key -- see set_picked_value()
+    # Cover buttons -- MainWindow does the work on the current selection
+    # (same split as quickPickRequested): the panel only shows the cover.
+    coverSetRequested = pyqtSignal()
+    coverFromFolderRequested = pyqtSignal()
+    coverRemoveRequested = pyqtSignal()
+    coverExportRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -174,6 +184,70 @@ class TagPanel(QWidget):
         absorb_extra_row_space(grid, len(FIELDS))
 
         outer.addWidget(fields_box, 1)
+        outer.addWidget(self._build_cover_box())
+
+    def _build_cover_box(self) -> QGroupBox:
+        """The selected file's embedded cover, plus the cover actions.
+        The image is read and decoded in the background by MainWindow
+        (redactor_common's AsyncPreviewLoader) -- this only displays it."""
+        box = QGroupBox("Cover")
+        layout = QVBoxLayout(box)
+        self.cover_label = AspectRatioImageLabel()
+        self.cover_label.setMinimumSize(80, 80)
+        self.cover_label.setMaximumHeight(COVER_PREVIEW_MAX_HEIGHT)
+        self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.cover_label.setStyleSheet("background-color: palette(base); border: 1px solid palette(mid);")
+        layout.addWidget(self.cover_label, 1)
+
+        self.cover_note = QLabel("")
+        self.cover_note.setStyleSheet("color: gray; font-size: 11px;")
+        self.cover_note.setWordWrap(True)
+        layout.addWidget(self.cover_note)
+
+        buttons = QHBoxLayout()
+        self.cover_set_btn = QPushButton("Set\u2026")
+        self.cover_set_btn.setToolTip("Embed an image file as the cover of every selected file")
+        self.cover_set_btn.clicked.connect(self.coverSetRequested.emit)
+        self.cover_folder_btn = QPushButton("From Folder")
+        self.cover_folder_btn.setToolTip(
+            "Use the cover.jpg / folder.jpg / front.jpg next to each selected file"
+        )
+        self.cover_folder_btn.clicked.connect(self.coverFromFolderRequested.emit)
+        self.cover_remove_btn = QPushButton("Remove")
+        self.cover_remove_btn.setToolTip("Remove the embedded cover from every selected file")
+        self.cover_remove_btn.clicked.connect(self.coverRemoveRequested.emit)
+        self.cover_export_btn = QPushButton("Export\u2026")
+        self.cover_export_btn.setToolTip("Save the selected file's cover as an image file")
+        self.cover_export_btn.clicked.connect(self.coverExportRequested.emit)
+        for button in (self.cover_set_btn, self.cover_folder_btn, self.cover_remove_btn, self.cover_export_btn):
+            buttons.addWidget(button)
+        layout.addLayout(buttons)
+        self.show_cover_message("No file selected")
+        return box
+
+    # -- cover display (driven by MainWindow) ----------------------------
+
+    def show_cover_message(self, text: str, note: str = "") -> None:
+        self.cover_label.set_original_pixmap(None)
+        self.cover_label.setText(text)
+        self.cover_note.setText(note)
+
+    def show_cover_loading(self, note: str = "") -> None:
+        self.show_cover_message("Loading cover\u2026", note)
+
+    def show_cover_image(self, image: QImage | None, note: str = "") -> None:
+        if image is None or image.isNull():
+            self.show_cover_message("Cover unreadable", note)
+            return
+        self.cover_label.setText("")
+        self.cover_label.set_original_pixmap(QPixmap.fromImage(image))
+        self.cover_note.setText(note)
+
+    def set_cover_actions_enabled(self, any_selected: bool, any_cover: bool, single_with_cover: bool) -> None:
+        self.cover_set_btn.setEnabled(any_selected)
+        self.cover_folder_btn.setEnabled(any_selected)
+        self.cover_remove_btn.setEnabled(any_cover)
+        self.cover_export_btn.setEnabled(single_with_cover)
 
     def _wrap_with_quick_pick(self, key: str, editor: QLineEdit) -> QWidget:
         """A QLineEdit plus a small "+" button requesting a quick-pick

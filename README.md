@@ -31,9 +31,8 @@ Roadmap, in build order:
    (`redactor_common.gui.sortable_table`). File > Refresh List (F5/
    Ctrl+R) re-scans the folder(s) your loaded files live in and picks
    up anything new dropped there since (`redactor_common.core.
-   folder_refresh`). No cover art yet -- that stays a later roadmap
-   item (lyrics fetching, once a similar gap, has since landed -- item
-   7 below).
+   folder_refresh`). A **Cover** column shows each file's embedded art
+   (loaded lazily, only for rows on screen) -- see item 8 below.
 4. **Key detection** -- via `keyfinder-cli` (shelled out, `core/keyfinder_runner.py`).
    No prebuilt Windows binary exists upstream; see
    [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)
@@ -98,7 +97,16 @@ Roadmap, in build order:
    Files" (Operations menu / right-click, thread-pooled across the
    selection like Detect BPM/Key). Read back from an existing `USLT`
    frame on load, same round-trip BPM/key/loudness get.
-8. Cover art check/add/replace -- via `mutagen` (in-process) -- not yet built
+8. **Cover art** -- embedded ID3v2 `APIC` pictures via `mutagen`
+   (`core/cover_art.py`, written by `core/tag_writer.py`). A Cover
+   column (Yes/No + thumbnail) and a cover preview in the side panel,
+   both read and decoded in the background so large libraries stay
+   responsive. Set a cover from an image file (JPEG/PNG embedded as-is,
+   other formats converted), from the `cover.jpg`/`folder.jpg`/
+   `front.jpg` next to each selected file (each album gets its own art
+   in one go), remove it, or export it to an image file -- Operations >
+   Cover, right-click, or the panel's buttons. Undoable; written on
+   Save as a single front cover.
 9. Duplicate detection via audio fingerprinting -- ffmpeg's bundled
    `chromaprint` support could back this; not yet built, suggested as
    a later addition

@@ -50,9 +50,11 @@ def load_tags(mp3: MP3File) -> None:
         return
 
     if audio is None:
+        mp3.has_cover = False  # no ID3 tag at all, so no embedded picture
         return
 
     tags = audio.tags
+    mp3.has_cover = False
     if tags is not None:
         mp3.title = _first(tags, "TIT2")
         mp3.artist = _first(tags, "TPE1")

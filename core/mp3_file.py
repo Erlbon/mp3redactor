@@ -1,13 +1,14 @@
 """
 MP3File: the per-row data object backing the file table, analogous to
 EpubBook in the epub tool. Holds tag fields plus the results of the
-file-integrity, BPM, key, and lyrics checks; the cover field is still
-reserved here now so that later version doesn't need a schema
-migration, but is left unset/unused until that feature lands.
+file-integrity, BPM, key, and lyrics checks, and the embedded cover's
+state (see core/cover_art.py for why the image itself isn't kept here).
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from core.cover_art import next_version, read_cover
 
 
 # Integrity/BPM status values, shared vocabulary with the table's status
@@ -102,8 +103,17 @@ class MP3File:
     sample_rate_hz: int | None = None
     channels: int | None = None
 
-    # Reserved for a later version -- deliberately present but unused in v1
+    # Embedded cover art (ID3v2 APIC) -- see core/cover_art.py. has_cover
+    # is set on load (None = not read yet); the image itself is read from
+    # disk on demand (cover_bytes()), never kept for every file. A cover
+    # change made in the app is held here until Save writes it:
+    # cover_pending (new image + mime) or cover_remove_pending.
+    # cover_version changes on every cover change, for cache keys.
     has_cover: bool | None = None
+    cover_pending: bytes | None = None
+    cover_pending_mime: str = ""
+    cover_remove_pending: bool = False
+    cover_version: int = 0
 
     # Lyrics (core.lyrics_fetcher.fetch_lyrics(), via the `lyricy`
     # package's LRCLIB provider -- free, no API key) -- read back from
@@ -149,6 +159,52 @@ class MP3File:
         if self.sample_rate_hz is None:
             return ""
         return f"{self.sample_rate_hz} Hz"
+
+    @property
+    def cover_change_pending(self) -> bool:
+        return self.cover_pending is not None or self.cover_remove_pending
+
+    def set_cover(self, data: bytes, mime: str) -> None:
+        """Stages `data` (JPEG or PNG) as this file's cover; written on
+        Save. Marks the file dirty."""
+        self.cover_pending = data
+        self.cover_pending_mime = mime
+        self.cover_remove_pending = False
+        self.has_cover = True
+        self.cover_version = next_version()
+        self.dirty = True
+
+    def remove_cover(self) -> None:
+        """Stages removal of every embedded picture; written on Save."""
+        self.cover_pending = None
+        self.cover_pending_mime = ""
+        self.cover_remove_pending = True
+        self.has_cover = False
+        self.cover_version = next_version()
+        self.dirty = True
+
+    def cover_bytes(self) -> tuple[bytes, str] | None:
+        """(bytes, mime) of the cover as it currently stands -- a pending
+        change if there is one, else what's on disk. Reads the file, so
+        call it off the GUI thread for anything more than one file."""
+        if self.cover_pending is not None:
+            return self.cover_pending, self.cover_pending_mime
+        if self.cover_remove_pending or self.has_cover is False:
+            return None
+        return read_cover(self.path)
+
+    def cover_image_bytes(self) -> bytes | None:
+        """Just the bytes of cover_bytes() -- the loader shape the shared
+        async image helpers take."""
+        cover = self.cover_bytes()
+        return cover[0] if cover else None
+
+    def mark_cover_saved(self) -> None:
+        """Called after a successful write: the pending change is now
+        what's on disk."""
+        self.cover_pending = None
+        self.cover_pending_mime = ""
+        self.cover_remove_pending = False
 
     def apply_tags(self, values: dict[str, str]) -> None:
         """Writes each field in `values` (attribute_key -> new value,

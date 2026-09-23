@@ -45,8 +45,8 @@ import os
 import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QIcon, QImage
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -64,6 +64,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.app_paths import asset_path
+from core.cover_art import extension_for, find_folder_image
 from core.fields import FIELDS
 from core.mp3_file import (
     MP3File,
@@ -110,6 +111,10 @@ from redactor_common.core.error_summary import summarize_errors
 from redactor_common.core.folder_refresh import find_new_files_in_loaded_folders
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
 from redactor_common.core.undo import UndoManager
+from redactor_common.gui.async_icon_cache import AsyncIconCache, IdentityWeakDict
+from redactor_common.gui.async_preview import AsyncPreviewLoader
+from redactor_common.gui.visible_rows import VisibleRowsWatcher
+from gui.cover_image import IMAGE_FILE_FILTER, CoverImageError, cover_from_file
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
 from redactor_common.gui.auto_numbering_dialog import AutoNumberingDialog
@@ -119,7 +124,7 @@ from redactor_common.gui.colors import DIRTY_COLOR, HIGHLIGHT_TEXT_COLOR, TABLE_
 from redactor_common.gui.column_menu import show_column_header_context_menu
 from redactor_common.gui.column_settings_dialog import ColumnSettingsDialog
 from redactor_common.gui.manage_list_dialog import ManageListDialog
-from redactor_common.gui.menu_builder import MenuAction, Separator, build_menu_bar
+from redactor_common.gui.menu_builder import MenuAction, Separator, Submenu, build_menu_bar
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import ProgressReporter, run_with_progress
@@ -141,6 +146,7 @@ from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMM
 _STATUS_COLUMN_LABELS: dict[str, str] = {
     "integrity": "Integrity", "bpm": "BPM", "key": "Key",
     "deep_check": "Deep Check", "loudness": "Loudness", "lyrics": "Lyrics",
+    "cover": "Cover",
 }
 # Format details from ffprobe (core.scan_service.run_deep_check(), same
 # action that populates deep_check above) -- kept as their own group
@@ -199,6 +205,12 @@ FILENAME_PLACEHOLDERS: list[tuple[str, str]] = [(key, label) for key, label, _m 
 NUMERIC_FILENAME_FIELDS: frozenset[str] = frozenset({"track", "discnumber", "year"})
 DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
 
+# Cover column thumbnail size -- same as the sibling apps' table covers.
+COVER_ICON_SIZE = QSize(24, 32)
+# The side panel's cover is decoded no larger than this (2x a wide
+# panel, for high-DPI screens) -- embedded art is often 1000-3000 px.
+COVER_PREVIEW_SIZE = QSize(880, 880)
+
 STATUS_COLORS = {
     STATUS_OK: Qt.GlobalColor.darkGreen,
     STATUS_WARNING: Qt.GlobalColor.darkYellow,
@@ -246,6 +258,23 @@ class MainWindow(QMainWindow):
         self._setup_column_persistence()
         self.zoom = TableZoomController(self.table, parent=self)
 
+        # Cover art (see core/cover_art.py). Table thumbnails load lazily
+        # -- only rows on screen ever read or decode a cover, in the
+        # background (redactor_common's VisibleRowsWatcher +
+        # AsyncIconCache, the mechanism epub/cbz use). A cover's version
+        # is (path, mtime, cover_version); _cover_source remembers the
+        # last one requested so a table rebuild can reuse cached icons
+        # without touching the disk.
+        self.table.setIconSize(COVER_ICON_SIZE)
+        self._cover_icons = AsyncIconCache(COVER_ICON_SIZE, parent=self)
+        self._cover_icons.icon_ready.connect(self._on_cover_icon_ready)
+        self._cover_source = IdentityWeakDict()
+        self._cover_item_by_file = IdentityWeakDict()
+        self._visible_rows = VisibleRowsWatcher(self.table, self._load_cover_icons_for_rows)
+        # The side panel's cover, read + decoded off the GUI thread.
+        self._cover_preview = AsyncPreviewLoader(COVER_PREVIEW_SIZE, parent=self)
+        self._cover_preview.image_ready.connect(self._on_cover_preview_ready)
+
         self.tag_panel = TagPanel()
         self.tag_panel.setMinimumWidth(24)
         self.tag_panel.setMaximumWidth(440)
@@ -253,6 +282,10 @@ class MainWindow(QMainWindow):
         self.tag_panel.selectionCountChanged.connect(self._on_tag_panel_selection_count_changed)
         self.tag_panel.collapseToggleRequested.connect(self._toggle_tag_panel)
         self.tag_panel.quickPickRequested.connect(self._on_quick_pick_requested)
+        self.tag_panel.coverSetRequested.connect(self.set_cover_from_file)
+        self.tag_panel.coverFromFolderRequested.connect(self.set_cover_from_folder_images)
+        self.tag_panel.coverRemoveRequested.connect(self.remove_cover)
+        self.tag_panel.coverExportRequested.connect(self.export_cover)
         self._sync_panel_visible_fields()
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
@@ -358,6 +391,17 @@ class MainWindow(QMainWindow):
                     "fetch_lyrics", "Fetch L&yrics for Selected Files", self.run_lyrics_fetch
                 ),
                 MenuAction("edit_lyrics", "&Edit Lyrics...", self.edit_lyrics_for_selection),
+                Separator(),
+                Submenu("C&over", [
+                    MenuAction("cover_set", "&Set Cover from Image File...", self.set_cover_from_file),
+                    MenuAction(
+                        "cover_from_folder", "Set Cover from &Folder Image (cover.jpg, folder.jpg...)",
+                        self.set_cover_from_folder_images,
+                    ),
+                    MenuAction("cover_remove", "&Remove Cover", self.remove_cover),
+                    Separator(),
+                    MenuAction("cover_export", "&Export Cover to Image File...", self.export_cover),
+                ]),
                 Separator(),
                 MenuAction("auto_numbering", "Auto-&Numbering...", self.open_auto_numbering_dialog),
                 Separator(),
@@ -1094,6 +1138,7 @@ class MainWindow(QMainWindow):
 
     def _on_table_selection_changed(self) -> None:
         self.tag_panel.set_selection(self._selected_files())
+        self._update_cover_panel()
 
     def _on_tag_panel_selection_count_changed(self, count: int) -> None:
         self.action_apply_bulk_edit.setText(f"Apply to {count} selected file(s)")
@@ -1375,6 +1420,186 @@ class MainWindow(QMainWindow):
 
     # -- table ------------------------------------------------------------
 
+    # -- cover art ------------------------------------------------------------
+    # In-memory, undoable edits like a bulk edit: written on Save (see
+    # core/tag_writer.py's _write_cover_frame()).
+
+    def _cover_targets(self, action_desc: str, need_cover: bool = False) -> list[MP3File]:
+        targets = [mp3 for mp3 in self._require_targets(action_desc) if not mp3.load_error]
+        if need_cover:
+            targets = [mp3 for mp3 in targets if mp3.has_cover]
+        return targets
+
+    def _after_cover_change(self) -> None:
+        self._rebuild_table()
+        self._visible_rows.schedule()
+
+    def set_cover_from_file(self) -> None:
+        targets = self._cover_targets("set a cover on")
+        if not targets:
+            return
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "Choose Cover Image", resolve_start_directory(self.settings.last_directory),
+            IMAGE_FILE_FILTER,
+        )
+        if not path:
+            return
+        self._remember_last_directory(path)
+        try:
+            data, mime = cover_from_file(path)
+        except CoverImageError as exc:
+            QMessageBox.warning(self, "Cannot Use Image", str(exc))
+            return
+        self._push_undo("Set Cover", targets)
+        for mp3 in targets:
+            mp3.set_cover(data, mime)
+        self._after_cover_change()
+
+    def set_cover_from_folder_images(self) -> None:
+        """For each selected file, embeds the album-art image sitting next
+        to it (cover.jpg, folder.jpg, front.jpg, ... -- see
+        core.cover_art.FOLDER_IMAGE_NAMES), so a multi-album selection
+        gets each album's own art in one go."""
+        targets = self._cover_targets("set covers on")
+        if not targets:
+            return
+        found: dict[int, tuple[bytes, str]] = {}
+        missing: list[str] = []
+        errors: list[str] = []
+        by_image: dict[str, tuple[bytes, str]] = {}  # each folder image read once
+
+        def step(mp3: MP3File, index: int) -> None:
+            image_path = find_folder_image(mp3.path)
+            if image_path is None:
+                missing.append(mp3.filename)
+                return
+            key = str(image_path)
+            if key not in by_image:
+                try:
+                    by_image[key] = cover_from_file(image_path)
+                except CoverImageError as exc:
+                    errors.append(f"{image_path.name}: {exc}")
+                    return
+            found[index] = by_image[key]
+
+        run_with_progress(
+            self, targets, step, "Looking for folder images...", threshold=3, cancellable=False,
+            label_for=lambda mp3: f"Checking: {mp3.filename}",
+        )
+        if found:
+            changed = [targets[i] for i in found]
+            self._push_undo("Set Cover from Folder", changed)
+            for index, (data, mime) in found.items():
+                targets[index].set_cover(data, mime)
+            self._after_cover_change()
+
+        message = f"Set a cover on {len(found)} of {len(targets)} file(s)."
+        if missing:
+            message += (
+                f"\n\nNo cover.jpg / folder.jpg / front.jpg next to {len(missing)} file(s): "
+                f"{summarize_errors(missing)}"
+            )
+        if errors:
+            message += f"\n\nUnreadable image(s): {summarize_errors(errors)}"
+        QMessageBox.information(self, "Cover from Folder Image", message)
+
+    def remove_cover(self) -> None:
+        targets = self._cover_targets("remove the cover from", need_cover=True)
+        if not targets:
+            return
+        self._push_undo("Remove Cover", targets)
+        for mp3 in targets:
+            mp3.remove_cover()
+        self._after_cover_change()
+
+    def export_cover(self) -> None:
+        targets = self._cover_targets("export the cover of", need_cover=True)
+        if len(targets) != 1:
+            if targets:
+                QMessageBox.information(self, "Export Cover", "Select a single file to export its cover.")
+            return
+        mp3 = targets[0]
+        cover = mp3.cover_bytes()
+        if cover is None:
+            QMessageBox.warning(self, "Export Cover", f"{mp3.filename} has no readable cover.")
+            return
+        data, mime = cover
+        default = str(mp3.path.with_name(mp3.path.stem + " cover" + extension_for(mime)))
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Export Cover", default, f"Image (*{extension_for(mime)})",
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_bytes(data)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export Cover", f"Could not write the image: {exc}")
+
+    def _update_cover_panel(self) -> None:
+        selected = [mp3 for mp3 in self._selected_files() if not mp3.load_error]
+        self.tag_panel.set_cover_actions_enabled(
+            any_selected=bool(selected),
+            any_cover=any(mp3.has_cover for mp3 in selected),
+            single_with_cover=len(selected) == 1 and bool(selected[0].has_cover),
+        )
+        if len(selected) != 1:
+            self._cover_preview.cancel()
+            if not selected:
+                self.tag_panel.show_cover_message("No file selected")
+            else:
+                with_cover = sum(1 for mp3 in selected if mp3.has_cover)
+                self.tag_panel.show_cover_message(
+                    f"{len(selected)} files selected", f"{with_cover} with a cover"
+                )
+            return
+        mp3 = selected[0]
+        note = "Not saved yet" if mp3.cover_change_pending else ""
+        if not mp3.has_cover:
+            self._cover_preview.cancel()
+            self.tag_panel.show_cover_message("No cover", note)
+            return
+        self.tag_panel.show_cover_loading(note)
+        self._cover_preview.request(mp3, mp3.cover_image_bytes)
+
+    def _on_cover_preview_ready(self, mp3: MP3File, image: QImage) -> None:
+        self.tag_panel.show_cover_image(image, "Not saved yet" if mp3.cover_change_pending else "")
+
+    def _load_cover_icons_for_rows(self, rows: list[int]) -> None:
+        """VisibleRowsWatcher callback: request thumbnails for these (on
+        screen) rows only -- and none at all while the Cover column is
+        hidden."""
+        col = self._col_index["cover"]
+        if self.table.isColumnHidden(col):
+            return
+        for row in rows:
+            item = self.table.item(row, col)
+            mp3 = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+            if mp3 is None or mp3.load_error or not mp3.has_cover:
+                continue
+            try:
+                mtime = mp3.path.stat().st_mtime
+            except OSError:
+                continue
+            source = (str(mp3.path), mtime, mp3.cover_version)
+            self._cover_source[mp3] = source
+            cached = self._cover_icons.get_cached_icon(mp3, source)
+            if cached is not None:
+                item.setIcon(cached)
+                continue
+            self._cover_icons.request(mp3, source, loader=mp3.cover_image_bytes)
+
+    def _on_cover_icon_ready(self, mp3: MP3File, icon: QIcon) -> None:
+        """A background decode finished: set that one cell's icon, via the
+        item captured at population time (Qt's sort moves items between
+        rows without recreating them)."""
+        item = self._cover_item_by_file.get(mp3)
+        if item is None or not mp3.has_cover:
+            return
+        try:
+            item.setIcon(icon)
+        except RuntimeError:
+            pass  # the row was rebuilt/removed meanwhile; the next visible pass catches up
+
     def _rebuild_table(self) -> None:
         with suspend_sorting(self.table):
             self.table.setRowCount(len(self.files))
@@ -1385,6 +1610,7 @@ class MainWindow(QMainWindow):
         # panel is showing -- keep the two in sync explicitly rather
         # than relying on itemSelectionChanged firing on its own here.
         self.tag_panel.set_selection(self._selected_files())
+        self._update_cover_panel()
 
     def _populate_row(self, row: int, mp3: MP3File) -> None:
         filename_item = QTableWidgetItem(mp3.filename)
@@ -1489,6 +1715,20 @@ class MainWindow(QMainWindow):
             lyrics_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["lyrics"], lyrics_item)
 
+        cover_item = QTableWidgetItem(self._cover_display(mp3))
+        cover_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        # Only an already-decoded thumbnail here, never a read/decode --
+        # see _load_cover_icons_for_rows().
+        cached = self._cover_icons.get_cached_icon(mp3, self._cover_source.get(mp3))
+        if cached is not None and mp3.has_cover:
+            cover_item.setIcon(cached)
+        if mp3.cover_change_pending:
+            cover_item.setBackground(DIRTY_COLOR)
+            cover_item.setForeground(HIGHLIGHT_TEXT_COLOR)
+            cover_item.setToolTip("Cover change not saved yet")
+        self.table.setItem(row, self._col_index["cover"], cover_item)
+        self._cover_item_by_file[mp3] = cover_item
+
         encoder_item = QTableWidgetItem(mp3.audio_encoder)
         encoder_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["encoder"], encoder_item)
@@ -1519,6 +1759,12 @@ class MainWindow(QMainWindow):
         if mp3.key_status == STATUS_TOOL_MISSING:
             return "TOOL MISSING"
         return mp3.key_value
+
+    @staticmethod
+    def _cover_display(mp3: MP3File) -> str:
+        if mp3.load_error or mp3.has_cover is None:
+            return ""
+        return "Yes" if mp3.has_cover else "No"
 
     @staticmethod
     def _lyrics_display(mp3: MP3File) -> str:
@@ -1580,6 +1826,15 @@ class MainWindow(QMainWindow):
                 items.append(
                     MenuAction("edit_lyrics", "Edit Lyrics...", lambda: self.open_lyrics_dialog(files[0]))
                 )
+            items.extend([
+                Separator(),
+                MenuAction("cover_set", "Set Cover from Image File...", self.set_cover_from_file),
+                MenuAction("cover_from_folder", "Set Cover from Folder Image", self.set_cover_from_folder_images),
+            ])
+            if any(mp3.has_cover for mp3 in files):
+                items.append(MenuAction("cover_remove", "Remove Cover", self.remove_cover))
+            if len(files) == 1 and files[0].has_cover:
+                items.append(MenuAction("cover_export", "Export Cover...", self.export_cover))
             return items
 
         show_table_context_menu(
