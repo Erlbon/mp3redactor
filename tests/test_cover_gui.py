@@ -13,7 +13,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice  # noqa: E402
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QThreadPool  # noqa: E402
 from PyQt6.QtGui import QColor, QImage  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
@@ -159,6 +159,10 @@ def test_thumbnails_load_only_for_visible_rows(window, tmp_path, monkeypatch):
     window.table.sortItems(0)
     window._visible_rows.check_now()
     assert _pump_until(lambda: len(reads) > 0)
+    # Let every decode queued for this first viewport finish, so none of
+    # them lands after reads.clear() below and gets counted against the
+    # hidden-column check.
+    QThreadPool.globalInstance().waitForDone()
     for _ in range(20):
         _app.processEvents()
     assert 0 < len(reads) < 80  # viewport + buffer, not all 120
