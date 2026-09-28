@@ -19,3 +19,7 @@ mp3redactor_settings.ini
 # Written next to the exe on an unhandled exception -- per-machine
 # diagnostic output, not something to ship in the repo.
 mp3redactor_crash.log
+
+# Linux builds (redactor-build-tools/linux-build/build.sh)
+build-linux/
+dist-linux/

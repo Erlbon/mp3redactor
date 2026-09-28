@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-28#02 -- Linux version
+
+- **A Linux download** alongside the Windows one:
+  `mp3redactor-linux-x86_64.tar.gz`, a single self-contained program for
+  64-bit desktop Linux (glibc 2.35+: Ubuntu 22.04+, Debian 12+, Fedora
+  36+, Mint 21+). Built with Python 3.12 like the Windows version; the
+  whole test suite runs on Linux as part of every release build.
+  External tools are found on your PATH, as on Windows.
+- redactor_common 2026-09-28-05 (from 2026-09-28-02): on Linux the settings live in `~/.config/mp3redactor/`, the standard place, instead of next to the program (Windows unchanged).
+
 ## 2026-09-28#01 -- Look up albums on MusicBrainz
 
 - **Import > Look Up via MusicBrainz...**: finds the MusicBrainz release
