@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-28#04 -- Shared release notes
+
+No change to the app. The GitHub Release notes (every CHANGELOG section since the previous release) are now built by redactor_common's shared script instead of a copy in this repo (redactor_common 2026-09-28-07, from 2026-09-28-06).
+
 ## 2026-09-28#03 -- Linux tool lookup fix
 
 - **Linux: external tools are found again.** The first Linux release looked for `ffmpeg.exe`, `mp3val.exe` and `keyfinder-cli.exe` by their Windows names, so on Linux it found none of them on PATH -- integrity checks, loudness, conversion and key detection didn't work. They're now found as `ffmpeg`, `mp3val` and `keyfinder-cli` (redactor_common 2026-09-28-06). Windows is unchanged.
