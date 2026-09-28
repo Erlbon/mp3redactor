@@ -28,3 +28,11 @@ system or in `tools/`:
   checking and repair.
 - **[keyfinder-cli](https://github.com/EvanPurkhiser/keyfinder-cli)**
   (v2+) — musical key detection.
+
+## Online services
+
+- **[MusicBrainz](https://musicbrainz.org/)** — the open music
+  encyclopedia behind Import > Look Up via MusicBrainz (release search
+  and track lists, via its web service; core data CC0).
+- **[Cover Art Archive](https://coverartarchive.org/)** — release cover
+  previews in that lookup (shown only, never embedded by it).

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-28#01 -- Look up albums on MusicBrainz
+
+- **Import > Look Up via MusicBrainz...**: finds the MusicBrainz release
+  each selected folder belongs to (one album per folder) and matches
+  every file to its track -- by the folder's Artist + Album tags or its
+  "Artist - Album (Year)" name, then by track number, title and length.
+  Other editions of the album (other countries, remasters) are offered
+  under Other Matches; Artist/Album can be corrected and searched again.
+  The release's cover (Cover Art Archive) is shown next to your own for
+  comparison.
+- Applies title, artist, album artist, album, track, disc, year and the
+  **MusicBrainz Album Id / Track Id** (new fields, hidden columns by
+  default, written the way MusicBrainz Picard writes them), through the
+  per-field overwrite review; one Undo step; written on Save.
+- Lookups run in the background (the window stays responsive), at most
+  one MusicBrainz request per second as its terms ask.
+- redactor_common 2026-09-28-02 (background lookups, shared lookup and
+  overwrite-review dialogs).
+
 ## 2026-09-23#03 -- resizable cover area
 
 The cover in the side panel is now resizable: drag the divider between

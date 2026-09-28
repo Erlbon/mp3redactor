@@ -110,6 +110,25 @@ Roadmap, in build order:
 9. Duplicate detection via audio fingerprinting -- ffmpeg's bundled
    `chromaprint` support could back this; not yet built, suggested as
    a later addition
+10. **MusicBrainz lookup** (stage 1 shipped 2026-09-28) -- Import >
+    Look Up via MusicBrainz... finds the release each selected folder
+    belongs to (one album per folder): it searches MusicBrainz by the
+    folder's Artist + Album tags (or an "Artist - Album (Year)" folder
+    name), then scores each candidate release's track list against the
+    files by track number, title and length, assigning each file to its
+    track. Review in the family's lookup dialog: the release's cover
+    (Cover Art Archive) next to your own, other editions under Other
+    Matches, Artist/Album correctable with Search This Item. Applies
+    title, artist, album artist, album, track, disc (multi-disc
+    releases), year, and the MusicBrainz Album Id / Track Id (written
+    the way MusicBrainz Picard writes them: `TXXX:MusicBrainz Album Id`
+    and a `UFID` frame owned by `http://musicbrainz.org`), through the
+    per-field overwrite review; undoable, written on Save. MusicBrainz
+    is queried at most once per second, as its terms ask. No key or
+    tool needed. **Stage 2 (not built):** identifying files with junk
+    tags by their audio -- `fpcalc` (Chromaprint; official binaries per
+    platform, located via Settings > Locate External Tools like the
+    other tools, never bundled) plus an AcoustID application key.
 
 ## Tooling decisions
 

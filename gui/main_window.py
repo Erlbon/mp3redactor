@@ -186,6 +186,7 @@ DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({
     "encoder", "sample_rate", "channels",
     "albumsort", "artistsort", "albumartistsort",
     "acoustid_fingerprint", "itunesadvisory",
+    "musicbrainz_albumid", "musicbrainz_trackid",
 })
 
 # Metadata fields offered as %placeholder% tokens in Rename/Export by
@@ -220,6 +221,16 @@ STATUS_COLORS = {
 
 TAG_PANEL_COLLAPSED_WIDTH = 32
 TAG_PANEL_DEFAULT_WIDTH = 300
+
+
+class _ReviewItem:
+    """Adapts an MP3File to the shared overwrite review, which reads
+    `.path` and a `.metadata` object (cbzredactor's shape); an MP3File
+    holds its tag fields directly."""
+
+    def __init__(self, mp3: MP3File):
+        self.path = str(mp3.path)
+        self.metadata = mp3
 
 
 class MainWindow(QMainWindow):
@@ -360,6 +371,9 @@ class MainWindow(QMainWindow):
                 MenuAction(
                     "parse_filename", "&Parse Filename...", self.open_parse_filename_dialog,
                     shortcut=shortcuts.PARSE_FILENAME_TO_METADATA,
+                ),
+                MenuAction(
+                    "musicbrainz_lookup", "Look Up via &MusicBrainz...", self.open_musicbrainz_lookup_dialog
                 ),
                 Separator(),
                 MenuAction(
@@ -806,6 +820,39 @@ class MainWindow(QMainWindow):
         self._push_undo("Parse Filename", targets)
         for index, fields in changes.items():
             targets[index].apply_tags(fields)
+        self._rebuild_table()
+
+    def open_musicbrainz_lookup_dialog(self) -> None:
+        """Import > Look Up via MusicBrainz...: the selected files, one
+        album per folder, matched to MusicBrainz releases (see
+        gui/musicbrainz_lookup_dialog.py). Anything that would overwrite
+        an existing, different value goes through the family's per-field
+        overwrite review first; the result is one Undo step and is
+        written on Save, like every other edit."""
+        from redactor_common.gui.overwrite_review_dialog import resolve_overwrite_conflicts
+
+        from gui.musicbrainz_lookup_dialog import MusicBrainzLookupDialog, group_by_folder
+
+        targets = self._require_targets("look up")
+        if not targets:
+            return
+        dialog = MusicBrainzLookupDialog(group_by_folder(targets), self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        changes = dialog.file_changes()
+        if not changes:
+            return
+        files = [mp3 for mp3, _fields in changes]
+        proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
+        labels = {key: label for key, label, _multiline in FIELDS}
+        approved = resolve_overwrite_conflicts(
+            self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
+        )
+        if not approved:
+            return
+        self._push_undo("MusicBrainz Lookup", files)
+        for index, fields in approved.items():
+            files[index].apply_tags(fields)
         self._rebuild_table()
 
     def open_auto_numbering_dialog(self) -> None:

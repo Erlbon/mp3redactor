@@ -51,6 +51,8 @@ FIELDS: list[tuple[str, str, bool]] = [
     ("albumartistsort", "Album Artist Sort", False),
     ("acoustid_fingerprint", "AcoustID Fingerprint", False),
     ("itunesadvisory", "iTunes Advisory", False),
+    ("musicbrainz_albumid", "MusicBrainz Album Id", False),
+    ("musicbrainz_trackid", "MusicBrainz Track Id", False),
 ]
 
 # Fields with a quick-pick "+" button in the bulk-edit panel, backed by

@@ -47,7 +47,14 @@ message would otherwise make look retriable.
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
-from core.mp3_file import ACOUSTID_FINGERPRINT_DESC, ITUNESADVISORY_DESC, MP3File, STATUS_OK
+from core.mp3_file import (
+    ACOUSTID_FINGERPRINT_DESC,
+    ITUNESADVISORY_DESC,
+    MUSICBRAINZ_ALBUM_ID_DESC,
+    MUSICBRAINZ_UFID_OWNER,
+    MP3File,
+    STATUS_OK,
+)
 
 # attribute_key -> ID3 frame id for the FIELDS entries backed by a
 # plain 4-letter frame. A separate mapping from FIELDS itself (rather
@@ -81,6 +88,7 @@ _SIMPLE_FRAME_IDS = {
 _TXXX_DESCRIPTIONS = {
     "acoustid_fingerprint": ACOUSTID_FINGERPRINT_DESC,
     "itunesadvisory": ITUNESADVISORY_DESC,
+    "musicbrainz_albumid": MUSICBRAINZ_ALBUM_ID_DESC,
 }
 
 
@@ -101,7 +109,7 @@ def save_tags(mp3: MP3File) -> bool:
     try:
         from mutagen.id3 import (
             APIC, COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
-            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, USLT,
+            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, UFID, USLT,
         )
         from mutagen.mp3 import MP3
     except ImportError:
@@ -141,6 +149,12 @@ def save_tags(mp3: MP3File) -> bool:
         tags.delall(frame_key)
         if value:
             tags.add(TXXX(encoding=3, desc=desc, text=[value]))
+
+    # MusicBrainz recording id: a UFID frame, as Picard writes it.
+    ufid_key = f"UFID:{MUSICBRAINZ_UFID_OWNER}"
+    tags.delall(ufid_key)
+    if mp3.musicbrainz_trackid:
+        tags.add(UFID(owner=MUSICBRAINZ_UFID_OWNER, data=mp3.musicbrainz_trackid.encode("ascii", errors="replace")))
 
     _write_comment_frame(tags, mp3, COMM)
     _write_lyrics_frame(tags, mp3, USLT)

@@ -21,7 +21,14 @@ _write_loudness_frame() for the write side of this same round trip.
 from pathlib import Path
 
 from core.ffmpeg_probe import REPLAYGAIN_REFERENCE_LUFS
-from core.mp3_file import ACOUSTID_FINGERPRINT_DESC, ITUNESADVISORY_DESC, MP3File, STATUS_OK
+from core.mp3_file import (
+    ACOUSTID_FINGERPRINT_DESC,
+    ITUNESADVISORY_DESC,
+    MUSICBRAINZ_ALBUM_ID_DESC,
+    MUSICBRAINZ_UFID_OWNER,
+    MP3File,
+    STATUS_OK,
+)
 
 
 def load_tags(mp3: MP3File) -> None:
@@ -72,6 +79,8 @@ def load_tags(mp3: MP3File) -> None:
         mp3.albumartistsort = _first(tags, "TSO2")
         mp3.acoustid_fingerprint = _first(tags, f"TXXX:{ACOUSTID_FINGERPRINT_DESC}")
         mp3.itunesadvisory = _first(tags, f"TXXX:{ITUNESADVISORY_DESC}")
+        mp3.musicbrainz_albumid = _first(tags, f"TXXX:{MUSICBRAINZ_ALBUM_ID_DESC}")
+        mp3.musicbrainz_trackid = _ufid(tags, MUSICBRAINZ_UFID_OWNER)
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
 
         # Same "read back what's already on disk" reasoning as
@@ -169,3 +178,13 @@ def _first_comm(tags) -> str:
             except (AttributeError, IndexError):
                 return str(frame)
     return ""
+
+
+def _ufid(tags, owner: str) -> str:
+    """A UFID frame's identifier (e.g. MusicBrainz's recording id) as
+    text, or ""."""
+    frame = tags.get(f"UFID:{owner}")
+    if frame is None:
+        return ""
+    data = frame.data
+    return data.decode("ascii", errors="replace") if isinstance(data, bytes) else str(data)

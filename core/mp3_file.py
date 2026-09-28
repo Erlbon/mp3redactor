@@ -29,6 +29,13 @@ STATUS_TOOL_MISSING = "TOOL MISSING"
 # interop); "ITUNESADVISORY" matches mp3tag's own mapping table.
 ACOUSTID_FINGERPRINT_DESC = "Acoustid Fingerprint"
 ITUNESADVISORY_DESC = "ITUNESADVISORY"
+# MusicBrainz identifiers, as MusicBrainz Picard writes them (and other
+# taggers read them): the release's id in a TXXX frame, the recording's
+# id in a UFID frame owned by "http://musicbrainz.org". Written by
+# Import > Look Up via MusicBrainz (core/musicbrainz_lookup.py) so a
+# file permanently records which release/recording it was matched to.
+MUSICBRAINZ_ALBUM_ID_DESC = "MusicBrainz Album Id"
+MUSICBRAINZ_UFID_OWNER = "http://musicbrainz.org"
 
 
 @dataclass
@@ -56,6 +63,8 @@ class MP3File:
     albumartistsort: str = ""
     acoustid_fingerprint: str = ""
     itunesadvisory: str = ""
+    musicbrainz_albumid: str = ""  # TXXX:MusicBrainz Album Id (release)
+    musicbrainz_trackid: str = ""  # UFID:http://musicbrainz.org (recording)
     duration_seconds: float | None = None
     bitrate_kbps: int | None = None
 
