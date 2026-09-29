@@ -129,6 +129,9 @@ from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import ProgressReporter, run_with_progress
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
+from redactor_common.core.rename_log import RenameLog
+from redactor_common.gui.rename_undo import undo_last_rename
+from core.app_paths import base_dir
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
 from redactor_common.gui.sortable_table import NumericTableWidgetItem, suspend_sorting
@@ -222,6 +225,12 @@ STATUS_COLORS = {
 TAG_PANEL_COLLAPSED_WIDTH = 32
 TAG_PANEL_DEFAULT_WIDTH = 300
 
+
+
+def _rename_log() -> RenameLog:
+    """The persistent log behind File > Undo Last Rename (redactor_common's
+    core/rename_log.py), next to this app's settings."""
+    return RenameLog(os.path.join(str(base_dir()), "mp3redactor_rename_log.json"))
 
 class _ReviewItem:
     """Adapts an MP3File to the shared overwrite review, which reads
@@ -342,6 +351,7 @@ class MainWindow(QMainWindow):
                     "rename_file", "&Rename File...", self.rename_selected_file,
                     shortcut=shortcuts.RENAME_SINGLE_FILE,
                 ),
+                MenuAction("undo_rename", "&Undo Last Rename...", self.undo_last_rename),
                 MenuAction(
                     "rename_files", "Rename / &Export Files...", self.open_rename_dialog,
                     shortcut=shortcuts.RENAME_EXPORT_BY_PATTERN,
@@ -785,6 +795,7 @@ class MainWindow(QMainWindow):
         # onto self.undo_manager -- same "in-memory edits only" line
         # this project already draws for Save/Fix Integrity (see the
         # Undo section's own docstring above).
+        renamed: list[tuple[str, str]] = []
         for mp3, old_path, new_path in dialog.planned_renames():
             try:
                 if export_mode:
@@ -792,8 +803,10 @@ class MainWindow(QMainWindow):
                 else:
                     os.rename(old_path, new_path)
                     mp3.path = Path(new_path)
+                    renamed.append((str(old_path), str(new_path)))
             except OSError as exc:
                 errors.append(f"{Path(old_path).name}: {exc}")
+        _rename_log().record("Rename by Pattern", renamed)
 
         self._rebuild_table()
         if errors:
@@ -947,7 +960,20 @@ class MainWindow(QMainWindow):
         method's own name) -- this is now just the mp3-specific wiring:
         where the path lives on MP3File, and what to do once it's
         changed."""
-        if prompt_rename_single_file(self, str(mp3.path), lambda p: setattr(mp3, "path", Path(p))):
+        if prompt_rename_single_file(self, str(mp3.path), lambda p: setattr(mp3, "path", Path(p)), log=_rename_log()):
+            self._rebuild_table()
+
+    def undo_last_rename(self) -> None:
+        """File > Undo Last Rename...: renames the newest logged rename back
+        (redactor_common's rename log -- renames aren't on the Undo stack,
+        which covers metadata edits only)."""
+        def restored(new_path: str, old_path: str) -> None:
+            wanted = os.path.normcase(os.path.abspath(new_path))
+            for item in self.files:
+                if os.path.normcase(os.path.abspath(str(item.path))) == wanted:
+                    item.path = Path(old_path)
+
+        if undo_last_rename(self, _rename_log(), restored):
             self._rebuild_table()
 
     def rename_selected_file(self) -> None:
