@@ -107,6 +107,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
             query_fields=[("artist", "Artist"), ("album", "Album")],
             get_local_cover=self._local_cover,
             resolve_alternative=self._resolve,
+            item_noun="folder",
         )
 
     @staticmethod

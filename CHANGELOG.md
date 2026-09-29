@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-29#03 -- Small fixes
+
+- Message boxes with several wide buttons keep their text next to the icon (on Linux the text could end up in a narrow strip far to the right).
+- Look Up via MusicBrainz: rows are album folders, and the dialog now says so ("Folder" column, "Found something for 2 of 5 folder(s)" instead of "file(s)").
+- redactor_common 2026-09-29-02 (from 2026-09-29-01).
+
 ## 2026-09-29#02 -- Identify songs by their sound
 
 - **Look Up via MusicBrainz now also listens.** With `fpcalc` set up
