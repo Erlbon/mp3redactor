@@ -45,7 +45,7 @@ import os
 import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QSize, Qt
 from PyQt6.QtGui import QIcon, QImage
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -1687,16 +1687,49 @@ class MainWindow(QMainWindow):
             pass  # the row was rebuilt/removed meanwhile; the next visible pass catches up
 
     def _rebuild_table(self) -> None:
+        # Rows are refilled in self.files order and then re-sorted, so a
+        # selection kept by row number would land on whichever file now
+        # sits in that row. Found 2026-09-29: with the (default)
+        # descending sort, Apply on a.mp3 left c.mp3 selected, and the
+        # NEXT Apply silently edited c.mp3. Reselect by file instead.
+        selected_ids = {id(mp3) for mp3 in self._selected_files()}
         with suspend_sorting(self.table):
             self.table.setRowCount(len(self.files))
             for row, mp3 in enumerate(self.files):
                 self._populate_row(row, mp3)
+        self._reselect_files(selected_ids)
         # Rows were just torn down and rebuilt from scratch, so whatever
         # rows Qt now considers "selected" may not match what the tag
         # panel is showing -- keep the two in sync explicitly rather
         # than relying on itemSelectionChanged firing on its own here.
         self.tag_panel.set_selection(self._selected_files())
         self._update_cover_panel()
+
+    def _reselect_files(self, file_ids: set[int]) -> None:
+        """Selects exactly the rows holding these MP3Files (by id()),
+        signals blocked -- the caller resyncs the panel once."""
+        col = self._col_index["filename"]
+        selection = QItemSelection()
+        first_row = -1
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, col)
+            if item is not None and id(item.data(Qt.ItemDataRole.UserRole)) in file_ids:
+                left = self.table.model().index(row, 0)
+                right = self.table.model().index(row, self.table.columnCount() - 1)
+                selection.select(left, right)
+                if first_row < 0:
+                    first_row = row
+        model = self.table.selectionModel()
+        was_blocked = self.table.blockSignals(True)
+        try:
+            model.clearSelection()
+            if first_row >= 0:
+                model.setCurrentIndex(
+                    self.table.model().index(first_row, col), QItemSelectionModel.SelectionFlag.NoUpdate,
+                )
+                model.select(selection, QItemSelectionModel.SelectionFlag.Select)
+        finally:
+            self.table.blockSignals(was_blocked)
 
     def _populate_row(self, row: int, mp3: MP3File) -> None:
         filename_item = QTableWidgetItem(mp3.filename)

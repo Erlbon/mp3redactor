@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29#05 -- Edits stay on the file you selected
+
+- **Fixed: an edit could land on the wrong file.** After Apply (or Parse Filename, Auto-Numbering, a MusicBrainz lookup, Undo...) the table is redrawn, and the selection stayed on the same row *number* -- which, in a sorted table (the default), now held a different file. The panel then showed that other file, and the next Apply edited it. The selection now stays on the same files.
+- Checked for the stale-panel bug fixed in cbzredactor 2026-09-29#05: not present here (the panel only writes fields you tick, and is reloaded after every edit); a regression test now covers it.
+
 ## 2026-09-29#04 -- Undo Last Rename
 
 - **File > Undo Last Rename...**: renames are now logged (Rename/Export by Pattern, Rename File) and the newest one can be taken back -- even after restarting the app. It shows what will be renamed back first, and never overwrites: a file that has moved since, or whose old name is taken again, is skipped and reported. The in-app Undo still covers metadata edits only.
