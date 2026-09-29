@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29#01 -- ASCII-safe filenames
+
+- **Rename/Export by Pattern: "ASCII-safe filenames"** -- new names use only plain ASCII letters, digits and punctuation: accents removed (é -> e, å -> a), æ -> ae, ø -> o, ß -> ss, typographic quotes and dashes made plain, and anything with no ASCII form (other scripts, emoji, symbols) dropped. For old file systems, network shares, e-readers, car stereos and sync tools that mangle anything else. The preview updates as you tick it, and the choice is remembered.
+- redactor_common 2026-09-29-01 (from 2026-09-28-07).
+
 ## 2026-09-28#04 -- Shared release notes
 
 No change to the app. The GitHub Release notes (every CHANGELOG section since the previous release) are now built by redactor_common's shared script instead of a copy in this repo (redactor_common 2026-09-28-07, from 2026-09-28-06).

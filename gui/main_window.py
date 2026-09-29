@@ -726,6 +726,10 @@ class MainWindow(QMainWindow):
 
     # -- rename/export by pattern, and the reverse: parse filename --------
 
+    def _remember_ascii_filenames(self, enabled: bool) -> None:
+        self.settings.ascii_filenames = enabled
+        save_settings(self.settings)
+
     def _remember_pattern_used(self, pattern: str) -> None:
         self.settings.pattern_history = dedupe_and_trim_pattern_history(
             self.settings.pattern_history, pattern
@@ -767,6 +771,8 @@ class MainWindow(QMainWindow):
             title="Rename / Export by Metadata Pattern",
             item_noun="file",
             zero_pad_field="track",
+            ascii_only=self.settings.ascii_filenames,
+            on_ascii_only_changed=self._remember_ascii_filenames,
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:

@@ -137,6 +137,9 @@ class Settings:
     # share this history -- most-recently-used pattern first. See
     # dedupe_and_trim_pattern_history() above.
     pattern_history: list[str] = field(default_factory=list)
+    # Rename/Export by Pattern's "ASCII-safe filenames" checkbox
+    # (redactor_common's RenamePatternDialog), remembered between runs.
+    ascii_filenames: bool = False
 
     def to_config(self) -> configparser.ConfigParser:
         # interpolation=None -- pattern_history stores literal "%field%"
@@ -160,6 +163,7 @@ class Settings:
             "custom_languages": _dump_list([list(pair) for pair in self.custom_languages]),
             "hidden_default_languages": _dump_list(self.hidden_default_languages),
             "pattern_history": _dump_list(self.pattern_history),
+            "ascii_filenames": str(self.ascii_filenames),
         }
         return config
 
@@ -183,6 +187,7 @@ class Settings:
             custom_languages=_load_pair_list(section.get("custom_languages", fallback="")),
             hidden_default_languages=_load_str_list(section.get("hidden_default_languages", fallback="")),
             pattern_history=_load_str_list(section.get("pattern_history", fallback="")),
+            ascii_filenames=section.getboolean("ascii_filenames", fallback=False),
         )
 
 
