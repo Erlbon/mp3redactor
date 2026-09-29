@@ -94,6 +94,9 @@ class FileFacts:
     track: Optional[int] = None
     disc: Optional[int] = None
     seconds: Optional[float] = None
+    # MusicBrainz recording id -> AcoustID score, when the file was
+    # fingerprinted (core/acoustid_lookup.py); empty otherwise.
+    recordings: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -267,6 +270,10 @@ def _duration_score(a: Optional[float], b: Optional[float]) -> Optional[float]:
 
 
 def _pair_score(f: FileFacts, t: ReleaseTrack, single_disc: bool) -> float:
+    # The file's own sound identifies this very recording: certain,
+    # whatever its (possibly junk) tags say.
+    if t.recording_id and t.recording_id in f.recordings:
+        return 1.0
     parts, weights = [], []
     parts.append(_title_similarity(f.title, t.title))
     weights.append(0.45)
@@ -344,6 +351,17 @@ def fields_for(release: Release, track: ReleaseTrack) -> dict[str, str]:
     if release.disc_count > 1:
         fields["discnumber"] = str(track.disc)
     return {k: v for k, v in fields.items() if v}
+
+
+def find_album_by_recordings(
+    files: list[FileFacts], release_ids: list[str], fetch: Optional[Callable] = None,
+) -> list[ReleaseMatch]:
+    """Stage 2: the releases AcoustID found for the folder's fingerprints
+    (acoustid_lookup.candidate_releases), fetched and matched like the
+    text search's -- ranked, best first."""
+    fetch = fetch or _default_fetch
+    matches = [match_release(files, fetch_release(release_id, fetch)) for release_id in release_ids]
+    return rank_matches(matches, len(files))
 
 
 def facts_from_tags(title: str, track: str, disc: str, seconds: Optional[float]) -> FileFacts:

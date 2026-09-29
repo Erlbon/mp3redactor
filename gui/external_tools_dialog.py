@@ -10,6 +10,8 @@ about locating binaries, same separation of concerns the video tool
 uses.
 """
 
+import sys
+
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -22,6 +24,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.acoustid_lookup import FPCALC_EXE_NAME
 from core.ffmpeg_probe import FFMPEG_EXE_NAME, FFPROBE_EXE_NAME
 from core.mp3val_runner import MP3VAL_EXE_NAME
 from core.settings import Settings
@@ -65,7 +68,9 @@ class _ToolRow:
         from PyQt6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getOpenFileName(
-            self.path_edit.parentWidget(), f"Locate {self.exe_name}", "", "Executable (*.exe)"
+            self.path_edit.parentWidget(), f"Locate {self.exe_name}", "",
+            # Linux/Mac tools have no .exe: any file there.
+            "Executable (*.exe)" if sys.platform == "win32" else "All files (*)",
         )
         if path:
             self.path_edit.setText(path)
@@ -96,7 +101,8 @@ class ExternalToolsDialog(QDialog):
         self.resize(560, 220)
 
         header = QLabel(
-            "If mp3val, keyfinder-cli, ffmpeg, or ffprobe aren't on your system "
+            "If mp3val, keyfinder-cli, ffmpeg, ffprobe or fpcalc (Chromaprint -- identifies songs by their "
+            "sound in Look Up via MusicBrainz) aren't on your system "
             "PATH, point directly at their executables here. Leave blank to "
             "auto-detect via PATH (the default)."
         )
@@ -110,6 +116,7 @@ class ExternalToolsDialog(QDialog):
         )
         self._ffmpeg_row = _ToolRow(grid, 2, "ffmpeg:", FFMPEG_EXE_NAME, settings.ffmpeg_path)
         self._ffprobe_row = _ToolRow(grid, 3, "ffprobe:", FFPROBE_EXE_NAME, settings.ffprobe_path)
+        self._fpcalc_row = _ToolRow(grid, 4, "fpcalc:", FPCALC_EXE_NAME, settings.fpcalc_path)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Done")
@@ -124,11 +131,12 @@ class ExternalToolsDialog(QDialog):
         button_row.addWidget(buttons)
         layout.addLayout(button_row)
 
-    def result_paths(self) -> tuple[str, str, str, str]:
-        """Returns (mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path)."""
+    def result_paths(self) -> tuple[str, str, str, str, str]:
+        """Returns (mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path, fpcalc_path)."""
         return (
             self._mp3val_row.current_path(),
             self._keyfinder_row.current_path(),
             self._ffmpeg_row.current_path(),
             self._ffprobe_row.current_path(),
+            self._fpcalc_row.current_path(),
         )

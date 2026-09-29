@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-29#02 -- Identify songs by their sound
+
+- **Look Up via MusicBrainz now also listens.** With `fpcalc` set up
+  (Chromaprint's free tool -- Settings > Locate External Tools, or on
+  your PATH), every file is fingerprinted and looked up on AcoustID,
+  which knows the exact MusicBrainz recording: each file then pairs
+  with its track for certain, and a folder with useless tags and names
+  ("New Folder (3)", "Track 01") is found through the releases that
+  hold its recordings. Without fpcalc it works from tags and names, as
+  before.
+- AcoustID is asked at most 3 times a second; each folder is
+  fingerprinted once (Search This Item doesn't redo it).
+- Settings > Locate External Tools: a row for fpcalc, and on Linux/Mac
+  its Browse button now shows all files (it only offered .exe files).
+
 ## 2026-09-29#01 -- ASCII-safe filenames
 
 - **Rename/Export by Pattern: "ASCII-safe filenames"** -- new names use only plain ASCII letters, digits and punctuation: accents removed (é -> e, å -> a), æ -> ae, ø -> o, ß -> ss, typographic quotes and dashes made plain, and anything with no ASCII form (other scripts, emoji, symbols) dropped. For old file systems, network shares, e-readers, car stereos and sync tools that mangle anything else. The preview updates as you tick it, and the choice is remembered.

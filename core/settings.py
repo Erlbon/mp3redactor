@@ -99,6 +99,7 @@ class Settings:
     keyfinder_cli_path: str = ""
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
+    fpcalc_path: str = ""  # Chromaprint, for identifying files by sound (AcoustID)
 
     # Where Load Files/Load Folder's file dialogs start from -- set via
     # remember_last_directory() after a successful pick. Empty string
@@ -154,6 +155,7 @@ class Settings:
             "keyfinder_cli_path": self.keyfinder_cli_path,
             "ffmpeg_path": self.ffmpeg_path,
             "ffprobe_path": self.ffprobe_path,
+            "fpcalc_path": self.fpcalc_path,
             "last_directory": self.last_directory,
             "hidden_columns": _dump_list(self.hidden_columns),
             "column_order": _dump_list(self.column_order),
@@ -178,6 +180,7 @@ class Settings:
             keyfinder_cli_path=section.get("keyfinder_cli_path", fallback=""),
             ffmpeg_path=section.get("ffmpeg_path", fallback=""),
             ffprobe_path=section.get("ffprobe_path", fallback=""),
+            fpcalc_path=section.get("fpcalc_path", fallback=""),
             last_directory=section.get("last_directory", fallback=""),
             hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
             column_order=_load_str_list(section.get("column_order", fallback="")),

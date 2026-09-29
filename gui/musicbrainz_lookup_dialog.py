@@ -13,6 +13,13 @@ one request per second.
 A row's "fields" are a summary of the release for review; what's
 actually applied is per file (title, track, recording id...), built by
 file_changes() from the match remembered for that folder.
+
+With fpcalc available (Settings > Locate External Tools), each folder is
+also identified by SOUND (core/acoustid_lookup.py, stage 2): every file
+is fingerprinted once, its AcoustID recordings make its track pairing
+certain on any release, and when the text search doesn't place every
+file -- junk tags, no usable names -- the releases AcoustID found for
+the folder are tried too.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from pathlib import Path
 
 from redactor_common.gui.lookup_dialog import LookupAlternative, LookupDialogBase, LookupResult
 
+from core.acoustid_lookup import AcoustIdError, candidate_releases, identify_files
 from core.cover_art import read_cover
 from core.mp3_file import MP3File
 from core.musicbrainz_lookup import (
@@ -33,6 +41,8 @@ from core.musicbrainz_lookup import (
     fetch_front_cover,
     fields_for,
     find_album,
+    find_album_by_recordings,
+    rank_matches,
 )
 
 
@@ -66,9 +76,19 @@ def _summary_fields(match: ReleaseMatch) -> dict[str, str]:
 
 
 class MusicBrainzLookupDialog(LookupDialogBase):
-    def __init__(self, albums: list[AlbumFolder], parent=None, fetch=None):
+    def __init__(self, albums: list[AlbumFolder], parent=None, fetch=None, fpcalc: Path | None = None, post=None):
         self._fetch = fetch
+        self._fpcalc = fpcalc  # None: identify by tags/names only
+        self._post = post  # AcoustID transport (tests)
         self._matches: dict[int, ReleaseMatch] = {}  # id(album) -> the chosen match
+        self._fingerprints: dict[int, list] = {}  # id(album) -> AcoustID hits per file (computed once)
+        by_sound = (
+            " Each file is also identified by its sound (AcoustID fingerprints), which finds the album "
+            "even when tags and names are missing."
+            if fpcalc else
+            " Tip: with fpcalc set up (Settings > Locate External Tools) files are also identified "
+            "by their sound, even when tags and names are missing."
+        )
         super().__init__(
             albums,
             parent,
@@ -79,7 +99,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
                 "each file to its track by number, title and length. Other editions of the album are "
                 "listed under Other Matches. Untick anything you don't trust, then Apply; changes are "
                 "written on Save. MusicBrainz is queried at most once per second, so this takes a few "
-                "seconds per album."
+                "seconds per album." + by_sound
             ),
             search_label="Searching MusicBrainz…",
             item_label=lambda album: f"{album.folder.name}  ({len(album.files)} file(s))",
@@ -108,7 +128,20 @@ class MusicBrainzLookupDialog(LookupDialogBase):
         used = {"artist": query.artist, "album": query.album}
         facts = [facts_from_tags(m.title, m.track, m.discnumber, m.duration_seconds) for m in album.files]
         try:
-            matches = find_album(facts, query, self._fetch) if self._fetch else find_album(facts, query)
+            hits = self._fingerprint(album)
+        except AcoustIdError as exc:
+            return LookupResult(error=str(exc), used_query=used)
+        for fact, file_hits in zip(facts, hits):
+            fact.recordings = {h.recording_id: h.score for h in file_hits}
+        try:
+            matches = []
+            if query.artist or query.album:
+                matches = find_album(facts, query, self._fetch) if self._fetch else find_album(facts, query)
+            if any(hits) and (not matches or matches[0].matched < len(facts)):
+                seen = {m.release.id for m in matches}
+                ids = [rid for rid in candidate_releases(hits, limit=5) if rid not in seen]
+                if ids:
+                    matches = rank_matches(matches + find_album_by_recordings(facts, ids, self._fetch), len(facts))
         except MusicBrainzError as exc:
             return LookupResult(error=str(exc), used_query=used)
         if not matches or matches[0].matched == 0:
@@ -124,6 +157,17 @@ class MusicBrainzLookupDialog(LookupDialogBase):
                 LookupAlternative(label=f"{m.release.label()}  -- {m.summary()}", data=m) for m in matches[1:]
             ],
         )
+
+    def _fingerprint(self, album: AlbumFolder) -> list:
+        """AcoustID hits for each of the folder's files (fingerprinted
+        once, kept for Search This Item); [[]...] without fpcalc."""
+        if not self._fpcalc:
+            return [[] for _ in album.files]
+        key = id(album)
+        if key not in self._fingerprints:
+            hits, _problems = identify_files([m.path for m in album.files], self._fpcalc, self._post)
+            self._fingerprints[key] = hits
+        return self._fingerprints[key]
 
     def _resolve(self, album: AlbumFolder, match: ReleaseMatch) -> LookupResult:
         self._matches[id(album)] = match

@@ -842,7 +842,13 @@ class MainWindow(QMainWindow):
         targets = self._require_targets("look up")
         if not targets:
             return
-        dialog = MusicBrainzLookupDialog(group_by_folder(targets), self)
+        from core.acoustid_lookup import FPCALC_EXE_NAME
+        from core.tool_locator import find_tool
+
+        # fpcalc (if found) adds identification by sound; without it the
+        # lookup works from tags and folder names as before.
+        fpcalc = find_tool(FPCALC_EXE_NAME, override=self.settings.fpcalc_path or None)
+        dialog = MusicBrainzLookupDialog(group_by_folder(targets), self, fpcalc=fpcalc)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         changes = dialog.file_changes()
@@ -1298,11 +1304,12 @@ class MainWindow(QMainWindow):
     def open_external_tools_dialog(self) -> None:
         dialog = ExternalToolsDialog(self.settings, self)
         if dialog.exec() == ExternalToolsDialog.DialogCode.Accepted:
-            mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path = dialog.result_paths()
+            mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path, fpcalc_path = dialog.result_paths()
             self.settings.mp3val_path = mp3val_path
             self.settings.keyfinder_cli_path = keyfinder_cli_path
             self.settings.ffmpeg_path = ffmpeg_path
             self.settings.ffprobe_path = ffprobe_path
+            self.settings.fpcalc_path = fpcalc_path
             save_settings(self.settings)
 
     def run_integrity_check(self) -> None:

@@ -26,6 +26,9 @@ system or in `tools/`:
 
 - **[mp3val](https://mp3val.sourceforge.net/)** — MP3 stream integrity
   checking and repair.
+- **[Chromaprint](https://acoustid.org/chromaprint)** (`fpcalc`, LGPL
+  2.1) — the audio fingerprints for identifying songs by sound. Optional;
+  found on PATH or via Settings > Locate External Tools, never bundled.
 - **[keyfinder-cli](https://github.com/EvanPurkhiser/keyfinder-cli)**
   (v2+) — musical key detection.
 
@@ -36,3 +39,6 @@ system or in `tools/`:
   and track lists, via its web service; core data CC0).
 - **[Cover Art Archive](https://coverartarchive.org/)** — release cover
   previews in that lookup (shown only, never embedded by it).
+- **[AcoustID](https://acoustid.org/)** — identifies songs by their
+  sound in that lookup: audio fingerprints matched to MusicBrainz
+  recordings (its web service).

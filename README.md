@@ -125,10 +125,18 @@ Roadmap, in build order:
     and a `UFID` frame owned by `http://musicbrainz.org`), through the
     per-field overwrite review; undoable, written on Save. MusicBrainz
     is queried at most once per second, as its terms ask. No key or
-    tool needed. **Stage 2 (not built):** identifying files with junk
-    tags by their audio -- `fpcalc` (Chromaprint; official binaries per
-    platform, located via Settings > Locate External Tools like the
-    other tools, never bundled) plus an AcoustID application key.
+    tool needed. **Stage 2 (2026-09-29): identifying files by their
+    sound** -- with `fpcalc` available (Chromaprint; official binaries
+    per platform, found on PATH or located via Settings > Locate
+    External Tools like the other tools, never bundled), each file is
+    fingerprinted and looked up on AcoustID, giving its exact
+    MusicBrainz recording: a file pairs with its track for certain, and
+    a folder whose tags and names are useless (tested: two stripped
+    files in "New Folder (3)") is found through the releases holding
+    its recordings. AcoustID is queried at most 3 times a second; the
+    app ships its own AcoustID application key (application keys
+    identify the app, not a user). Without fpcalc the lookup works as
+    stage 1.
 
 ## Tooling decisions
 
