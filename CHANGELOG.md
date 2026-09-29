@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-29#06 -- Shared library update
+
+- redactor_common 2026-09-29-04 (from 2026-09-29-03): a fix to the shared preview loader, which this app doesn't use -- no change in behavior here.
+
 ## 2026-09-29#05 -- Edits stay on the file you selected
 
 - **Fixed: an edit could land on the wrong file.** After Apply (or Parse Filename, Auto-Numbering, a MusicBrainz lookup, Undo...) the table is redrawn, and the selection stayed on the same row *number* -- which, in a sorted table (the default), now held a different file. The panel then showed that other file, and the next Apply edited it. The selection now stays on the same files.
