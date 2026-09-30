@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30#15 -- Shortcut check after the menu move
+
+- Audited every keyboard shortcut against the family standard: **none of this app's existing keys had to change** (Ctrl+O, Ctrl+Shift+O, Ctrl+S, F2, Ctrl+E, Ctrl+I, F5 / Ctrl+R, Ctrl+Z / Ctrl+Y, Ctrl+Shift+E, Ctrl++ / Ctrl+-), so no old-key aliases are needed. New standard keys: Save All Ctrl+Shift+A, Remove from List Delete, Search and Replace Ctrl+H, Apply Ctrl+Return, Reset Zoom Ctrl+0, Preferences Ctrl+, , Command Palette Ctrl+K.
+- **F1 no longer opens About** (F1 is reserved for Help contents); About is reached from the Help menu.
+- Tests now pin the shortcut table.
+
 ## 2026-09-30#14 -- Command palette
 
 - **New: Ctrl+K opens a command palette** (also View > Command Palette). Type part of any menu command's name to find and run it without hunting through the menus; greyed commands are listed but cannot be run. The menu layout is also now checked automatically against the family's standard skeleton (labels, letters, shortcuts).
