@@ -33,7 +33,11 @@ a = Analysis(
         ("CHANGELOG.md", "."),
         ("CREDITS.md", "."),
     ],
-    hiddenimports=[],
+    # send2trash is imported lazily inside redactor_common.core.trash (Redact's
+    # Recycle Bin), so name it here rather than rely on static analysis
+    # following a function-level import into an installed package. keyring
+    # (redactor_common.core.secret_store) is not used by this app.
+    hiddenimports=["send2trash"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

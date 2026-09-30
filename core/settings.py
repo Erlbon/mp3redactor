@@ -147,12 +147,22 @@ class Settings:
     rename_zero_pad: bool = False
     rename_zero_pad_width: int = 2
     auto_number_padding: int = 2
+    # The pattern Redact's Rename step starts from: the last one applied in
+    # Rename / Export Files. Kept apart from pattern_history, which Parse
+    # Filename writes to as well; "" means none yet -- see
+    # saved_rename_pattern().
+    rename_pattern: str = ""
 
     # The Redact recipe (which steps run, their order/options, the
     # confidence threshold) as one line of JSON -- see
     # core.redact_steps.recipe_to_setting(). "" = never edited: every step
     # at its default.
     redact_recipe: str = ""
+
+    def saved_rename_pattern(self) -> str:
+        """The dedicated rename pattern; before one was ever saved, the most
+        recent pattern in the shared history (a first-run default only)."""
+        return self.rename_pattern or (self.pattern_history[0] if self.pattern_history else "")
 
     def to_config(self) -> configparser.ConfigParser:
         # interpolation=None -- pattern_history stores literal "%field%"
@@ -181,6 +191,7 @@ class Settings:
             "rename_zero_pad": str(self.rename_zero_pad),
             "rename_zero_pad_width": str(self.rename_zero_pad_width),
             "auto_number_padding": str(self.auto_number_padding),
+            "rename_pattern": self.rename_pattern,
             "redact_recipe": self.redact_recipe,
         }
         return config
@@ -210,6 +221,7 @@ class Settings:
             rename_zero_pad=_get_bool(section, "rename_zero_pad", False),
             rename_zero_pad_width=_get_int(section, "rename_zero_pad_width", 2),
             auto_number_padding=_get_int(section, "auto_number_padding", 2),
+            rename_pattern=section.get("rename_pattern", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
         )
 

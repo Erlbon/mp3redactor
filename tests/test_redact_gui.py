@@ -14,7 +14,7 @@ import core.redact_steps as rs  # noqa: E402
 import gui.main_window as mw  # noqa: E402
 from core.mp3_file import MP3File, STATUS_OK  # noqa: E402
 from core.tag_reader import load_tags  # noqa: E402
-from gui.redact_results import Mp3RedactResultsDialog  # noqa: E402
+from redactor_common.gui.redact_dialog import RedactResultsDialog  # noqa: E402
 from tests.test_cover_gui import _app, _load, _select_all, window  # noqa: E402,F401
 
 
@@ -23,7 +23,7 @@ def shown(monkeypatch, recycle_bin):
     """Captures the results dialogs instead of exec()-ing them, and gives
     Redact the fake Recycle Bin."""
     dialogs = []
-    monkeypatch.setattr(Mp3RedactResultsDialog, "exec", lambda self: dialogs.append(self) or 0)
+    monkeypatch.setattr(RedactResultsDialog, "exec", lambda self: dialogs.append(self) or 0)
     monkeypatch.setattr(mw, "RedactEnv", functools.partial(rs.RedactEnv, trash=recycle_bin))
     return dialogs
 
@@ -76,9 +76,9 @@ def test_end_to_end_redact_selected_files(window, tmp_path, shown, tools, recycl
         assert not mp3.dirty and mp3.bpm == 120.0 and mp3.integrity_status == STATUS_OK
     assert not window.undo_manager.can_undo()
     (dialog,) = shown
-    text = dialog.full_text()
+    text = dialog.report.to_text()
     assert "Redact report" in text and "saved in place; the original is in the Recycle Bin" in text
-    assert "Recycle Bin" in dialog.header_label.text() and "Undo" in dialog.header_label.text()
+    assert dialog.header_label.text() == mw.REDACT_UNDO_NOTE and dialog.notes_label is None
     assert "c.mp3" not in text
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".mp3redactor-redact-")] == []
 
@@ -113,7 +113,7 @@ def test_unsaved_edits_are_skipped_not_overwritten(window, tmp_path, shown, tool
     assert a.title == "My edit" and a.dirty and a.path.read_bytes() == before
     assert len(recycle_bin.trashed) == 1  # only b
     (dialog,) = shown
-    assert "a.mp3" in dialog.full_text() and "unsaved edits" in dialog.full_text()
+    assert "a.mp3" in dialog.report.to_text() and "unsaved edits" in dialog.report.to_text()
     a.dirty = False
 
 
@@ -133,7 +133,7 @@ def test_load_error_file_is_skipped_with_a_report_line(window, tmp_path, shown, 
     _select_all(window)
     window.redact_files()
     assert len(recycle_bin.trashed) == 1
-    assert "b.mp3" in shown[0].full_text() and "could not be read" in shown[0].full_text()
+    assert "b.mp3" in shown[0].report.to_text() and "could not be read" in shown[0].report.to_text()
 
 
 def test_needs_review_shows_in_the_results_dialog(window, tmp_path, shown, tools, monkeypatch, recycle_bin):
@@ -151,7 +151,7 @@ def test_needs_review_shows_in_the_results_dialog(window, tmp_path, shown, tools
     window.redact_files()
     (dialog,) = shown
     assert dialog.review_tree.topLevelItemCount() == 1 and a.track == ""
-    assert "NEEDS REVIEW" in dialog.full_text() and recycle_bin.trashed == []
+    assert "NEEDS REVIEW" in dialog.report.to_text() and recycle_bin.trashed == []
 
 
 def _only(key, settings, threshold=0.9):
@@ -183,10 +183,11 @@ def test_edit_recipe_saves_it_in_the_settings(window, monkeypatch):
     assert recipe.confidence_threshold == 0.6 and recipe.enabled["bpm"] and not recipe.enabled["integrity"]
 
 
-def test_results_dialog_saves_report_with_notes(tmp_path):
-    from redactor_common.core.pipeline import RedactReport
-
-    dialog = Mp3RedactResultsDialog(RedactReport(), "mp3val not found  (3 files)")
-    target = tmp_path / "r.txt"
-    dialog.save_report_to(str(target))
-    assert "NOTES" in target.read_text(encoding="utf-8") and "mp3val not found" in dialog.report_view.toPlainText()
+def test_leftover_scratch_files_are_cleaned_and_mentioned(window, tmp_path, shown, tools, recycle_bin):
+    (a,) = _load(window, tmp_path, ["a.mp3"])
+    stale = tmp_path / ".mp3redactor-redact-crashed.mp3"
+    stale.write_bytes(b"left behind")
+    _select_all(window)
+    window.redact_files()
+    assert not stale.exists()
+    assert "1 leftover scratch file" in shown[0].notes_label.text()

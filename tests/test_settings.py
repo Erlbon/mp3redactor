@@ -237,3 +237,12 @@ def test_save_settings_failure_keeps_the_previous_file(tmp_path, monkeypatch):
     monkeypatch.undo()
     assert load_settings(tmp_path).last_directory == "old"
     assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+
+
+def test_rename_pattern_round_trips_and_history_is_only_the_first_run_default(tmp_path):
+    fresh = Settings(pattern_history=["%title%", "%artist%"])
+    assert fresh.saved_rename_pattern() == "%title%"
+    save_settings(Settings(pattern_history=["%a%"], rename_pattern="%track% %title%"), tmp_path)
+    loaded = load_settings(tmp_path)
+    assert loaded.rename_pattern == "%track% %title%" and loaded.saved_rename_pattern() == "%track% %title%"
+    assert Settings().saved_rename_pattern() == ""

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-30#09 -- Redact on the improved engine
+
+- Redact now runs on redactor_common 2026-09-30-10 (pinned). The report text is the same, with two visible differences: a file that is skipped (unsaved edits, unreadable) now appears under a **SKIPPED** heading instead of as an aborted file, and notes such as "mp3val not found" or "Tag lookup unavailable" are listed per file under **NOTES** instead of as one grouped block below the report.
+- **Rename by saved pattern has its own pattern.** It is now an editable option of that step in Edit Redact Recipe, starting as the pattern last applied in Rename / Export Files. Before, it read the newest entry of the pattern history, so using Parse Filename could silently change how Redact renamed files; the history is now only the starting value the first time.
+- **Fixed: a crash mid-Redact could leave a hidden scratch file (`.mp3redactor-redact-*.mp3`) that Load Folder then listed as a song.** Load Folder and Refresh ignore those files, and the next Redact removes any left in the folders it works on (the results say how many).
+- PyInstaller spec names `send2trash` as a hidden import (the Recycle Bin used by Redact).
+
 ## 2026-09-30#08 -- Redact: one button to check, fix and fill in a folder
 
 - **New: Operations > Redact (Ctrl+Shift+E, also on the toolbar)** runs a recipe on the selected files (or every loaded file, after asking, when nothing is selected) with no further questions. Each file is fixed and saved IN PLACE and the original goes to the Recycle Bin -- that copy is the undo; Redact is not on the in-app Undo stack (the stack is cleared). If the Recycle Bin can't take the original it is kept beside the new file as `<name>.redact-orig.mp3`.

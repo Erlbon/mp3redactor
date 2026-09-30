@@ -18,18 +18,22 @@ dialogs. How one file flows:
      lookup, cover art) come back as SUGGESTIONs with a confidence, which
      the engine applies only at or above the recipe's threshold and lists
      as "Needs review" otherwise.
-  3. SaveStep (always last of the file-changing steps; not listed in the
-     recipe editor) writes the working copy's tags into the scratch copy
+  3. The save stage (save_stage(), handed to the engine as `finalize`; it
+     is not a step and is not listed in the recipe editor) writes the
+     working copy's tags into the scratch copy
      (tag_writer.apply_tags_to_file), verifies it reloads with the same
      audio length and tags, then commit_in_place() swaps it in and sends
      the original to the Recycle Bin.
-  4. RenameStep (pinned after the save) renames the finished file.
+  4. The "last" step (rename) acts on the finished file. The engine runs
+     `finalize` after it, so it calls Mp3Ctx.save() first; that saves
+     once and the save stage reports it.
 
 A scan-based step never acts on a failed tool: TOOL ERROR/TOOL MISSING is
 never stamped (MP3File.record_scan) and never triggers mp3val -f.
 Steps that cannot do their job because something is not installed or the
-network is down answer NOTHING and leave a note in RedactEnv, shown under
-the report (the engine's report has no place for a NOTHING message).
+network is down answer StepResult.nothing(note=...), which the engine lists
+under NOTES in the report. A file that must not be touched (unsaved edits,
+unreadable) makes its first step answer StepResult.skipped(...).
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ from typing import Callable
 from redactor_common.core.os_utils import rename_no_clobber
 from redactor_common.core.pipeline import (
     CommitError,
+    FileReport,
     OptionSpec,
     Recipe,
     Step,
@@ -84,7 +89,7 @@ from core.musicbrainz_lookup import (
     match_release,
     rank_matches,
 )
-from core.scan_service import reload_from_disk
+from core.scan_service import REDACT_SCRATCH_PREFIX, reload_from_disk
 from core.settings import Settings
 from core.tag_reader import load_tags
 from core.tag_writer import apply_tags_to_file
@@ -103,49 +108,49 @@ COVER_ART_SIZE = 500  # px, Cover Art Archive "front-500"
 _LOOKUP_TRIGGER_FIELDS = ("title", "artist", "albumartist", "album", "track", "year")
 
 
-class RedactSkip(Exception):
-    """This file is not processed at all; the message is the report line."""
-
-
 # --- run environment -------------------------------------------------------
 
 
 @dataclass
 class RedactEnv:
     """What the steps of one Redact run share: the app's settings, the
-    rename log, the trash function (injectable for tests), the files in
-    the run (an album lookup works on a whole folder, once) and the
-    notes that end up under the report."""
+    rename log, the trash function (injectable for tests) and the files
+    in the run (an album lookup works on a whole folder, once)."""
 
     settings: Settings
     rename_log: object | None = None  # anything with .record(label, [(old, new)])
     trash: Callable[[str], None] | None = None  # None: the Recycle Bin (move_to_trash)
     items: list[MP3File] = field(default_factory=list)
-    notes: list[tuple[str, str]] = field(default_factory=list)  # (file name, message)
+    cleaned: int = 0  # scratch files of an earlier, interrupted run removed by begin()
     _albums: dict = field(default_factory=dict)
 
     def begin(self, items) -> None:
         """Call before each run."""
         self.items = list(items)
-        self.notes.clear()
         self._albums.clear()
+        self.cleaned = remove_stale_scratch_files(self.items)
 
-    def note(self, mp3: MP3File, text: str) -> None:
-        self.notes.append((mp3.filename, text))
 
-    def notes_text(self) -> str:
-        """The notes grouped by message, so "mp3val not found" says so
-        once (with how many files it affected), not once per file."""
-        groups: dict[str, list[str]] = {}
-        for name, text in self.notes:
-            groups.setdefault(text, []).append(name)
-        lines = []
-        for text, names in groups.items():
-            if len(names) == 1:
-                lines.append(f"{names[0]}: {text}")
-            else:
-                lines.append(f"{text}  ({len(names)} files)")
-        return "\n".join(lines)
+def remove_stale_scratch_files(items) -> int:
+    """Deletes the hidden scratch copies (and mp3val's .bak of them) that a
+    crashed run left in the folders of `items`; returns how many files.
+    Only names with Redact's own prefix are touched. Another running copy
+    of the app mid-Redact in the same folder would lose its scratch copy,
+    which fails that one file safely (the original is never touched)."""
+    removed = 0
+    for folder in {os.path.dirname(os.path.realpath(str(m.path))) for m in items}:
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for name in names:
+            if name.startswith(REDACT_SCRATCH_PREFIX) and name.endswith((".mp3", ".mp3.bak")):
+                try:
+                    os.remove(os.path.join(folder, name))
+                    removed += 1
+                except OSError:
+                    pass
+    return removed
 
 
 # --- per-file context ------------------------------------------------------
@@ -153,36 +158,49 @@ class RedactEnv:
 
 class Mp3Ctx:
     """make_context() result for one file (see the module docstring).
-    Raises RedactSkip for a file that must not be touched: it failed to
-    load, or has unsaved edits (Redact works on what is on disk and would
-    otherwise silently replace the edits)."""
+    A file that must not be touched -- it failed to load, has unsaved edits
+    (Redact works on what is on disk and would otherwise silently replace
+    the edits) or can't be copied -- gets `skip_reason`, and Mp3Step /
+    save_stage answer StepResult.skipped(skip_reason) for it."""
 
     def __init__(self, mp3: MP3File, env: RedactEnv):
-        if mp3.load_error:
-            raise RedactSkip(f"skipped -- the file could not be read ({mp3.load_error})")
-        if mp3.dirty:
-            raise RedactSkip("skipped -- it has unsaved edits (save or undo them first)")
         self.mp3 = mp3
         self.env = env
         self.original = os.path.realpath(mp3.path)  # work through a symlink, don't replace it
         self.work = dataclasses.replace(mp3)
-        self.step_options: dict = {}
+        self.step_options: dict = {}  # set by the engine; read through Step.options_for(ctx)
         self.release_confidence: float | None = None  # set when the lookup step's guess was applied
-        self.saved = False  # the save step committed a new file
+        self.saved = False  # the save stage committed a new file
         self.save_failed = False
+        self._save_done = False
+        self._save_result: StepResult | None = None
         self.temp = ""
+        self.skip_reason = ""
+        if mp3.load_error:
+            self.skip_reason = f"the file could not be read ({mp3.load_error})"
+        elif mp3.dirty:
+            self.skip_reason = "it has unsaved edits (save or undo them first)"
+        if self.skip_reason:
+            return
         try:
             fd, self.temp = tempfile.mkstemp(
-                prefix=".mp3redactor-redact-", suffix=".mp3", dir=os.path.dirname(self.original)
+                prefix=REDACT_SCRATCH_PREFIX, suffix=".mp3", dir=os.path.dirname(self.original)
             )
             os.close(fd)
             shutil.copy2(self.original, self.temp)  # keeps the permissions
         except OSError as exc:
             self._discard_temp()
-            raise RedactSkip(f"skipped -- couldn't make a working copy ({describe_save_error(exc)})") from exc
+            self.skip_reason = f"couldn't make a working copy ({describe_save_error(exc)})"
 
-    def note(self, text: str) -> None:
-        self.env.note(self.mp3, text)
+    def save(self) -> StepResult | None:
+        """Writes the working copy in place, once (later calls return the
+        same result). None: nothing to write. The steps that act on the
+        finished file call this first; save_stage() returns the result to
+        the engine so it is reported."""
+        if not self._save_done:
+            self._save_done = True
+            self._save_result = _save_working_copy(self)
+        return self._save_result
 
     def restore_temp(self) -> None:
         """Back to the original's bytes (after a fix that failed midway)."""
@@ -239,15 +257,24 @@ def _existing_frame_text(path: str, frame_id: str) -> str:
         return ""
 
 
-def _tool_missing(ctx: Mp3Ctx, message: str) -> StepResult:
-    ctx.note(message)
-    return StepResult.nothing()
+class Mp3Step(Step):
+    """Base of this app's steps: a file whose context says to skip it
+    (Mp3Ctx.skip_reason) is answered with StepResult.skipped before the
+    step's own process() runs; the engine then stops that file."""
+
+    def run(self, ctx: Mp3Ctx) -> StepResult:
+        if ctx.skip_reason:
+            return StepResult.skipped(ctx.skip_reason)
+        return self.process(ctx)
+
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        raise NotImplementedError
 
 
 # --- steps: checks and measurements ------------------------------------------
 
 
-class IntegrityStep(Step):
+class IntegrityStep(Mp3Step):
     key = "integrity"
     label = "Integrity check (mp3val)"
     description = (
@@ -259,20 +286,20 @@ class IntegrityStep(Step):
         OptionSpec("fix", "Fix problems", "bool", True, tooltip="Run mp3val -f when the check finds problems."),
     )
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
+    def process(self, ctx: Mp3Ctx) -> StepResult:
         work, settings = ctx.work, ctx.env.settings
         mp3val = settings.mp3val_path or None
         status, message = check_integrity(ctx.temp, override_path=mp3val)
         work.record_scan("integrity", status, message)  # TOOL MISSING/ERROR: shown, never stamped
         if status == STATUS_TOOL_MISSING:
-            return _tool_missing(ctx, message)
+            return StepResult.nothing(note=message)
         if status == STATUS_TOOL_ERROR:
             return StepResult.failed(message)
         if status == STATUS_OK:
             return StepResult.applied("OK (stamped)")
 
         problems = _problem_count(message)
-        if not ctx.step_options["fix"]:
+        if not self.options_for(ctx)["fix"]:
             return StepResult.applied(f"{status}: {problems} problem(s), not fixed ({_first_line(message)})")
 
         fix_status, fix_message = fix_integrity(
@@ -295,7 +322,7 @@ class IntegrityStep(Step):
         )
 
 
-class BpmStep(Step):
+class BpmStep(Mp3Step):
     key = "bpm"
     label = "Detect BPM"
     description = "Measures the tempo with aubio and writes it to the BPM tag."
@@ -306,23 +333,22 @@ class BpmStep(Step):
         ),
     )
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
-        if not ctx.step_options["replace"] and _existing_frame_text(ctx.temp, "TBPM"):
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        if not self.options_for(ctx)["replace"] and _existing_frame_text(ctx.temp, "TBPM"):
             return StepResult.nothing()
         bpm, status, message = detect_bpm(Path(ctx.temp))
         if status == STATUS_TOOL_MISSING:
-            return _tool_missing(ctx, message)
+            return StepResult.nothing(note=message)
         if bpm is None or status != STATUS_OK:
             # Mostly "not enough beats" (ambient, spoken word): a miss, not a failure.
-            ctx.note(f"BPM not detected: {message}")
-            return StepResult.nothing()
+            return StepResult.nothing(note=f"BPM not detected: {message}")
         work = ctx.work
         work.bpm, work.bpm_status, work.bpm_message = bpm, status, message
         work.dirty = True
         return StepResult.applied(f"{bpm:.1f} BPM")
 
 
-class KeyStep(Step):
+class KeyStep(Mp3Step):
     key = "key"
     label = "Detect key"
     description = "Detects the musical key with keyfinder-cli and writes it to the Key tag."
@@ -333,14 +359,14 @@ class KeyStep(Step):
         ),
     )
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
-        if not ctx.step_options["replace"] and _existing_frame_text(ctx.temp, "TKEY"):
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        if not self.options_for(ctx)["replace"] and _existing_frame_text(ctx.temp, "TKEY"):
             return StepResult.nothing()
         key, status, message = detect_key(
             Path(ctx.temp), override_path=ctx.env.settings.keyfinder_cli_path or None
         )
         if status == STATUS_TOOL_MISSING:
-            return _tool_missing(ctx, message)
+            return StepResult.nothing(note=message)
         if status != STATUS_OK:
             return StepResult.failed(message)
         if not key:
@@ -351,17 +377,17 @@ class KeyStep(Step):
         return StepResult.applied(f"key {key}")
 
 
-class LoudnessStep(Step):
+class LoudnessStep(Mp3Step):
     key = "loudness"
     label = "Measure loudness (ReplayGain)"
     description = "Measures loudness with ffmpeg and writes the ReplayGain track gain."
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
+    def process(self, ctx: Mp3Ctx) -> StepResult:
         lufs, gain, status, message = measure_loudness(
             Path(ctx.temp), override_path=ctx.env.settings.ffmpeg_path or None
         )
         if status == STATUS_TOOL_MISSING:
-            return _tool_missing(ctx, message)
+            return StepResult.nothing(note=message)
         if status != STATUS_OK:
             return StepResult.failed(message)
         if gain is None:
@@ -373,18 +399,18 @@ class LoudnessStep(Step):
         return StepResult.applied(f"{lufs:.1f} LUFS, gain {gain:+.2f} dB")
 
 
-class DeepCheckStep(Step):
+class DeepCheckStep(Mp3Step):
     key = "deep_check"
     label = "Deep check (ffmpeg full decode)"
     description = "Decodes the whole file with ffmpeg to find corrupt audio and stamps the result. Slow."
     default_enabled = False
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
+    def process(self, ctx: Mp3Ctx) -> StepResult:
         settings, work = ctx.env.settings, ctx.work
         status, message = deep_check_integrity(Path(ctx.temp), override_path=settings.ffmpeg_path or None)
         work.record_scan("deep_check", status, message)
         if status == STATUS_TOOL_MISSING:
-            return _tool_missing(ctx, message)
+            return StepResult.nothing(note=message)
         if status == STATUS_TOOL_ERROR:
             return StepResult.failed(message)
         encoder, rate, channels, probe_status, _msg = probe_format(
@@ -489,7 +515,7 @@ def _lookup_folder(env: RedactEnv, folder: str, use_fingerprint: bool) -> Folder
     return result
 
 
-class TagLookupStep(Step):
+class TagLookupStep(Mp3Step):
     key = "tags"
     label = "Fill missing tags (MusicBrainz / AcoustID)"
     description = (
@@ -504,15 +530,14 @@ class TagLookupStep(Step):
         OptionSpec("fingerprint", "Identify by sound (needs fpcalc)", "bool", True),
     )
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
-        work, overwrite = ctx.work, ctx.step_options["overwrite"]
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        work, overwrite = ctx.work, self.options_for(ctx)["overwrite"]
         if not overwrite and all(getattr(work, k) for k in _LOOKUP_TRIGGER_FIELDS):
             return StepResult.nothing()  # complete already: no network round trip
         folder = os.path.dirname(ctx.original)
-        lookup = _lookup_folder(ctx.env, folder, ctx.step_options["fingerprint"])
+        lookup = _lookup_folder(ctx.env, folder, self.options_for(ctx)["fingerprint"])
         if lookup.error:
-            ctx.note(f"Tag lookup unavailable: {lookup.error}")
-            return StepResult.nothing()
+            return StepResult.nothing(note=f"Tag lookup unavailable: {lookup.error}")
         if lookup.match is None:
             return StepResult.nothing()
         index = next((i for i, m in enumerate(lookup.files) if m is ctx.mp3), None)
@@ -548,7 +573,7 @@ class TagLookupStep(Step):
         return [f"{key} = {value!r}" for key, value in result.value.fields.items()]
 
 
-class CoverStep(Step):
+class CoverStep(Mp3Step):
     key = "cover"
     label = "Add missing cover art"
     description = (
@@ -562,14 +587,14 @@ class CoverStep(Step):
         OptionSpec("online", "Ask the Cover Art Archive", "bool", True),
     )
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
+    def process(self, ctx: Mp3Ctx) -> StepResult:
         work = ctx.work
         if work.cover_change_pending:
             return StepResult.nothing()
         has_cover = work.has_cover if work.has_cover is not None else read_cover(ctx.temp) is not None
         if has_cover:
             return StepResult.nothing()
-        if ctx.step_options["folder"]:
+        if self.options_for(ctx)["folder"]:
             image = find_folder_image(ctx.original)
             if image is not None:
                 try:
@@ -583,7 +608,7 @@ class CoverStep(Step):
                         FOLDER_COVER_CONFIDENCE,
                         "an image named like album art sits next to the file",
                     )
-        if ctx.step_options["online"] and work.musicbrainz_albumid:
+        if self.options_for(ctx)["online"] and work.musicbrainz_albumid:
             data = fetch_front_cover(work.musicbrainz_albumid, size=COVER_ART_SIZE)
             mime = sniff_mime(data)
             if data and mime:
@@ -601,7 +626,10 @@ class CoverStep(Step):
         return f"embedded {suggestion.source}"
 
 
-# --- steps: save and rename ----------------------------------------------------
+# --- save stage, then the steps that act on the finished file -------------------
+
+
+FINALIZE_LABEL = "Final save"  # run_redact(finalize_label=...); names the save stage in the report
 
 
 def verify_written_file(path: str, work: MP3File, expected_seconds: float | None) -> bool:
@@ -630,56 +658,68 @@ def verify_written_file(path: str, work: MP3File, expected_seconds: float | None
     return True
 
 
-class SaveStep(Step):
-    """Internal, always last of the file-changing steps (see recipe_for_run);
-    not offered in the recipe editor."""
-
-    key = "save"
-    label = "Save file"
-    description = "Writes the result in place; the original goes to the Recycle Bin."
-
-    def run(self, ctx: Mp3Ctx) -> StepResult:
-        work = ctx.work
-        if not work.dirty:
-            return StepResult.nothing()  # nothing to write (every step found nothing / was off)
-        expected = ctx.mp3.duration_seconds
-        error = apply_tags_to_file(work, ctx.temp)
-        if error:
-            ctx.save_failed = True
-            return StepResult.failed(f"NOT SAVED, the original is untouched: {error}")
-        try:
-            result = commit_in_place(
-                ctx.original, ctx.temp, trash=ctx.env.trash or move_to_trash,
-                verify=lambda path: verify_written_file(path, work, expected),
-            )
-        except CommitError as exc:
-            ctx.save_failed = True
-            return StepResult.failed(f"NOT SAVED, the original is untouched: {exc}")
-        ctx.saved = True
-        self._adopt(ctx)
-        if result.backup_kept:
-            ctx.note(result.warning)
-            return StepResult.applied(f"saved; the original is kept at {result.backup}")
-        return StepResult.applied("saved in place; the original is in the Recycle Bin")
-
-    @staticmethod
-    def _adopt(ctx: Mp3Ctx) -> None:
-        """The live row takes on the finished state (what save_tags does
-        for a normal Save), then re-reads the file so the table shows
-        exactly what is on disk."""
-        work, live = ctx.work, ctx.mp3
-        work.snapshot_tag_baseline()
-        work.mark_cover_saved()
-        work.dirty = False
-        work.save_error = ""
-        for f in dataclasses.fields(MP3File):
-            setattr(live, f.name, getattr(work, f.name))
-        reload_from_disk(live)
+def _save_working_copy(ctx: Mp3Ctx) -> StepResult | None:
+    """Mp3Ctx.save(): the working copy's tags into the scratch copy,
+    verified, then swapped in for the original."""
+    work = ctx.work
+    if not work.dirty:
+        return None  # nothing to write (every step found nothing / was off)
+    expected = ctx.mp3.duration_seconds
+    error = apply_tags_to_file(work, ctx.temp)
+    if error:
+        ctx.save_failed = True
+        return StepResult.failed(f"NOT SAVED, the original is untouched: {error}")
+    try:
+        result = commit_in_place(
+            ctx.original, ctx.temp, trash=ctx.env.trash or move_to_trash,
+            verify=lambda path: verify_written_file(path, work, expected),
+        )
+    except CommitError as exc:
+        ctx.save_failed = True
+        return StepResult.failed(f"NOT SAVED, the original is untouched: {exc}")
+    ctx.saved = True
+    _adopt_saved_state(ctx)
+    if result.backup_kept:
+        saved = StepResult.applied(f"saved; the original is kept at {result.backup}")
+        saved.note = result.warning
+        return saved
+    return StepResult.applied("saved in place; the original is in the Recycle Bin")
 
 
-class RenameStep(Step):
-    """Pinned after the save (see recipe_for_run): renames the finished
-    file with the pattern last used in Rename / Export Files."""
+def _adopt_saved_state(ctx: Mp3Ctx) -> None:
+    """The live row takes on the finished state (what save_tags does
+    for a normal Save), then re-reads the file so the table shows
+    exactly what is on disk."""
+    work, live = ctx.work, ctx.mp3
+    work.snapshot_tag_baseline()
+    work.mark_cover_saved()
+    work.dirty = False
+    work.save_error = ""
+    for f in dataclasses.fields(MP3File):
+        setattr(live, f.name, getattr(work, f.name))
+    reload_from_disk(live)
+
+
+def save_stage(ctx: Mp3Ctx, _file_report: FileReport) -> StepResult | None:
+    """The engine's `finalize` hook: saves the file once all steps have run
+    (or reports the save a rename/move step already did)."""
+    if ctx.skip_reason:  # a recipe with no step at all never asked the context
+        return StepResult.skipped(ctx.skip_reason)
+    return ctx.save()
+
+
+def _filename_values(ctx: Mp3Ctx) -> dict[str, str]:
+    """The pattern values of the finished file, zero-padded like Rename / Export."""
+    settings = ctx.env.settings
+    values = {key: getattr(ctx.work, key, "") or "" for key, _label, _multiline in FIELDS}
+    if settings.rename_zero_pad:
+        values["track"] = zero_pad_numeric_value(values["track"], settings.rename_zero_pad_width)
+    return values
+
+
+class RenameStep(Mp3Step):
+    """A "last" step: renames the finished file with the pattern last used
+    in Rename / Export Files."""
 
     key = "rename"
     label = "Rename by saved pattern"
@@ -688,27 +728,33 @@ class RenameStep(Step):
         "zero-pad/ASCII choices), without overwriting anything; logged for Undo Last Rename. Always runs "
         "last, after the file is saved. Off until a pattern has been used."
     )
+    position = "last"
 
-    def __init__(self, settings: Settings | None = None):
-        self.default_enabled = bool(settings and settings.pattern_history)
+    def __init__(self, settings: Settings | None = None, *, default_enabled: bool | None = None):
+        saved = settings.saved_rename_pattern() if settings else ""
+        super().__init__(default_enabled=bool(saved) if default_enabled is None else default_enabled)
+        self.options = (
+            OptionSpec(
+                "pattern", "Filename pattern", "str", saved,
+                tooltip="Starts as the pattern last used in Rename / Export Files. Placeholders like %artist% and %title%.",
+            ),
+        )
 
-    def run(self, ctx: Mp3Ctx) -> StepResult:
+    def process(self, ctx: Mp3Ctx) -> StepResult:
         settings, work = ctx.env.settings, ctx.work
+        pattern = self.options_for(ctx)["pattern"].strip() or settings.saved_rename_pattern()
+        if not pattern:
+            return StepResult.nothing(
+                note="Rename skipped: no rename pattern saved yet (use File > Rename / Export Files once)"
+            )
+        if not work.title.strip():
+            return StepResult.nothing(note="Rename skipped: the file has no title")
+        ctx.save()  # the engine's save stage comes after the "last" steps
         if ctx.save_failed:
             return StepResult.nothing()
-        if not settings.pattern_history:
-            ctx.note("Rename skipped: no rename pattern saved yet (use File > Rename / Export Files once)")
-            return StepResult.nothing()
-        if not work.title.strip():
-            ctx.note("Rename skipped: the file has no title")
-            return StepResult.nothing()
-        pattern = settings.pattern_history[0]
         old_path = str(ctx.mp3.path)
         stem, ext = os.path.splitext(os.path.basename(old_path))
-        values = {key: getattr(work, key, "") or "" for key, _label, _multiline in FIELDS}
-        if settings.rename_zero_pad:
-            values["track"] = zero_pad_numeric_value(values["track"], settings.rename_zero_pad_width)
-        new_stem = render_filename(values, pattern, fallback=stem, ascii_only=settings.ascii_filenames)
+        new_stem = render_filename(_filename_values(ctx), pattern, fallback=stem, ascii_only=settings.ascii_filenames)
         new_path = unique_path(os.path.dirname(old_path), new_stem, ext, set(), own_path=old_path)
         if new_path == old_path:
             return StepResult.nothing()
@@ -727,7 +773,9 @@ class RenameStep(Step):
 
 def build_catalogue(settings: Settings | None = None) -> list[Step]:
     """The steps the recipe editor offers, in default order. `settings`
-    decides whether Rename starts enabled (only once a pattern exists)."""
+    gives Rename and Move their starting patterns and decides whether
+    Rename starts enabled (only once a pattern exists). The save stage is
+    not a step: pass save_stage / FINALIZE_LABEL to run_redact."""
     return [
         IntegrityStep(),
         BpmStep(),
@@ -738,28 +786,6 @@ def build_catalogue(settings: Settings | None = None) -> list[Step]:
         CoverStep(),
         RenameStep(settings),
     ]
-
-
-def run_catalogue(settings: Settings | None = None) -> list[Step]:
-    """build_catalogue() plus the internal save step, for the engine."""
-    return build_catalogue(settings) + [SaveStep()]
-
-
-def recipe_for_run(recipe: Recipe, catalogue: list[Step] | None = None) -> Recipe:
-    """The recipe as the engine runs it: the user's steps in their order
-    (steps an older saved recipe lacks, from `catalogue`, before the
-    end), then Save, then Rename. Save is always on and Rename always
-    last whatever a hand-edited settings file says."""
-    pinned = ("save", "rename")
-    user_order = [k for k in recipe.order if k not in pinned]
-    user_order += [s.key for s in (catalogue or []) if s.key not in pinned and s.key not in user_order]
-    enabled = {k: v for k, v in recipe.enabled.items() if k != "save"}
-    return Recipe(
-        order=user_order + list(pinned),
-        enabled=enabled,
-        options={k: dict(v) for k, v in recipe.options.items()},
-        confidence_threshold=recipe.confidence_threshold,
-    )
 
 
 def recipe_to_setting(recipe: Recipe) -> str:

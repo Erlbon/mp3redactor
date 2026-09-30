@@ -37,6 +37,10 @@ ProgressCallback = Callable[[int, int], None]  # (completed, total) -> None
 
 MP3_EXTENSIONS = {".mp3"}
 
+# Redact's scratch copies (core/redact_steps.py) are named with this prefix;
+# one left behind by a crash must never be discovered as a library file.
+REDACT_SCRATCH_PREFIX = ".mp3redactor-redact-"
+
 
 def _describe(exc: Exception) -> str:
     """Per-file message for a check that raised instead of returning a status."""
@@ -61,9 +65,13 @@ def find_mp3_files(paths: Iterable[Path], recursive: bool = True) -> list[Path]:
         if p.is_dir():
             children = p.rglob("*") if recursive else p.iterdir()
             for child in children:
-                if child.is_file() and child.suffix.lower() in MP3_EXTENSIONS:
+                if (
+                    child.is_file()
+                    and child.suffix.lower() in MP3_EXTENSIONS
+                    and not child.name.startswith(REDACT_SCRATCH_PREFIX)
+                ):
                     found.add(child.resolve())
-        elif p.is_file() and p.suffix.lower() in MP3_EXTENSIONS:
+        elif p.is_file() and p.suffix.lower() in MP3_EXTENSIONS and not p.name.startswith(REDACT_SCRATCH_PREFIX):
             found.add(p.resolve())
     return sorted(found)
 

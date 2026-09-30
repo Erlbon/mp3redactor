@@ -32,18 +32,25 @@ def make_file(tmp_path, name="a.mp3", **tags):
 
 
 def run(mp3, only, recipe_opts=None, threshold=0.9, settings=None, items=None, rename_log=None):
-    """Runs just the `only` steps (plus save) on one file; returns (report entry, env)."""
+    """Runs just the `only` steps (plus the save stage) on one file; returns (report entry, env)."""
     settings = settings or Settings()
     env = rs.RedactEnv(settings, rename_log=rename_log)
     env.begin(items or [mp3])
-    catalogue = rs.run_catalogue(settings)
+    catalogue = rs.build_catalogue(settings)
     recipe = Recipe.default_for(catalogue)
     recipe.enabled = {s.key: s.key in only for s in catalogue}
     recipe.options = {k: v for k, v in (recipe_opts or {}).items()}
     recipe.confidence_threshold = threshold
-    resolved = rs.recipe_for_run(recipe, catalogue).resolve(catalogue)
-    entry = run_recipe_on_item(mp3, resolved, threshold, lambda m: rs.Mp3Ctx(m, env), lambda m: m.filename)
+    resolved = recipe.resolve(catalogue)
+    entry = run_recipe_on_item(
+        mp3, resolved, threshold, lambda m: rs.Mp3Ctx(m, env), lambda m: m.filename,
+        finalize=rs.save_stage, finalize_label=rs.FINALIZE_LABEL,
+    )
     return entry, env
+
+
+def notes_of(entry):
+    return " | ".join(entry.notes)
 
 
 def leftovers(folder):
@@ -114,9 +121,9 @@ def test_tool_missing_is_nothing_with_a_note(tmp_path, monkeypatch, recycle_bin)
     mp3 = make_file(tmp_path)
     monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_TOOL_MISSING, "mp3val not found"))
     monkeypatch.setattr(rs, "fix_integrity", lambda *a, **k: pytest.fail("must not fix"))
-    entry, env = run(mp3, {"integrity"})
+    entry, _env = run(mp3, {"integrity"})
     assert entry.status is FileStatus.UNCHANGED and not entry.failures
-    assert "mp3val not found" in env.notes_text() and recycle_bin.trashed == []
+    assert "mp3val not found" in notes_of(entry) and recycle_bin.trashed == []
 
 
 def test_failed_fix_restores_the_scratch_copy_and_reports(tmp_path, monkeypatch, recycle_bin):
@@ -188,10 +195,10 @@ def test_missing_and_failed_tools_do_not_touch_the_file(tmp_path, monkeypatch, r
     monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_TOOL_MISSING, "aubio is not installed"))
     monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("", STATUS_ERROR, "boom"))
     monkeypatch.setattr(rs, "measure_loudness", lambda p, override_path=None: (None, None, STATUS_TOOL_MISSING, "ffmpeg not found"))
-    entry, env = run(mp3, {"bpm", "key", "loudness"})
+    entry, _env = run(mp3, {"bpm", "key", "loudness"})
     assert entry.status is FileStatus.FAILED and len(entry.failures) == 1  # only the key tool failing
     assert recycle_bin.trashed == []
-    assert "aubio is not installed" in env.notes_text() and "ffmpeg not found" in env.notes_text()
+    assert "aubio is not installed" in notes_of(entry) and "ffmpeg not found" in notes_of(entry)
 
 
 def test_deep_check_is_off_by_default_and_stamps_when_on(tmp_path, monkeypatch):
@@ -305,9 +312,9 @@ def test_offline_is_nothing_with_a_note_not_a_failure(tmp_path, monkeypatch, rec
 
     monkeypatch.setattr(rs, "find_album", offline)
     mp3 = make_file(tmp_path, title="Song", album="Album")
-    entry, env = run(mp3, {"tags"})
+    entry, _env = run(mp3, {"tags"})
     assert entry.status is FileStatus.UNCHANGED and not entry.failures
-    assert "Could not reach MusicBrainz" in env.notes_text() and recycle_bin.trashed == []
+    assert "Could not reach MusicBrainz" in notes_of(entry) and recycle_bin.trashed == []
 
 
 def test_album_lookup_happens_once_per_folder(tmp_path, monkeypatch):
@@ -318,10 +325,10 @@ def test_album_lookup_happens_once_per_folder(tmp_path, monkeypatch):
     b = make_file(tmp_path, "b.mp3", title="Two", album="Album")
     env = rs.RedactEnv(Settings())
     env.begin([a, b])
-    catalogue = rs.run_catalogue()
+    catalogue = rs.build_catalogue()
     recipe = Recipe.default_for(catalogue)
     recipe.enabled = {s.key: s.key == "tags" for s in catalogue}
-    resolved = rs.recipe_for_run(recipe, catalogue).resolve(catalogue)
+    resolved = recipe.resolve(catalogue)
     for m in (a, b):
         run_recipe_on_item(m, resolved, 0.9, lambda x: rs.Mp3Ctx(x, env))
     assert calls == [2]
@@ -386,6 +393,24 @@ def test_rename_default_depends_on_a_saved_pattern():
     assert rs.RenameStep(Settings(pattern_history=["%title%"])).default_enabled
 
 
+def test_rename_pattern_is_a_dedicated_setting_history_is_only_a_first_run_default():
+    # first run: the most recent history entry is the starting pattern
+    step = rs.RenameStep(Settings(pattern_history=["%title%"]))
+    assert step.options[0].key == "pattern" and step.options[0].kind == "str" and step.options[0].default == "%title%"
+    # once saved, Parse Filename pushing another pattern into the history no longer changes it
+    settings = Settings(pattern_history=["%artist%", "%title%"], rename_pattern="%track% %title%")
+    step = rs.RenameStep(settings)
+    assert step.options[0].default == "%track% %title%" and step.default_enabled
+    assert not rs.RenameStep(Settings()).default_enabled
+
+
+def test_rename_uses_the_recipe_option_over_the_saved_pattern(tmp_path):
+    mp3 = make_file(tmp_path, title="Song", artist="Band")
+    settings = Settings(rename_pattern="%title%")
+    entry, _ = run(mp3, {"rename"}, {"rename": {"pattern": "%artist% - %title%"}}, settings=settings)
+    assert mp3.path.name == "Band - Song.mp3", entry.failures
+
+
 def test_rename_uses_the_saved_pattern_and_logs(tmp_path):
     settings = Settings(pattern_history=["%track% - %title%"], rename_zero_pad=True, rename_zero_pad_width=2)
     mp3 = make_file(tmp_path, title="Song", track="3")
@@ -410,11 +435,11 @@ def test_rename_never_clobbers_and_skips_when_already_named(tmp_path):
 
 def test_rename_without_a_pattern_or_title_is_a_noted_nothing(tmp_path):
     mp3 = make_file(tmp_path, title="Song")
-    entry, env = run(mp3, {"rename"})
-    assert entry.status is FileStatus.UNCHANGED and "no rename pattern" in env.notes_text()
+    entry, _env = run(mp3, {"rename"})
+    assert entry.status is FileStatus.UNCHANGED and "no rename pattern" in notes_of(entry)
     untitled = make_file(tmp_path, "u.mp3")
-    entry, env = run(untitled, {"rename"}, settings=Settings(pattern_history=["%title%"]))
-    assert untitled.path.name == "u.mp3" and "no title" in env.notes_text()
+    entry, _env = run(untitled, {"rename"}, settings=Settings(pattern_history=["%title%"]))
+    assert untitled.path.name == "u.mp3" and "no title" in notes_of(entry)
 
 
 # --- save stage, guards ---------------------------------------------------------------
@@ -428,7 +453,7 @@ def test_unsaved_edits_and_load_errors_are_skipped_with_a_report_line(tmp_path, 
     before = {m.path: m.path.read_bytes() for m in (dirty, broken)}
     for mp3, phrase in ((dirty, "unsaved edits"), (broken, "could not be read")):
         entry, _ = run(mp3, {"integrity"})
-        assert entry.status is FileStatus.ABORTED and phrase in entry.failures[0]
+        assert entry.status is FileStatus.SKIPPED and phrase in entry.skips[0] and not entry.failures
     assert {m.path: m.path.read_bytes() for m in (dirty, broken)} == before
     assert dirty.title == "unsaved" and dirty.dirty and recycle_bin.trashed == []
     assert leftovers(tmp_path) == []
@@ -457,9 +482,9 @@ def test_a_failed_recycle_bin_keeps_the_original_beside_the_new_file(tmp_path, m
     mp3 = make_file(tmp_path)
     monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
     recycle_bin.fail_with = OSError("no bin on this share")
-    entry, env = run(mp3, {"integrity"})
+    entry, _env = run(mp3, {"integrity"})
     assert any("original is kept at" in a for a in entry.applied)
-    assert (tmp_path / "a.redact-orig.mp3").exists() and "no bin" in env.notes_text()
+    assert (tmp_path / "a.redact-orig.mp3").exists() and "no bin" in notes_of(entry)
 
 
 def test_nothing_changed_means_no_rewrite(tmp_path, recycle_bin):
@@ -468,6 +493,35 @@ def test_nothing_changed_means_no_rewrite(tmp_path, recycle_bin):
     entry, _ = run(mp3, set())
     assert entry.status is FileStatus.UNCHANGED and mp3.path.read_bytes() == before
     assert recycle_bin.trashed == []
+
+
+def test_a_crashed_runs_scratch_files_are_removed_at_the_next_run(tmp_path, recycle_bin):
+    mp3 = make_file(tmp_path)
+    stale = [tmp_path / ".mp3redactor-redact-abc123.mp3", tmp_path / ".mp3redactor-redact-abc123.mp3.bak"]
+    for path in stale:
+        path.write_bytes(b"left behind")
+    other = tmp_path / "keep-me.mp3"
+    other.write_bytes(b"not ours")
+    entry, env = run(mp3, {"integrity"})
+    assert env.cleaned == 2 and not any(p.exists() for p in stale) and other.exists()
+    assert leftovers(tmp_path) == []
+
+
+def test_load_folder_ignores_scratch_files(tmp_path):
+    from core.scan_service import find_mp3_files
+
+    make_file(tmp_path, "real.mp3")
+    (tmp_path / ".mp3redactor-redact-xyz.mp3").write_bytes(b"scratch")
+    assert [p.name for p in find_mp3_files([tmp_path])] == ["real.mp3"]
+    assert find_mp3_files([tmp_path / ".mp3redactor-redact-xyz.mp3"]) == []
+
+
+def test_the_save_stage_reports_a_skip_even_when_no_step_runs(tmp_path):
+    dirty = make_file(tmp_path, "d.mp3")
+    dirty.dirty = True
+    entry, _ = run(dirty, set())
+    assert entry.status is FileStatus.SKIPPED and "unsaved edits" in entry.skips[0]
+    assert entry.skips[0].startswith(rs.FINALIZE_LABEL)
 
 
 # --- recipe ---------------------------------------------------------------------
@@ -479,11 +533,13 @@ def test_defaults_match_the_brief():
     assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "rename"]
 
 
-def test_recipe_for_run_pins_save_then_rename_last():
-    cat = rs.run_catalogue(Settings())
-    recipe = Recipe(order=["rename", "save", "cover", "integrity"], enabled={"save": False, "rename": True})
-    resolved = [s.key for s, _ in rs.recipe_for_run(recipe, cat).resolve(cat)]
-    assert resolved[-2:] == ["save", "rename"] and "save" in resolved
+def test_rename_is_a_last_step_whatever_the_stored_order_says():
+    cat = rs.build_catalogue(Settings())
+    recipe = Recipe(order=["rename", "cover", "integrity"], enabled={"rename": True})
+    resolved = [s.key for s, _ in recipe.resolve(cat)]
+    assert resolved[-1] == "rename"
+    # a recipe saved before a step existed gets it at its catalogue position, not at the end
+    assert resolved.index("bpm") > resolved.index("integrity") and "save" not in resolved
 
 
 def test_recipe_round_trips_through_the_settings_file(tmp_path):

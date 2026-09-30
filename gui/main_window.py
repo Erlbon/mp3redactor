@@ -88,13 +88,13 @@ from core.mp3_languages import DEFAULT_LANGUAGES
 from core.mp3_languages import exclude_hidden as exclude_hidden_languages
 from core.mp3_languages import merge_languages
 from core.redact_steps import (
+    FINALIZE_LABEL,
     Mp3Ctx,
     RedactEnv,
     build_catalogue,
-    recipe_for_run,
     recipe_from_setting,
     recipe_to_setting,
-    run_catalogue,
+    save_stage,
 )
 from core.scan_service import (
     find_mp3_files,
@@ -120,7 +120,6 @@ from core.settings import (
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
-from gui.redact_results import Mp3RedactResultsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
@@ -146,6 +145,7 @@ from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import ProgressReporter, run_with_progress
 from redactor_common.gui.redact_dialog import (
     RecipeEditorDialog,
+    RedactResultsDialog,
     edit_recipe_menu_action,
     redact_menu_action,
 )
@@ -230,6 +230,12 @@ FILENAME_PLACEHOLDERS: list[tuple[str, str]] = [(key, label) for key, label, _m 
 # than arbitrary text.
 NUMERIC_FILENAME_FIELDS: frozenset[str] = frozenset({"track", "discnumber", "year"})
 DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
+
+# Shown at the top of the Redact results: Redact isn't on the in-app Undo stack.
+REDACT_UNDO_NOTE = (
+    "Redact can't be undone with Undo. Each original file was sent to the Recycle Bin: "
+    "restore it from there to go back."
+)
 
 # Cover column thumbnail size -- same as the sibling apps' table covers.
 COVER_ICON_SIZE = QSize(24, 32)
@@ -802,6 +808,12 @@ class MainWindow(QMainWindow):
         )
         save_settings(self.settings)
 
+    def _remember_rename_pattern(self, pattern: str) -> None:
+        """The pattern Redact's Rename step starts from (Parse Filename
+        doesn't set it, unlike the shared pattern history)."""
+        self.settings.rename_pattern = pattern
+        save_settings(self.settings)
+
     def _require_targets(self, action_desc: str) -> list[MP3File]:
         """Same "selection required, else a clear message" convention
         every other Operations/File action in this app already uses
@@ -847,6 +859,7 @@ class MainWindow(QMainWindow):
             return
 
         self._remember_pattern_used(dialog.pattern_edit.text())
+        self._remember_rename_pattern(dialog.pattern_edit.text())
         export_mode = dialog.is_export_mode()
         errors: list[str] = []
         # Rename is a physical file operation, deliberately not pushed
@@ -1478,19 +1491,26 @@ class MainWindow(QMainWindow):
         env = RedactEnv(self.settings, rename_log=_rename_log())
         env.begin(targets)
         recipe = self._redact_recipe()
-        catalogue = run_catalogue(self.settings)
         report = run_redact_dialog(
-            self, targets, recipe_for_run(recipe, catalogue), catalogue,
+            self, targets, recipe, build_catalogue(self.settings),
             make_context=lambda mp3: Mp3Ctx(mp3, env),
             describe=lambda mp3: mp3.filename,
             show_results=False,
+            finalize=save_stage,
+            finalize_label=FINALIZE_LABEL,
         )
         self.undo_manager.clear()
         self._update_undo_action()
         self._update_redo_action()
         self._after_cover_change()  # table rebuild + lazily reloaded cover thumbnails
         if report is not None:
-            Mp3RedactResultsDialog(report, env.notes_text(), self).exec()
+            cleaned = (
+                [f"Removed {env.cleaned} leftover scratch file(s) of an earlier interrupted Redact."]
+                if env.cleaned else []
+            )
+            RedactResultsDialog(
+                report, self, title="Redact results", header=REDACT_UNDO_NOTE, extra_notes=cleaned,
+            ).exec()
 
     def run_integrity_check(self) -> None:
         self._run_check_with_progress(
