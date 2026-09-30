@@ -102,3 +102,34 @@ def test_fetch_lyrics_reports_error_when_the_matched_result_fetch_fails(mock_sea
     assert lyrics == ""
     assert status == STATUS_ERROR
     assert "bad response" in message
+
+
+def _titled(title, link="lrclib:1", lyrics="words"):
+    match = _fake_match(link, lyrics)
+    match.title = title
+    return match
+
+
+@patch("lyricy.Lyricy.search")
+def test_fetch_lyrics_skips_results_for_a_different_song(mock_search):
+    mock_search.return_value = [
+        _titled("Other Song - Someone Else (Album)", "lrclib:1", "wrong"),
+        _titled("Test Title (Remastered 2011) - Test Artist", "lrclib:2", "right"),
+    ]
+    lyrics, status, _ = fetch_lyrics("Test Artist Test Title", "Test Artist", "Test Title")
+    assert (lyrics, status) == ("right", STATUS_OK)
+
+
+@patch("lyricy.Lyricy.search")
+def test_fetch_lyrics_refuses_when_nothing_matches(mock_search):
+    mock_search.return_value = [_titled("Other Song - Someone Else (Album)", "lrclib:1", "wrong")]
+    lyrics, status, message = fetch_lyrics("Test Artist Test Title", "Test Artist", "Test Title")
+    assert lyrics == "" and status == STATUS_ERROR
+    assert "Other Song" in message
+
+
+@patch("lyricy.Lyricy.search")
+def test_fetch_lyrics_match_ignores_case_accents_and_extra_artists(mock_search):
+    mock_search.return_value = [_titled("Café del Mar - ENERGY 52 (Album)", "lrclib:1", "ok")]
+    lyrics, status, _ = fetch_lyrics("q", "Energy 52; Someone", "cafe del mar")
+    assert (lyrics, status) == ("ok", STATUS_OK)

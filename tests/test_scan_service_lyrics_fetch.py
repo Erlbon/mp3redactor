@@ -15,7 +15,7 @@ from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING,
 from core.scan_service import run_lyrics_fetch
 
 
-def _fake_fetch_lyrics(query):
+def _fake_fetch_lyrics(query, artist="", title=""):
     return (f"lyrics for {query}", STATUS_OK, "")
 
 

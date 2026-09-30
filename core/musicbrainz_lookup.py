@@ -343,13 +343,14 @@ def fields_for(release: Release, track: ReleaseTrack) -> dict[str, str]:
         "artist": track.artist,
         "albumartist": release.artist,
         "album": release.title,
-        "track": str(track.position),
+        "track": str(track.position) if track.position else "",  # 0 = unknown
         "year": release.date[:4],
         "musicbrainz_albumid": release.id,
         "musicbrainz_trackid": track.recording_id,
     }
     if release.disc_count > 1:
-        fields["discnumber"] = str(track.disc)
+        if track.disc:
+            fields["discnumber"] = str(track.disc)
     return {k: v for k, v in fields.items() if v}
 
 

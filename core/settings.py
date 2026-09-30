@@ -27,6 +27,7 @@ mp3val_path/keyfinder_cli_path.
 
 import configparser
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -183,7 +184,7 @@ class Settings:
             return cls()
         section = config[SECTION]
         return cls(
-            delete_backup_after_fix=section.getboolean("delete_backup_after_fix", fallback=False),
+            delete_backup_after_fix=_get_bool(section, "delete_backup_after_fix", False),
             mp3val_path=section.get("mp3val_path", fallback=""),
             keyfinder_cli_path=section.get("keyfinder_cli_path", fallback=""),
             ffmpeg_path=section.get("ffmpeg_path", fallback=""),
@@ -192,17 +193,33 @@ class Settings:
             last_directory=section.get("last_directory", fallback=""),
             hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
             column_order=_load_str_list(section.get("column_order", fallback="")),
-            has_column_preference=section.getboolean("has_column_preference", fallback=False),
+            has_column_preference=_get_bool(section, "has_column_preference", False),
             custom_genres=_load_str_list(section.get("custom_genres", fallback="")),
             hidden_default_genres=_load_str_list(section.get("hidden_default_genres", fallback="")),
             custom_languages=_load_pair_list(section.get("custom_languages", fallback="")),
             hidden_default_languages=_load_str_list(section.get("hidden_default_languages", fallback="")),
             pattern_history=_load_str_list(section.get("pattern_history", fallback="")),
-            ascii_filenames=section.getboolean("ascii_filenames", fallback=False),
-            rename_zero_pad=section.getboolean("rename_zero_pad", fallback=False),
-            rename_zero_pad_width=section.getint("rename_zero_pad_width", fallback=2),
-            auto_number_padding=section.getint("auto_number_padding", fallback=2),
+            ascii_filenames=_get_bool(section, "ascii_filenames", False),
+            rename_zero_pad=_get_bool(section, "rename_zero_pad", False),
+            rename_zero_pad_width=_get_int(section, "rename_zero_pad_width", 2),
+            auto_number_padding=_get_int(section, "auto_number_padding", 2),
         )
+
+
+def _get_bool(section, key: str, default: bool) -> bool:
+    """A hand-edited bad value falls back to the default instead of
+    crashing startup."""
+    try:
+        return section.getboolean(key, fallback=default)
+    except ValueError:
+        return default
+
+
+def _get_int(section, key: str, default: int) -> int:
+    try:
+        return section.getint(key, fallback=default)
+    except ValueError:
+        return default
 
 
 def _settings_path(target_dir: Path | None = None) -> Path:
@@ -224,12 +241,20 @@ def load_settings(target_dir: Path | None = None) -> Settings:
 
 def save_settings(settings: Settings, target_dir: Path | None = None) -> None:
     path = _settings_path(target_dir)
+    tmp_path = path.with_name(path.name + ".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
+        # Write beside, then swap in: a crash mid-write can't leave a
+        # truncated settings file (which would reset every preference).
+        with open(tmp_path, "w", encoding="utf-8") as f:
             settings.to_config().write(f)
+        os.replace(tmp_path, path)
     except OSError:
-        pass  # settings persistence is best-effort; in-memory value still applies this session
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        # settings persistence is best-effort; in-memory value still applies this session
 
 
 def resolve_start_directory(last_directory: str) -> str:

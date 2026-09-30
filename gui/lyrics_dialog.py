@@ -25,6 +25,7 @@ owns pushing this onto the undo stack, same as every other in-memory
 tag edit.
 """
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -50,7 +51,9 @@ class LyricsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        header = QLabel(f"<b>{mp3.artist or '(no artist)'}</b> – {mp3.title or mp3.filename}")
+        header = QLabel(f"{mp3.artist or '(no artist)'} – {mp3.title or mp3.filename}")
+        header.setTextFormat(Qt.TextFormat.PlainText)  # raw tag text, not auto rich text
+        header.setStyleSheet("font-weight: bold;")
         header.setWordWrap(True)
         layout.addWidget(header)
 
@@ -90,7 +93,7 @@ class LyricsDialog(QDialog):
         self.status_label.setText(f'Searching LRCLIB for "{query}"...')
         QApplication.processEvents()
 
-        lyrics, status, message = fetch_lyrics(query)
+        lyrics, status, message = fetch_lyrics(query, self.mp3.artist, self.mp3.title)
         if status == STATUS_OK:
             self.text_edit.setPlainText(lyrics)
             self.status_label.setText(f'Found lyrics for "{query}".')

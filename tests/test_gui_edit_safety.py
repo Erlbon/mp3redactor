@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import gui.main_window as mw  # noqa: E402
 from core.tag_reader import load_tags  # noqa: E402
 from core.tag_writer import save_tags  # noqa: E402
+from PyQt6.QtWidgets import QLabel  # noqa: E402
 from tests.test_cover_gui import _app, _load, window  # noqa: E402,F401
 from tests.test_edit_keeps_selection import _apply, _select  # noqa: E402
 
@@ -103,3 +104,14 @@ def test_export_copy_runs_under_progress_and_reports_errors(window, tmp_path, mo
     window.open_rename_dialog()
     assert calls == ["Copying files..."]
     assert out.exists() and a.path.exists()
+
+
+def test_lyrics_dialog_header_shows_raw_tag_text_as_plain_text(window, tmp_path):
+    from gui.lyrics_dialog import LyricsDialog
+
+    (a,) = _load(window, tmp_path, ["a.mp3"])
+    a.artist = "<b>AC</b>/DC"
+    dialog = LyricsDialog(a, window)
+    header = dialog.findChildren(QLabel)[0]
+    assert header.textFormat() == mw.Qt.TextFormat.PlainText
+    assert "<b>AC</b>/DC" in header.text()

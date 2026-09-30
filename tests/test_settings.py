@@ -198,3 +198,42 @@ def test_padding_choices_round_trip():
     back = Settings.from_config(s.to_config())
     assert (back.rename_zero_pad, back.rename_zero_pad_width, back.auto_number_padding) == (True, 3, 4)
     assert Settings().rename_zero_pad_width == 2
+
+
+def test_bad_hand_edited_numbers_and_booleans_fall_back_to_defaults(tmp_path):
+    (tmp_path / "settings.ini").write_text(
+        "[mp3redactor]\nrename_zero_pad_width = wide\nauto_number_padding = x\nascii_filenames = maybe\n",
+        encoding="utf-8",
+    )
+    import core.settings as settings_module
+
+    path = settings_module._settings_path(tmp_path)
+    path.write_text(
+        "[" + settings_module.SECTION + "]\nrename_zero_pad_width = wide\n"
+        "auto_number_padding = x\nascii_filenames = maybe\n",
+        encoding="utf-8",
+    )
+    loaded = load_settings(tmp_path)
+    assert loaded.rename_zero_pad_width == 2
+    assert loaded.auto_number_padding == 2
+    assert loaded.ascii_filenames is False
+
+
+def test_save_settings_is_atomic_and_leaves_no_temp_file(tmp_path):
+    settings = Settings(last_directory="X")
+    save_settings(settings, tmp_path)
+    assert load_settings(tmp_path).last_directory == "X"
+    assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+
+
+def test_save_settings_failure_keeps_the_previous_file(tmp_path, monkeypatch):
+    save_settings(Settings(last_directory="old"), tmp_path)
+
+    def boom(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("core.settings.os.replace", boom)
+    save_settings(Settings(last_directory="new"), tmp_path)
+    monkeypatch.undo()
+    assert load_settings(tmp_path).last_directory == "old"
+    assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []

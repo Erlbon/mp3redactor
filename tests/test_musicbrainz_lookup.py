@@ -190,3 +190,13 @@ def test_dialog_matches_a_folder_and_builds_per_file_changes(tmp_path, monkeypat
 
     dialog._resolve(dialog.items[0], result.alternatives[0].data)  # pick the other edition
     assert {f["musicbrainz_albumid"] for _m, f in dialog.file_changes()} == {"xe"}
+
+
+def test_fields_for_drops_an_unknown_track_position_and_disc():
+    release = mb.fetch_release("za", FakeMusicBrainz([_release_json("za", "Ring of Fire", "ZA", RING_OF_FIRE)]))
+    track = release.tracks[5]
+    track.position = 0
+    track.disc = 0
+    release.tracks[0].disc = 2  # makes it a multi-disc release
+    fields = mb.fields_for(release, track)
+    assert "track" not in fields and "discnumber" not in fields

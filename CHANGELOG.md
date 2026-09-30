@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-30#04 -- Lyrics must match the song, sturdier settings
+
+- **Fixed: Fetch Lyrics could write another song's lyrics.** The first LRCLIB hit was used blindly. Now a result must match the file's artist and title (ignoring case, accents and "(Remastered)" suffixes); the first matching hit is used, and if none matches the file is reported as "no lyrics found" with the closest result named.
+- **Fixed: a hand-edited settings file with a bad number or yes/no value crashed startup.** Bad values now fall back to their defaults, and settings are written to a temporary file first so a crash can't truncate them.
+- **Fixed: MusicBrainz lookup could write Track "0"** (or Disc "0") when a release had no usable position; those are left alone now.
+- The Edit Lyrics header shows artist/title as plain text (a "<" in a tag was being read as markup).
+- "Not found" messages for external tools no longer say ".exe" (the app also runs on Linux and macOS).
+
 ## 2026-09-30#03 -- Progress for scans and copies, safer imports, mp3val reload
 
 - **Progress while scanning and copying.** Load Files/Folder and Refresh List show a progress dialog while they look for MP3 files, Export by Pattern shows progress (and can be cancelled) while it copies, and loading converted files shows progress too -- on a big or networked library the window no longer looks frozen.

@@ -331,7 +331,8 @@ def run_lyrics_fetch(
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_mp3 = {
-            executor.submit(fetch_lyrics, build_query(mp3)): mp3 for mp3 in files
+            executor.submit(fetch_lyrics, build_query(mp3), mp3.artist, mp3.title): mp3
+            for mp3 in files
         }
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
