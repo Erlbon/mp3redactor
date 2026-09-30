@@ -45,7 +45,7 @@ def test_menu_contents_and_order(window):
     menus = _top_menus(window)
     assert _menu_tree(menus["File"]) == [
         "Open Files", "Open Folder", "Import and Convert", "---",
-        "Save", "Save All", "---",
+        "Save All", "---",
         "Rename File", "Undo Last Rename", "Rename / Export / Move", "---",
         "Export Settings", "Import Settings", "---",
         "Remove from List", "Clear List", "---",
@@ -104,7 +104,7 @@ def test_old_action_keys_still_in_the_registry(window):
         "redact", "redact_recipe", "undo", "redo", "apply", "preferences", "external_tools",
         "columns", "genres", "languages", "refresh_list", "rename_file", "rename_export_move",
         "about", "changelog", "credits", "exit", "number_tracks", "remove_from_list", "clear_list",
-        "search_replace", "change_case", "auto_number", "save", "save_all",
+        "search_replace", "change_case", "auto_number", "save_all",
     ):
         assert key in registry, key
 
@@ -125,9 +125,9 @@ def test_toolbar_contents(window):
     bar = window.findChildren(QToolBar)[0]
     texts = [_plain(a.text()) for a in bar.actions() if not a.isSeparator() and a.text()]
     assert texts[:2] == ["Open Files", "Open Folder"]
-    assert texts[2:4] == ["Save", "Save All"]
-    assert texts[4].startswith("Apply to") and texts[5] == "Redact"
-    assert texts[6:8] == ["Undo", "Redo"]
+    assert texts[2] == "Save All" and "Save" not in texts
+    assert texts[3].startswith("Apply to") and texts[4] == "Redact"
+    assert texts[5:7] == ["Undo", "Redo"]
     assert "Panel" in texts
 
 
@@ -214,21 +214,16 @@ def test_remove_from_list_asks_before_dropping_unsaved_edits(window, tmp_path, m
     assert window.files == []
 
 
-def test_save_saves_the_selection_and_save_all_saves_everything(window, tmp_path, monkeypatch):
+def test_save_all_saves_every_changed_file_regardless_of_selection(window, tmp_path, monkeypatch):
     a, b = _load(window, tmp_path, ["a.mp3", "b.mp3"])
     saved = []
     monkeypatch.setattr(mw, "save_dirty_tags", lambda files: saved.extend(f.filename for f in files))
     a.dirty = b.dirty = True
     window.table.clearSelection()
-    for row in range(window.table.rowCount()):
-        item = window.table.item(row, 0)
-        if item.data(mw.Qt.ItemDataRole.UserRole) is a:
-            window.table.selectRow(row)
-    window.save_selected()
-    assert saved == ["a.mp3"]
-    saved.clear()
+    window.table.selectRow(0)
     window.save_changed()
     assert sorted(saved) == ["a.mp3", "b.mp3"]
+    assert "save" not in window.action_registry and not hasattr(window, "save_selected")
 
 
 class _FakeDialog:

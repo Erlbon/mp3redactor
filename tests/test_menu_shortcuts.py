@@ -1,6 +1,5 @@
 """The shortcut table after the menu-skeleton migration: every key this app
-bound before still works (none had to move, so no with_aliases() alias was
-needed), the new standard keys exist, and F1 no longer opens About."""
+bound before still works (Ctrl+S is an alias of Save All), the new standard keys exist, and F1 no longer opens About."""
 
 import os
 
@@ -16,7 +15,6 @@ from tests.test_cover_gui import _app, window  # noqa: E402,F401
 KEPT = [
     ("open_files", ["Ctrl+O"]),
     ("open_folder", ["Ctrl+Shift+O"]),
-    ("save", ["Ctrl+S"]),
     ("rename_file", ["F2"]),
     ("rename_export_move", ["Ctrl+E"]),
     ("parse_filename", ["Ctrl+I"]),
@@ -28,7 +26,7 @@ KEPT = [
     ("zoom_out", ["Ctrl+-"]),
 ]
 NEW = [
-    ("save_all", ["Ctrl+Shift+A"]),
+    ("save_all", ["Ctrl+Shift+A", "Ctrl+S"]),  # Ctrl+S kept as an alias of Save All
     ("remove_from_list", ["Delete"]),
     ("search_replace", ["Ctrl+H"]),
     ("apply", ["Ctrl+Return"]),

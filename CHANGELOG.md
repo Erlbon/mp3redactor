@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-30#16 -- Ctrl+S saves everything again
+
+- **Ctrl+S saves ALL changed files again**, as it always did, and as in the other Redactor tools. This reverses the note in #13 ("Save now saves the selected files"): there is no selected-only Save any more. The single **File > Save All** (toolbar button "Save All") has Ctrl+Shift+A as its main key and Ctrl+S as a secondary key for one release (after that, Ctrl+Shift+A only).
+- The toolbar has one save button instead of Save and Save All.
+
 ## 2026-09-30#15 -- Shortcut check after the menu move
 
 - Audited every keyboard shortcut against the family standard: **none of this app's existing keys had to change** (Ctrl+O, Ctrl+Shift+O, Ctrl+S, F2, Ctrl+E, Ctrl+I, F5 / Ctrl+R, Ctrl+Z / Ctrl+Y, Ctrl+Shift+E, Ctrl++ / Ctrl+-), so no old-key aliases are needed. New standard keys: Save All Ctrl+Shift+A, Remove from List Delete, Search and Replace Ctrl+H, Apply Ctrl+Return, Reset Zoom Ctrl+0, Preferences Ctrl+, , Command Palette Ctrl+K.

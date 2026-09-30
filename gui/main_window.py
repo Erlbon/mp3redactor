@@ -148,6 +148,7 @@ from redactor_common.gui.standard_menus import (
     standard_help_items,
     standard_tools_items,
     standard_view_items,
+    with_aliases,
 )
 from redactor_common.gui.command_palette import add_command_palette
 from redactor_common.gui.case_conversion_dialog import CaseConversionDialog
@@ -270,6 +271,13 @@ TAG_PANEL_DEFAULT_WIDTH = 300
 
 
 
+def _drop_keys(items: list, keys: set[str]) -> list:
+    """Copies menu `items` without the actions whose key is in `keys`; a
+    separator left doubled or dangling is not possible here because the
+    dropped action always sits beside another in its group."""
+    return [i for i in items if not (isinstance(i, MenuAction) and i.key in keys)]
+
+
 def _rename_log() -> RenameLog:
     """The persistent log behind File > Undo Last Rename (redactor_common's
     core/rename_log.py), next to this app's settings."""
@@ -379,14 +387,13 @@ class MainWindow(QMainWindow):
         # Metadata and Analyze menus and the Look Up sources are
         # spelled out here. A slot left None is shown greyed (planned).
         spec = StandardMenuSpec(
-            file=standard_file_items(
+            file=_drop_keys(standard_file_items(
                 open_files=self.load_files_dialog,
                 open_folder=self.load_folder_dialog,
                 import_and_convert=self.import_and_convert_dialog,
-                # Save = the selected files' pending tag changes, Save All
-                # = every changed file (the old "Save File(s)" did the
-                # latter, so Save All is what keeps that one-click path).
-                save=self.save_selected,
+                # One save action: every changed file (what the old
+                # "Save File(s)" did). The skeleton's separate "Save" is
+                # dropped below; Ctrl+S stays as an alias of Save All.
                 save_all=self.save_changed,
                 # Quick, direct rename of the one selected file -- matches
                 # Explorer's F2 exactly. Distinct from "Rename / Export /
@@ -402,7 +409,7 @@ class MainWindow(QMainWindow):
                 # No explicit shortcut -- Alt+F4 already closes this (or
                 # any) plain QMainWindow at the OS level.
                 exit_slot=self.close,
-            ),
+            ), {"save"}),
             edit=standard_edit_items(
                 undo=self.undo_last_action,
                 redo=self.redo_last_action,
@@ -472,10 +479,13 @@ class MainWindow(QMainWindow):
         )
         build_standard_menu_bar(self, spec)
         actions = self.action_registry
+        # Ctrl+S was "Save File(s)" = save every changed file; that is Save All
+        # now (Ctrl+Shift+A). Ctrl+S stays as a secondary key (epubredactor did
+        # the same); lint only checks the key against the label "Save ...".
+        with_aliases(actions["save_all"], "Ctrl+S")
 
         self.action_load_files = actions["open_files"]
         self.action_load_folder = actions["open_folder"]
-        self.action_save = actions["save"]
         self.action_save_all = actions["save_all"]
         self.action_rename_file = actions["rename_file"]
         self.action_rename_files = actions["rename_export_move"]
@@ -515,7 +525,6 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.action_load_files)
         toolbar.addAction(self.action_load_folder)
         toolbar.addSeparator()
-        toolbar.addAction(self.action_save)
         toolbar.addAction(self.action_save_all)
         toolbar.addSeparator()
         toolbar.addAction(self.action_apply_bulk_edit)
@@ -1270,28 +1279,14 @@ class MainWindow(QMainWindow):
         self._update_redo_action()
 
     def save_changed(self) -> None:
-        """File > Save All: every file with unsaved tag changes."""
-        self._save_dirty(selected_only=False)
-
-    def save_selected(self) -> None:
-        """File > Save (Ctrl+S): only the selected files' unsaved changes."""
-        self._save_dirty(selected_only=True)
-
-    def _save_dirty(self, selected_only: bool) -> None:
+        """File > Save All (Ctrl+Shift+A, Ctrl+S): every file with unsaved tag changes."""
         # Catches a field that's ticked with a value typed in but not
         # yet Applied -- Save should act on it too, not silently drop it.
         self.tag_panel.apply_bulk_edit()
 
-        pool = self._selected_files() if selected_only else self.files
-        dirty_files = [mp3 for mp3 in pool if mp3.dirty and not mp3.load_error]
+        dirty_files = [mp3 for mp3 in self.files if mp3.dirty and not mp3.load_error]
         if not dirty_files:
-            if selected_only and self._count_dirty():
-                QMessageBox.information(
-                    self, "Nothing to Save",
-                    "The selected files have no unsaved tag changes. Use Save All to save the others.",
-                )
-            else:
-                QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
+            QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
             return
 
         def step(mp3: MP3File, _index: int) -> None:
