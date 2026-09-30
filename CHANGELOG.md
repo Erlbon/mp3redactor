@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-30#18 -- Look Up via Discogs, and Tools > API Keys
+
+- **New: Metadata > Look Up > Discogs...** (also in the right-click Look Up menu). Like the MusicBrainz lookup it finds the release each selected folder belongs to (by Artist + Album + Year from the tags, or an "Artist - Album (Year)" folder name), shows the release's cover next to your own, lists other pressings under Other Matches (label, catalogue number, year, country) and lets you correct the search and run it again. Apply is review-only: anything that would overwrite a different value goes through the per-field overwrite review first, and changes are written on Save. Files are paired with tracks by track number, then by title; vinyl positions (A1, B2...) are numbered down the release, "1-3", "2.4" and "CD1-5" carry the disc. Discogs' "Artist (2)" disambiguation numbers are dropped and "Various" becomes "Various Artists". "Add Styles to Genre" (on) writes genres then styles ("Rock; Prog Rock").
+- **New fields: Publisher (the label), Catalog Number and Release Country**, read and written like any other tag (TPUB, TXXX:CATALOGNUMBER and TXXX:MusicBrainz Album Release Country, as Picard writes them) and hidden in the table until you show them (Tools > Columns).
+- **New: Tools > API Keys...** holds your Discogs token (create one at discogs.com under Settings > Developers). It is stored in your computer's secure credential store (Windows Credential Manager), never in the settings file or in a log; a `DISCOGS_TOKEN` environment variable also works. Without a secure store you are asked once whether an unencrypted file may be used instead. Look Up via Discogs opens this dialog first if no token is set.
+- Discogs is asked at most about once a second; on HTTP 429 ("too many requests") the lookup stops with a clear message instead of asking again. Shown data carries a "Data from Discogs" note.
+- Fixed: pressing OK in Tools > Preferences reset every other preference (Redact recipe, patterns, columns, tool paths) to its default; it now changes only what that dialog edits.
+
 ## 2026-09-30#17 -- Export / Import Settings
 
 - **File > Export Settings... and Import Settings... now work.** One file, `mp3redactor-settings.json`, carries your preferences to a fresh install or another computer. Import shows what would change, per section, and applies nothing until you confirm.

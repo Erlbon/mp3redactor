@@ -53,6 +53,9 @@ FIELDS: list[tuple[str, str, bool]] = [
     ("itunesadvisory", "iTunes Advisory", False),
     ("musicbrainz_albumid", "MusicBrainz Album Id", False),
     ("musicbrainz_trackid", "MusicBrainz Track Id", False),
+    ("publisher", "Publisher", False),
+    ("catalognumber", "Catalog Number", False),
+    ("releasecountry", "Release Country", False),
 ]
 
 # Fields with a quick-pick "+" button in the bulk-edit panel, backed by

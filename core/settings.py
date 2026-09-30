@@ -168,6 +168,12 @@ class Settings:
     # at its default.
     redact_recipe: str = ""
 
+    # The user agreed to keep an API key/token in a plain, UNENCRYPTED file
+    # because this computer has no secure credential store (asked once by
+    # gui/secret_prompts.py). Only the yes/no lives here -- never a secret --
+    # and it is not part of Export Settings (it is about this computer).
+    allow_unencrypted_fallback: bool = False
+
     def saved_rename_pattern(self) -> str:
         """The dedicated rename pattern; before one was ever saved, the most
         recent pattern in the shared history (a first-run default only)."""
@@ -217,6 +223,7 @@ class Settings:
             "move_pattern": self.move_pattern,
             "library_root": self.library_root,
             "redact_recipe": self.redact_recipe,
+            "allow_unencrypted_fallback": str(self.allow_unencrypted_fallback),
         }
         return config
 
@@ -249,6 +256,7 @@ class Settings:
             move_pattern=section.get("move_pattern", fallback=""),
             library_root=section.get("library_root", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
+            allow_unencrypted_fallback=_get_bool(section, "allow_unencrypted_fallback", False),
         )
 
 

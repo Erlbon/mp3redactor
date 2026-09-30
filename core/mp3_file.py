@@ -40,6 +40,11 @@ ITUNESADVISORY_DESC = "ITUNESADVISORY"
 # Import > Look Up via MusicBrainz (core/musicbrainz_lookup.py) so a
 # file permanently records which release/recording it was matched to.
 MUSICBRAINZ_ALBUM_ID_DESC = "MusicBrainz Album Id"
+# Release details Look Up via Discogs fills: the label (TPUB, a plain
+# frame), its catalogue number and the release country (TXXX frames named
+# as MusicBrainz Picard writes them, so other taggers read them too).
+CATALOG_NUMBER_DESC = "CATALOGNUMBER"
+RELEASE_COUNTRY_DESC = "MusicBrainz Album Release Country"
 MUSICBRAINZ_UFID_OWNER = "http://musicbrainz.org"
 # TXXX frames recording the last validation scans (mp3val integrity,
 # ffmpeg deep check) INSIDE the file, so the record survives copies of
@@ -103,8 +108,8 @@ BASELINE_KEYS = (
     "title", "artist", "albumartist", "album", "track", "discnumber", "year",
     "genre", "composer", "comment", "language", "albumsort", "artistsort",
     "albumartistsort", "acoustid_fingerprint", "itunesadvisory",
-    "musicbrainz_albumid", "musicbrainz_trackid", "lyrics",
-    "integrity_stamp", "deep_check_stamp",
+    "musicbrainz_albumid", "musicbrainz_trackid", "publisher", "catalognumber",
+    "releasecountry", "lyrics", "integrity_stamp", "deep_check_stamp",
 )
 
 
@@ -135,6 +140,9 @@ class MP3File:
     itunesadvisory: str = ""
     musicbrainz_albumid: str = ""  # TXXX:MusicBrainz Album Id (release)
     musicbrainz_trackid: str = ""  # UFID:http://musicbrainz.org (recording)
+    publisher: str = ""  # TPUB (the record label)
+    catalognumber: str = ""  # TXXX:CATALOGNUMBER
+    releasecountry: str = ""  # TXXX:MusicBrainz Album Release Country
     duration_seconds: float | None = None
     bitrate_kbps: int | None = None
 

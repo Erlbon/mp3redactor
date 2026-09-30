@@ -119,6 +119,7 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
+from redactor_common.core import secret_store
 from redactor_common.core.error_summary import summarize_errors
 from redactor_common.core.folder_refresh import find_new_files_in_loaded_folders
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
@@ -227,6 +228,7 @@ DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({
     "albumsort", "artistsort", "albumartistsort",
     "acoustid_fingerprint", "itunesadvisory",
     "musicbrainz_albumid", "musicbrainz_trackid",
+    "publisher", "catalognumber", "releasecountry",
 })
 
 # Metadata fields offered as %placeholder% tokens in Rename/Export by
@@ -300,6 +302,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.files: list[MP3File] = []
         self.settings: Settings = load_settings()
+        # The remembered "an unencrypted key file is OK on this computer" answer
+        # (see gui/secret_prompts.py); a secret itself is never in the settings.
+        secret_store.set_allow_unencrypted_fallback(self.settings.allow_unencrypted_fallback)
         # In-memory-edit undo only (bulk-edit Apply) -- never physical
         # file operations (Save, mp3val Fix). See redactor_common.core.
         # undo's own module docstring for why.
@@ -441,7 +446,7 @@ class MainWindow(QMainWindow):
                     Separator(),
                     look_up_submenu([
                         MenuAction("musicbrainz_lookup", "&MusicBrainz…", self.open_musicbrainz_lookup_dialog),
-                        # Discogs: (planned).
+                        MenuAction("discogs_lookup", "&Discogs…", self.open_discogs_lookup_dialog),
                         MenuAction("fetch_lyrics", "&Lyrics", self.run_lyrics_fetch),
                     ]),
                     Separator(),
@@ -469,7 +474,7 @@ class MainWindow(QMainWindow):
             ],
             tools=standard_tools_items(
                 preferences=self.open_settings_dialog,
-                # api_keys: (planned) -- Discogs/AcoustID have no dialog yet.
+                api_keys=self.open_api_keys_dialog,
                 external_tools=self.open_external_tools_dialog,
                 columns=self.open_column_settings_dialog,
                 genres=self.open_genre_settings_dialog,
@@ -1032,6 +1037,60 @@ class MainWindow(QMainWindow):
         for index, fields in approved.items():
             files[index].apply_tags(fields)
         self._rebuild_table()
+
+    def open_discogs_lookup_dialog(self) -> None:
+        """Metadata > Look Up > Discogs...: like the MusicBrainz lookup (one album per
+        folder, reviewed in a dialog, anything that would overwrite a different value goes
+        through the per-field overwrite review, one Undo step, written on Save), plus label,
+        catalogue number, country and genre/style tags. Needs a Discogs token: without one
+        the API Keys dialog opens first (Tools > API Keys)."""
+        from redactor_common.gui.overwrite_review_dialog import resolve_overwrite_conflicts
+
+        from core.discogs_lookup import DiscogsClient, load_token
+        from gui.discogs_lookup_dialog import DiscogsLookupDialog, group_by_folder
+
+        targets = self._require_targets("look up")
+        if not targets:
+            return
+        token = load_token()
+        if not token:
+            QMessageBox.information(
+                self, "Discogs Token Needed",
+                "Look Up via Discogs needs your Discogs token. Enter it in the API Keys dialog next "
+                "(create one under Discogs Settings > Developers).",
+            )
+            self.open_api_keys_dialog()
+            token = load_token()
+            if not token:
+                return
+        dialog = DiscogsLookupDialog(group_by_folder(targets), DiscogsClient(token), self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        changes = dialog.file_changes()
+        if not changes:
+            return
+        files = [mp3 for mp3, _fields in changes]
+        proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
+        labels = {key: label for key, label, _multiline in FIELDS}
+        approved = resolve_overwrite_conflicts(
+            self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
+        )
+        if not approved:
+            return
+        self._push_undo("Discogs Lookup", files)
+        for index, fields in approved.items():
+            files[index].apply_tags(fields)
+        self._rebuild_table()
+
+    def open_api_keys_dialog(self) -> None:
+        """Tools > API Keys...: the Discogs token, kept in the secure credential store."""
+        from gui.api_keys_dialog import ApiKeysDialog
+
+        ApiKeysDialog(self, remember_fallback=self._remember_unencrypted_fallback).exec()
+
+    def _remember_unencrypted_fallback(self) -> None:
+        self.settings.allow_unencrypted_fallback = True
+        save_settings(self.settings)
 
     def open_auto_numbering_dialog(self) -> None:
         # Explicit selection required, same "no silent all-files
@@ -2288,6 +2347,7 @@ class MainWindow(QMainWindow):
             items.extend([
                 look_up_submenu([
                     MenuAction("musicbrainz_lookup", "MusicBrainz…", self.open_musicbrainz_lookup_dialog),
+                    MenuAction("discogs_lookup", "Discogs…", self.open_discogs_lookup_dialog),
                     MenuAction("fetch_lyrics", "Lyrics", self.run_lyrics_fetch),
                 ]),
                 Submenu("Organize", [

@@ -44,3 +44,38 @@ def recycle_bin(monkeypatch, tmp_path):
     bin_ = FakeRecycleBin(tmp_path / "_recycle_bin")
     monkeypatch.setattr(redact_steps, "move_to_trash", bin_)
     return bin_
+
+
+class FakeKeyring:
+    """In-memory stand-in for keyring's get/set/delete_password API."""
+
+    def __init__(self):
+        self.items = {}
+
+    def get_password(self, service, name):
+        return self.items.get((service, name))
+
+    def set_password(self, service, name, value):
+        self.items[(service, name)] = value
+
+    def delete_password(self, service, name):
+        self.items.pop((service, name), None)
+
+
+@pytest.fixture(autouse=True)
+def fake_keyring(tmp_path, monkeypatch):
+    """No test may touch the real Windows Credential Manager (or write a
+    real fallback file): the secret store gets an in-memory backend and a
+    temporary fallback folder, both reset afterwards. A DISCOGS_TOKEN in the
+    developer's own environment must not leak into a test either."""
+    from redactor_common.core import secret_store
+
+    monkeypatch.delenv("DISCOGS_TOKEN", raising=False)
+    backend = FakeKeyring()
+    secret_store.set_backend(backend)
+    secret_store.set_fallback_dir(tmp_path / "secret_fallback")
+    secret_store.set_allow_unencrypted_fallback(False)
+    yield backend
+    secret_store.set_backend(None)
+    secret_store.set_fallback_dir(None)
+    secret_store.set_allow_unencrypted_fallback(False)

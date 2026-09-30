@@ -53,12 +53,14 @@ from redactor_common.core.save_errors import describe_save_error
 from core.cover_art import FRONT_COVER
 from core.mp3_file import (
     ACOUSTID_FINGERPRINT_DESC,
+    CATALOG_NUMBER_DESC,
     DEEP_CHECK_SCAN_DESC,
     INTEGRITY_SCAN_DESC,
     ITUNESADVISORY_DESC,
     MUSICBRAINZ_ALBUM_ID_DESC,
     MUSICBRAINZ_UFID_OWNER,
     MP3File,
+    RELEASE_COUNTRY_DESC,
     STATUS_OK,
 )
 
@@ -82,6 +84,7 @@ _SIMPLE_FRAME_IDS = {
     "albumsort": "TSOA",
     "artistsort": "TSOP",
     "albumartistsort": "TSO2",
+    "publisher": "TPUB",
 }
 
 # attribute_key -> TXXX description, for the FIELDS entries with no
@@ -95,6 +98,8 @@ _TXXX_DESCRIPTIONS = {
     "acoustid_fingerprint": ACOUSTID_FINGERPRINT_DESC,
     "itunesadvisory": ITUNESADVISORY_DESC,
     "musicbrainz_albumid": MUSICBRAINZ_ALBUM_ID_DESC,
+    "catalognumber": CATALOG_NUMBER_DESC,
+    "releasecountry": RELEASE_COUNTRY_DESC,
 }
 
 
@@ -165,7 +170,7 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
     try:
         from mutagen.id3 import (
             APIC, COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
-            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, UFID, USLT,
+            TPOS, TPUB, TRCK, TSO2, TSOA, TSOP, TXXX, UFID, USLT,
         )
         from mutagen.mp3 import MP3
     except ImportError:
@@ -174,7 +179,7 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
     frame_classes = {
         "TIT2": TIT2, "TPE1": TPE1, "TPE2": TPE2, "TALB": TALB, "TRCK": TRCK,
         "TPOS": TPOS, "TDRC": TDRC, "TCON": TCON, "TCOM": TCOM, "TLAN": TLAN,
-        "TSOA": TSOA, "TSOP": TSOP, "TSO2": TSO2,
+        "TSOA": TSOA, "TSOP": TSOP, "TSO2": TSO2, "TPUB": TPUB,
     }
 
     try:

@@ -601,3 +601,42 @@ def test_apply_tags_ignores_a_file_that_failed_to_load(tmp_path):
     mp3.load_error = "failed to read tags: boom"
     mp3.apply_tags({"title": "x"})
     assert mp3.title == "" and mp3.dirty is False
+
+
+def test_label_catalog_number_and_country_round_trip_in_their_frames(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.apply_tags({"publisher": "Columbia", "catalognumber": "CL 1355", "releasecountry": "US"})
+    assert save_tags(mp3) is True
+
+    tags = ID3(path)
+    assert str(tags["TPUB"].text[0]) == "Columbia"
+    assert str(tags["TXXX:CATALOGNUMBER"].text[0]) == "CL 1355"
+    assert str(tags["TXXX:MusicBrainz Album Release Country"].text[0]) == "US"
+
+    reloaded = MP3File(path=path)
+    load_tags(reloaded)
+    assert (reloaded.publisher, reloaded.catalognumber, reloaded.releasecountry) == ("Columbia", "CL 1355", "US")
+    assert not reloaded.tag_changed("publisher")
+
+    reloaded.apply_tags({"publisher": "", "catalognumber": "", "releasecountry": ""})
+    assert save_tags(reloaded) is True
+    tags = ID3(path)
+    assert "TPUB" not in tags and "TXXX:CATALOGNUMBER" not in tags and "TXXX:MusicBrainz Album Release Country" not in tags
+
+
+def test_saving_an_unrelated_field_leaves_the_label_frames_alone(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _copy_fixture(tmp_path)
+    first = MP3File(path=path)
+    first.apply_tags({"publisher": "Columbia", "catalognumber": "CL 1355"})
+    assert save_tags(first)
+    second = MP3File(path=path)
+    load_tags(second)
+    second.apply_tags({"title": "Only the title"})
+    assert save_tags(second)
+    tags = ID3(path)
+    assert str(tags["TPUB"].text[0]) == "Columbia" and str(tags["TXXX:CATALOGNUMBER"].text[0]) == "CL 1355"

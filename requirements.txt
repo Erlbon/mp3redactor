@@ -23,6 +23,12 @@ lyricy
 # having one bad push there break this project's next install.
 redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-09-30-13
 
+# Secure storage of API keys/tokens (the Discogs token): redactor_common's
+# core/secret_store.py uses it (Windows Credential Manager, macOS Keychain,
+# Linux Secret Service) and degrades to "unavailable" -- asking the user
+# about an UNENCRYPTED fallback file -- when it is missing.
+keyring
+
 # Recycle Bin for Redact's replaced originals (redactor_common's core/trash.py
 # imports it lazily and deliberately doesn't depend on it).
 send2trash

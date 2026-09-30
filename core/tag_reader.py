@@ -23,12 +23,14 @@ from pathlib import Path
 from core.ffmpeg_probe import REPLAYGAIN_REFERENCE_LUFS
 from core.mp3_file import (
     ACOUSTID_FINGERPRINT_DESC,
+    CATALOG_NUMBER_DESC,
     DEEP_CHECK_SCAN_DESC,
     INTEGRITY_SCAN_DESC,
     ITUNESADVISORY_DESC,
     MUSICBRAINZ_ALBUM_ID_DESC,
     MUSICBRAINZ_UFID_OWNER,
     MP3File,
+    RELEASE_COUNTRY_DESC,
     STATUS_OK,
 )
 
@@ -83,6 +85,9 @@ def load_tags(mp3: MP3File) -> None:
         mp3.acoustid_fingerprint = _first(tags, f"TXXX:{ACOUSTID_FINGERPRINT_DESC}")
         mp3.itunesadvisory = _first(tags, f"TXXX:{ITUNESADVISORY_DESC}")
         mp3.musicbrainz_albumid = _first(tags, f"TXXX:{MUSICBRAINZ_ALBUM_ID_DESC}")
+        mp3.publisher = _first(tags, "TPUB")
+        mp3.catalognumber = _first(tags, f"TXXX:{CATALOG_NUMBER_DESC}")
+        mp3.releasecountry = _first(tags, f"TXXX:{RELEASE_COUNTRY_DESC}")
         mp3.musicbrainz_trackid = _ufid(tags, MUSICBRAINZ_UFID_OWNER)
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
 
