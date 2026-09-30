@@ -13,7 +13,7 @@ world taggers are often lenient about it.
 Deliberately a modest common set, not the full ISO 639-2 registry (a
 few hundred entries) -- same "convenience shortlist, always free text"
 philosophy as core/mp3_genres.py; anything not listed can still be
-typed directly, or added as a custom entry via Settings > Add/Remove
+typed directly, or added as a custom entry via Tools > Genres/Languages
 Languages.
 """
 

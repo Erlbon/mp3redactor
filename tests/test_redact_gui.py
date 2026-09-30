@@ -46,7 +46,7 @@ def test_menu_and_toolbar_entries(window):
     toolbar_actions = [a for bar in window.findChildren(QToolBar) for a in bar.actions()]
     assert window.action_redact in toolbar_actions
     texts = [a.text() for menu in window.findChildren(QMenu) for a in menu.actions()]
-    assert "Edit Redact Reci&pe..." in texts and "Re&dact" in texts
+    assert "&Edit Redact Recipe…" in texts and "Redac&t" in texts
 
 
 def test_end_to_end_redact_selected_files(window, tmp_path, shown, tools, recycle_bin):

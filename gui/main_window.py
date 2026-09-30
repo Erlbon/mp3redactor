@@ -6,8 +6,7 @@ Key). Tag editing is deliberately "basic" -- plain text fields only,
 via core.fields.FIELDS -- no covers or external lookups the way the
 epub tool's fuller tag panel has; those don't have an obvious MP3-tag
 equivalent yet. Genre and Language do get the family's quick-pick "+"
-button (core.fields.QUICK_PICK_FIELDS) plus Settings > Add/Remove
-Genres.../Add/Remove Languages... management dialogs.
+button (core.fields.QUICK_PICK_FIELDS) plus Tools > Genres.../Languages... management dialogs.
 
 The table's columns are field-key based (redactor_common.core.
 table_settings), not index-based -- drag a header to reorder,
@@ -24,17 +23,13 @@ the same shared package the epub and video tools use, rather than
 reimplementing these independently the way this project originally
 did.
 
-Menu shape is File / Import / Operations / Settings / Help, matching
-every other Redactor project. Import brings external things IN --
-currently Parse Filename -> Metadata (extracting fields already
-implicit in a loaded file's own name) and Import & Convert to MP3;
-it'll also gain cover-art fetching once that roadmap item lands.
-Lyrics fetching (Operations menu / right-click, same "outside thing
-coming in" shape) already landed but lives in Operations rather than
-Import, alongside the other per-file/per-selection checks it's most
-similar to in practice. File carries the reverse direction,
-Rename/Export by Metadata Pattern, alongside Load/Save, same grouping
-as every sibling project.
+Menu shape is the family's standard skeleton (redactor_common's
+gui/standard_menus.py): File / Edit / View / Metadata / Analyze / Tools /
+Help. Shared actions use the canonical labels and shortcuts; Metadata
+holds Parse Filename, Look Up (MusicBrainz, Lyrics), lyrics/track
+numbering and Cover, Analyze the integrity/BPM/key/loudness checks, and
+every setting lives under Tools. The right-click menu is a short core
+plus Look Up / Organize / Analyze / Cover submenus.
 Both pattern-based dialogs (redactor_common.gui.rename_pattern_dialog /
 parse_filename_dialog) were already generic, ready-to-consume modules
 there -- this project just hadn't wired them in yet, unlike epub/cbz.
@@ -140,7 +135,22 @@ from redactor_common.gui.colors import DIRTY_COLOR, HIGHLIGHT_TEXT_COLOR, TABLE_
 from redactor_common.gui.column_menu import show_column_header_context_menu
 from redactor_common.gui.column_settings_dialog import ColumnSettingsDialog
 from redactor_common.gui.manage_list_dialog import ManageListDialog
-from redactor_common.gui.menu_builder import MenuAction, Separator, Submenu, build_menu_bar
+from redactor_common.core import labels
+from redactor_common.gui.menu_builder import MenuAction, Separator, Submenu
+from redactor_common.gui.standard_menus import (
+    AppMenu,
+    StandardMenuSpec,
+    build_standard_menu_bar,
+    look_up_submenu,
+    set_apply_count,
+    standard_edit_items,
+    standard_file_items,
+    standard_help_items,
+    standard_tools_items,
+    standard_view_items,
+)
+from redactor_common.gui.case_conversion_dialog import CaseConversionDialog
+from redactor_common.gui.search_replace_dialog import SearchReplaceDialog
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
@@ -148,8 +158,6 @@ from redactor_common.gui.progress import ProgressReporter, run_with_progress
 from redactor_common.gui.redact_dialog import (
     RecipeEditorDialog,
     RedactResultsDialog,
-    edit_recipe_menu_action,
-    redact_menu_action,
 )
 from redactor_common.gui.redact_dialog import run_redact as run_redact_dialog
 from redactor_common.gui.move_runner import run_planned_moves
@@ -205,7 +213,7 @@ PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to
 # behavior before column management existed for every other column
 # (shown by default), but these are a deliberate exception:
 # supplementary detail most people won't want cluttering the table
-# until they go looking for it (Settings > Add/Remove Columns..., or
+# until they go looking for it (Tools > Columns..., or
 # right-click a header, same as any other column). Once the user has
 # saved ANY choice, even "show everything" (an empty hidden set), that
 # saved choice always wins over this default -- see
@@ -363,144 +371,117 @@ class MainWindow(QMainWindow):
     # -- menu/toolbar -----------------------------------------------------
 
     def _build_menu_and_toolbar(self) -> None:
-        specs = {
-            "File": [
-                MenuAction("load_files", "&Load Files...", self.load_files_dialog, shortcut=shortcuts.LOAD_FILES),
-                MenuAction(
-                    "load_folder", "Load &Folder...", self.load_folder_dialog, shortcut=shortcuts.LOAD_FOLDER
-                ),
-                Separator(),
-                # "Save File(s)", not "Save Tags" -- this writes to the
-                # actual file on disk (mutagen open+modify+re-save), not
-                # some separate sidecar/tag store, and user feedback was
-                # that "Tags" read as a smaller, less concrete action
-                # than what it actually does.
-                MenuAction("save", "&Save File(s)", self.save_changed, shortcut=shortcuts.SAVE),
-                Separator(),
+        # The family's standard menu skeleton (redactor_common's
+        # gui/standard_menus.py): File, Edit, View, Metadata, Analyze,
+        # Tools, Help. Shared actions come from its standard_*_items()
+        # with the canonical labels/shortcuts; only the app-specific
+        # Metadata and Analyze menus and the Look Up sources are
+        # spelled out here. A slot left None is shown greyed (planned).
+        spec = StandardMenuSpec(
+            file=standard_file_items(
+                open_files=self.load_files_dialog,
+                open_folder=self.load_folder_dialog,
+                import_and_convert=self.import_and_convert_dialog,
+                # Save = the selected files' pending tag changes, Save All
+                # = every changed file (the old "Save File(s)" did the
+                # latter, so Save All is what keeps that one-click path).
+                save=self.save_selected,
+                save_all=self.save_changed,
                 # Quick, direct rename of the one selected file -- matches
-                # Explorer's F2 exactly. Distinct from "rename_files"
-                # below (the pattern-based batch tool, moved off F2 to
-                # make room for this): see rename_selected_file().
-                MenuAction(
-                    "rename_file", "&Rename File...", self.rename_selected_file,
-                    shortcut=shortcuts.RENAME_SINGLE_FILE,
-                ),
-                MenuAction("undo_rename", "&Undo Last Rename...", self.undo_last_rename),
-                MenuAction(
-                    "rename_files", "Rename / &Export Files...", self.open_rename_dialog,
-                    shortcut=shortcuts.RENAME_EXPORT_BY_PATTERN,
-                ),
-                Separator(),
-                MenuAction(
-                    "refresh_list", "Re&fresh List", self.refresh_list, shortcuts=shortcuts.REFRESH_LIST
-                ),
-                Separator(),
+                # Explorer's F2 exactly. Distinct from "Rename / Export /
+                # Move" (the pattern-based batch tool): see
+                # rename_selected_file().
+                rename_file=self.rename_selected_file,
+                undo_last_rename=self.undo_last_rename,
+                rename_export_move=self.open_rename_dialog,
+                # export_settings / import_settings: (planned) -- the
+                # shared settings-bundle flow isn't wired into this app yet.
+                remove_from_list=self.remove_selected_from_list,
+                clear_list=self.clear_list,
                 # No explicit shortcut -- Alt+F4 already closes this (or
-                # any) plain QMainWindow at the OS level, verified
-                # directly (launch, send Alt+F4, confirm the process
-                # exits), independent of anything bound here.
-                MenuAction("exit", "E&xit", self.close),
-            ],
-            # Brings external things IN -- extracting metadata already
-            # implicit in a file's own name (Parse Filename), bringing a
-            # different audio FORMAT in converted to join this app's
-            # MP3-only library (Import & Convert), and eventually
-            # cover-art fetching, same "outside thing coming in" shape
-            # (lyrics fetching is the same shape too, but lives in
-            # Operations instead -- see this file's own module
-            # docstring for why). Rename/Export is the reverse direction
-            # (metadata -> filename) and lives in File instead, next to
-            # Load/Save, matching every sibling Redactor project.
-            "Import": [
-                MenuAction(
-                    "parse_filename", "&Parse Filename...", self.open_parse_filename_dialog,
-                    shortcut=shortcuts.PARSE_FILENAME_TO_METADATA,
-                ),
-                MenuAction(
-                    "musicbrainz_lookup", "Look Up via &MusicBrainz...", self.open_musicbrainz_lookup_dialog
-                ),
-                Separator(),
-                MenuAction(
-                    "import_convert", "Import && &Convert to MP3...", self.import_and_convert_dialog
-                ),
-            ],
-            "Operations": [
-                MenuAction(
-                    "apply_bulk_edit", "&Apply to 0 selected file(s)", self.tag_panel.apply_bulk_edit
-                ),
-                Separator(),
+                # any) plain QMainWindow at the OS level.
+                exit_slot=self.close,
+            ),
+            edit=standard_edit_items(
+                undo=self.undo_last_action,
+                redo=self.redo_last_action,
+                apply=self.tag_panel.apply_bulk_edit,
                 # One click: the recipe's checks/fixes/lookups on the selected
                 # files (or all loaded, if none selected), saved in place with
                 # each original in the Recycle Bin. See redact_files().
-                redact_menu_action(self.redact_files, text="Re&dact"),
-                edit_recipe_menu_action(self.edit_redact_recipe, text="Edit Redact Reci&pe..."),
-                Separator(),
-                MenuAction(
-                    "check_integrity", "&Check Selected Files' Integrity", self.run_integrity_check
-                ),
-                MenuAction(
-                    "fix_integrity", "&Fix Selected Files' Integrity Issues...", self.run_integrity_fix
-                ),
-                MenuAction(
-                    "deep_check",
-                    "&Deep Check Selected Files' Integrity (ffmpeg)...",
-                    self.run_deep_check,
-                ),
-                MenuAction("check_bpm", "Detect &BPM for Selected Files", self.run_bpm_check),
-                MenuAction("check_key", "Detect &Key for Selected Files", self.run_key_detection),
-                MenuAction(
-                    "measure_loudness", "Measure &Loudness for Selected Files", self.run_loudness_measurement
-                ),
-                MenuAction(
-                    "fetch_lyrics", "Fetch L&yrics for Selected Files", self.run_lyrics_fetch
-                ),
-                MenuAction("edit_lyrics", "&Edit Lyrics...", self.edit_lyrics_for_selection),
-                Separator(),
-                Submenu("C&over", [
-                    MenuAction("cover_set", "&Set Cover from Image File...", self.set_cover_from_file),
+                redact=self.redact_files,
+                edit_redact_recipe=self.edit_redact_recipe,
+                search_replace=self.open_search_replace_dialog,
+                change_case=self.open_case_conversion_dialog,
+                auto_number=self.open_auto_numbering_dialog,
+            ),
+            view=standard_view_items(
+                show_metadata_panel=self._toggle_tag_panel,
+                zoom_in=self.zoom.zoom_in,
+                zoom_out=self.zoom.zoom_out,
+                reset_zoom=self.zoom.zoom_reset,
+                refresh_list=self.refresh_list,
+            ),
+            app_menus=[
+                AppMenu(labels.MENU_METADATA, [
                     MenuAction(
-                        "cover_from_folder", "Set Cover from &Folder Image (cover.jpg, folder.jpg...)",
-                        self.set_cover_from_folder_images,
+                        "parse_filename", labels.PARSE_FILENAME, self.open_parse_filename_dialog,
+                        shortcut=shortcuts.PARSE_FILENAME,
                     ),
-                    MenuAction("cover_remove", "&Remove Cover", self.remove_cover),
                     Separator(),
-                    MenuAction("cover_export", "&Export Cover to Image File...", self.export_cover),
+                    look_up_submenu([
+                        MenuAction("musicbrainz_lookup", "&MusicBrainz…", self.open_musicbrainz_lookup_dialog),
+                        # Discogs: (planned).
+                        MenuAction("fetch_lyrics", "&Lyrics", self.run_lyrics_fetch),
+                    ]),
+                    Separator(),
+                    MenuAction("edit_lyrics", "&Edit Lyrics…", self.edit_lyrics_for_selection),
+                    MenuAction("number_tracks", "&Number Tracks…", self.number_tracks_for_selection),
+                    Separator(),
+                    Submenu("C&over", [
+                        MenuAction("cover_set", "&Set from Image File…", self.set_cover_from_file),
+                        MenuAction("cover_from_folder", "Set from &Folder Image", self.set_cover_from_folder_images),
+                        MenuAction("cover_remove", "&Remove Cover", self.remove_cover),
+                        Separator(),
+                        MenuAction("cover_export", "&Export Cover to Image File…", self.export_cover),
+                    ]),
                 ]),
-                Separator(),
-                MenuAction("auto_numbering", "Auto-&Numbering...", self.open_auto_numbering_dialog),
-                Separator(),
-                MenuAction("undo", "&Undo", self.undo_last_action, shortcut=shortcuts.UNDO),
-                MenuAction("redo", "&Redo", self.redo_last_action, shortcut=shortcuts.REDO),
+                AppMenu(labels.MENU_ANALYZE, [
+                    MenuAction("check_integrity", "&Check Integrity", self.run_integrity_check),
+                    MenuAction("fix_integrity", "&Fix Integrity Issues…", self.run_integrity_fix),
+                    MenuAction("deep_check", "&Deep Check Integrity…", self.run_deep_check),
+                    Separator(),
+                    MenuAction("check_bpm", "Detect &BPM", self.run_bpm_check),
+                    MenuAction("check_key", "Detect &Key", self.run_key_detection),
+                    MenuAction("measure_loudness", "Measure &Loudness", self.run_loudness_measurement),
+                    # Find Duplicates: (planned).
+                ]),
             ],
-            "Settings": [
-                MenuAction("preferences", "&Preferences...", self.open_settings_dialog),
-                MenuAction(
-                    "locate_tools", "&Locate External Tools...", self.open_external_tools_dialog
-                ),
-                Separator(),
-                MenuAction("manage_columns", "Add/&Remove Columns...", self.open_column_settings_dialog),
-                MenuAction("manage_genres", "Add/Remove &Genres...", self.open_genre_settings_dialog),
-                MenuAction(
-                    "manage_languages", "Add/Remove &Languages...", self.open_language_settings_dialog
-                ),
-            ],
-            "Help": [
-                MenuAction("about", f"&About {APP_NAME}...", self.open_about_dialog, shortcut=shortcuts.HELP),
-                MenuAction("changelog", "View &Changelog...", self.open_changelog_dialog),
-                MenuAction("credits", "&Credits...", self.open_credits_dialog),
-            ],
-        }
-        actions = build_menu_bar(self, specs)
+            tools=standard_tools_items(
+                preferences=self.open_settings_dialog,
+                # api_keys: (planned) -- Discogs/AcoustID have no dialog yet.
+                external_tools=self.open_external_tools_dialog,
+                columns=self.open_column_settings_dialog,
+                genres=self.open_genre_settings_dialog,
+                languages=self.open_language_settings_dialog,
+            ),
+            help=standard_help_items(
+                APP_NAME, self.open_changelog_dialog, self.open_credits_dialog, self.open_about_dialog,
+            ),
+        )
+        build_standard_menu_bar(self, spec)
+        actions = self.action_registry
 
-        self.action_load_files = actions["load_files"]
-        self.action_load_folder = actions["load_folder"]
+        self.action_load_files = actions["open_files"]
+        self.action_load_folder = actions["open_folder"]
         self.action_save = actions["save"]
+        self.action_save_all = actions["save_all"]
         self.action_rename_file = actions["rename_file"]
-        self.action_rename_files = actions["rename_files"]
+        self.action_rename_files = actions["rename_export_move"]
         self.action_refresh_list = actions["refresh_list"]
         self.action_parse_filename = actions["parse_filename"]
-        self.action_apply_bulk_edit = actions["apply_bulk_edit"]
-        self.action_apply_bulk_edit.setEnabled(False)
+        self.action_apply_bulk_edit = actions["apply"]
+        set_apply_count(self.action_apply_bulk_edit, 0)
         self.action_check_integrity = actions["check_integrity"]
         self.action_fix_integrity = actions["fix_integrity"]
         self.action_deep_check = actions["deep_check"]
@@ -509,23 +490,32 @@ class MainWindow(QMainWindow):
         self.action_measure_loudness = actions["measure_loudness"]
         self.action_import_convert = actions["import_convert"]
         self.action_redact = actions["redact"]
+        self.action_remove_from_list = actions["remove_from_list"]
+        self.action_show_panel = actions["show_metadata_panel"]
+        self.action_show_panel.setChecked(True)
         self.action_undo = actions["undo"]
         self.action_undo.setEnabled(False)
         self.action_redo = actions["redo"]
         self.action_redo.setEnabled(False)
 
-        # Toolbar carries only the everyday six (Load Files, Load
-        # Folder, Save, Apply, Redact, Undo) -- everything else (Check
-        # Integrity, Detect BPM, Detect Key) stays reachable only via
-        # the Operations menu and the table's right-click context menu
-        # (_show_context_menu), both of which already have them, rather
-        # than crowding a second copy onto the toolbar too.
+        # The View menu owns the zoom shortcuts; the zoom controller's own
+        # toolbar buttons would bind the same keys and make them ambiguous
+        # (so neither would fire).
+        self.zoom.zoom_in_action.setShortcuts([])
+        self.zoom.zoom_out_action.setShortcuts([])
+
+        # Toolbar carries only the everyday actions -- everything else
+        # (Check Integrity, Detect BPM, Detect Key, ...) stays reachable
+        # via the Analyze menu and the table's right-click context menu
+        # (_show_context_menu), rather than crowding a second copy onto
+        # the toolbar too.
         toolbar = QToolBar("Main", self)
         self.addToolBar(toolbar)
         toolbar.addAction(self.action_load_files)
         toolbar.addAction(self.action_load_folder)
         toolbar.addSeparator()
         toolbar.addAction(self.action_save)
+        toolbar.addAction(self.action_save_all)
         toolbar.addSeparator()
         toolbar.addAction(self.action_apply_bulk_edit)
         toolbar.addAction(self.action_redact)
@@ -579,14 +569,14 @@ class MainWindow(QMainWindow):
 
     def load_files_dialog(self) -> None:
         start_dir = resolve_start_directory(self.settings.last_directory)
-        paths, _ = QFileDialog.getOpenFileNames(self, "Load Files", start_dir, "MP3 Files (*.mp3)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "Open Files", start_dir, "MP3 Files (*.mp3)")
         if paths:
             self._remember_last_directory(paths[0])
             self._load_paths([Path(p) for p in paths])
 
     def load_folder_dialog(self) -> None:
         start_dir = resolve_start_directory(self.settings.last_directory)
-        folder = QFileDialog.getExistingDirectory(self, "Load Folder", start_dir)
+        folder = QFileDialog.getExistingDirectory(self, "Open Folder", start_dir)
         if folder:
             self._remember_last_directory(folder)
             self._load_paths([Path(folder)])
@@ -693,10 +683,41 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(self, "Refreshed", "No new files found. Reloaded everything from disk.")
 
+    def remove_selected_from_list(self) -> None:
+        """File > Remove from List (Delete): drops the selected files from
+        this list only -- nothing on disk is touched. Like Load, it clears
+        the undo stack (its snapshots reference MP3File objects that go
+        away) and asks first when a removed file has unsaved edits."""
+        targets = self._selected_files()
+        if not targets:
+            return
+        if any(mp3.dirty for mp3 in targets) and not self._confirm_discard(
+            "remove files with unsaved changes from the list"
+        ):
+            return
+        gone = {id(mp3) for mp3 in targets}
+        self.files = [mp3 for mp3 in self.files if id(mp3) not in gone]
+        self._after_list_shrunk()
+
+    def clear_list(self) -> None:
+        """File > Clear List: empties the list (nothing on disk is touched)."""
+        if not self.files:
+            return
+        if self._count_dirty() and not self._confirm_discard("clear the entire list"):
+            return
+        self.files = []
+        self._after_list_shrunk()
+
+    def _after_list_shrunk(self) -> None:
+        self.undo_manager.clear()
+        self._update_undo_action()
+        self._update_redo_action()
+        self._rebuild_table()
+
     # -- import & convert --------------------------------------------------
 
     def import_and_convert_dialog(self) -> None:
-        """Import menu > "Import & Convert to MP3..." -- brings a
+        """File > "Import and Convert..." -- brings a
         non-MP3 audio file (FLAC/WAV/OGG/M4A/...) into the library by
         converting it to .mp3 via ffmpeg's libmp3lame encoder
         (core.mp3_converter), same directory, same base filename.
@@ -1034,6 +1055,68 @@ class MainWindow(QMainWindow):
             targets[index].apply_tags({field_key: new_value})
         self._rebuild_table()
 
+    def open_search_replace_dialog(self) -> None:
+        """Edit > Search and Replace...: the shared dialog over the selected
+        files (explicit selection, same as Auto-Number). Replacements go
+        into memory like a bulk edit -- Save writes them, Undo reverts."""
+        targets = self._require_targets("search and replace in")
+        if not targets:
+            return
+        labels_by_key = [(key, label) for key, label, _multiline in FIELDS]
+        dialog = SearchReplaceDialog(
+            targets, labels_by_key,
+            get_value=lambda mp3, key: getattr(mp3, key, "") or "",
+            get_display_name=lambda mp3: mp3.filename,
+            include_filename=False,
+            is_excluded=lambda mp3: bool(mp3.load_error),
+            item_noun="file",
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        changes = dialog.accepted_changes()  # index into targets -> new value (one field)
+        if not changes:
+            return
+        field_key = dialog.result_field_key()
+        changed = [targets[index] for index in changes]
+        self._push_undo("Search and Replace", changed)
+        for index, new_value in changes.items():
+            targets[index].apply_tags({field_key: new_value})
+        self._rebuild_table()
+
+    def open_case_conversion_dialog(self) -> None:
+        """Edit > Change Case...: same shape as Search and Replace."""
+        targets = self._require_targets("change the case of")
+        if not targets:
+            return
+        labels_by_key = [(key, label) for key, label, _multiline in FIELDS]
+        dialog = CaseConversionDialog(
+            targets, labels_by_key,
+            get_value=lambda mp3, key: getattr(mp3, key, "") or "",
+            get_display_name=lambda mp3: mp3.filename,
+            is_excluded=lambda mp3: bool(mp3.load_error),
+            item_noun="file",
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        changes = dialog.accepted_changes()
+        if not changes:
+            return
+        field_key = dialog.result_field_key()
+        changed = [targets[index] for index in changes]
+        self._push_undo("Change Case", changed)
+        for index, new_value in changes.items():
+            targets[index].apply_tags({field_key: new_value})
+        self._rebuild_table()
+
+    def number_tracks_for_selection(self) -> None:
+        """Metadata > Number Tracks...: the menu entry for the quick
+        numbering the right-click menu already had."""
+        targets = self._require_targets("number")
+        if targets:
+            self._quick_number_tracks(targets)
+
     def _quick_number_tracks(self, files: list[MP3File]) -> None:
         """The table right-click's quick version of Auto-Numbering:
         just prompts for a starting Track # (no field picker, no step,
@@ -1041,7 +1124,7 @@ class MainWindow(QMainWindow):
         in their current table order. For anything beyond the plain
         "start here, count up by one" case on Track specifically --
         a different field, a different step, or a look at what's
-        changing before it does -- use Operations -> Auto-Numbering...
+        changing before it does -- use Edit > Auto-Number...
         instead."""
         values = prompt_and_generate_series_numbers(self, len(files), field_label="Starting Track #")
         if values is None:
@@ -1183,13 +1266,28 @@ class MainWindow(QMainWindow):
         self._update_redo_action()
 
     def save_changed(self) -> None:
+        """File > Save All: every file with unsaved tag changes."""
+        self._save_dirty(selected_only=False)
+
+    def save_selected(self) -> None:
+        """File > Save (Ctrl+S): only the selected files' unsaved changes."""
+        self._save_dirty(selected_only=True)
+
+    def _save_dirty(self, selected_only: bool) -> None:
         # Catches a field that's ticked with a value typed in but not
         # yet Applied -- Save should act on it too, not silently drop it.
         self.tag_panel.apply_bulk_edit()
 
-        dirty_files = [mp3 for mp3 in self.files if mp3.dirty and not mp3.load_error]
+        pool = self._selected_files() if selected_only else self.files
+        dirty_files = [mp3 for mp3 in pool if mp3.dirty and not mp3.load_error]
         if not dirty_files:
-            QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
+            if selected_only and self._count_dirty():
+                QMessageBox.information(
+                    self, "Nothing to Save",
+                    "The selected files have no unsaved tag changes. Use Save All to save the others.",
+                )
+            else:
+                QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
             return
 
         def step(mp3: MP3File, _index: int) -> None:
@@ -1265,7 +1363,7 @@ class MainWindow(QMainWindow):
 
     def _add_custom_genre(self, parent_widget) -> None:
         """Shared Add-custom handler for both the quick-pick dialog's
-        "Add Custom..." button and Settings > Add/Remove Genres...'s
+        "Add Custom..." button and Tools > Genres...'s
         "Add..." button -- both hand this the same shape, a widget to
         parent the prompt against."""
         text, ok = QInputDialog.getText(parent_widget, "Add Custom Genre", "New genre name:")
@@ -1357,15 +1455,20 @@ class MainWindow(QMainWindow):
         self._update_cover_panel()
 
     def _on_tag_panel_selection_count_changed(self, count: int) -> None:
-        self.action_apply_bulk_edit.setText(f"Apply to {count} selected file(s)")
-        self.action_apply_bulk_edit.setEnabled(count > 0)
+        set_apply_count(self.action_apply_bulk_edit, count)
 
     def _toggle_tag_panel(self) -> None:
         self._panel_collapser.toggle()
         self._sync_tag_panel_collapsed_indicator()
 
     def _sync_tag_panel_collapsed_indicator(self) -> None:
-        self.tag_panel.set_collapsed_indicator(self._panel_collapser.is_collapsed())
+        collapsed = self._panel_collapser.is_collapsed()
+        self.tag_panel.set_collapsed_indicator(collapsed)
+        # View > Show Metadata Panel mirrors the panel (setChecked doesn't
+        # fire triggered, so this can't loop back into the toggle).
+        action = getattr(self, "action_show_panel", None)
+        if action is not None:
+            action.setChecked(not collapsed)
 
     # -- columns: order/visibility, persisted by field key -----------------
 
@@ -1475,7 +1578,7 @@ class MainWindow(QMainWindow):
         return recipe_from_setting(self.settings.redact_recipe, build_catalogue(self.settings))
 
     def edit_redact_recipe(self) -> None:
-        """Operations > Edit Redact Recipe...: the shared recipe editor over
+        """Edit > Edit Redact Recipe...: the shared recipe editor over
         this app's steps; the result is stored in the settings file."""
         catalogue = build_catalogue(self.settings)
         recipe = self._redact_recipe()
@@ -1507,7 +1610,7 @@ class MainWindow(QMainWindow):
         return list(self.files) if reply == QMessageBox.StandardButton.Yes else []
 
     def redact_files(self) -> None:
-        """Operations > Redact (Ctrl+Shift+E): runs the saved recipe on the
+        """Edit > Redact (Ctrl+Shift+E): runs the saved recipe on the
         targets through redactor_common's engine (progress, cancel, results
         with Needs review). A file with unsaved edits is skipped and named
         in the report, never silently overwritten; a file that failed to
@@ -1627,7 +1730,7 @@ class MainWindow(QMainWindow):
         self._run_concurrent_check_with_progress("Fetching lyrics...", run_lyrics_fetch)
 
     def edit_lyrics_for_selection(self) -> None:
-        """Operations menu entry point for Edit Lyrics... -- same
+        """Metadata menu entry point for Edit Lyrics... -- same
         "exactly one file" convention as rename_selected_file(), since
         this opens a single-file dialog. The table's right-click menu
         reaches the same dialog directly (see _show_context_menu's
@@ -1644,7 +1747,7 @@ class MainWindow(QMainWindow):
         """Edit Lyrics... -- see gui/lyrics_dialog.py's own docstring
         for why this is a dedicated dialog rather than a
         core.fields.FIELDS row. Triggered by double-clicking a file's
-        Lyrics cell, or via the Operations menu / table's right-click
+        Lyrics cell, or via the Metadata menu / table's right-click
         menu."""
         if mp3.load_error:
             return  # blank defaults, not its real tags -- see _apply_bulk_edit()
@@ -2124,57 +2227,55 @@ class MainWindow(QMainWindow):
     # -- context menu -----------------------------------------------------
 
     def _show_context_menu(self, pos) -> None:
-        # Selection-fix, and the generic Open Containing Folder/Copy Path
-        # actions, are handled by the shared helper -- see its docstring.
+        # Selection-fix, and the generic Open in Default App / Open
+        # Containing Folder / Copy Path rows, are handled by the shared
+        # helper -- see its docstring. The rest is a short core plus
+        # families (Look Up, Organize, Analyze, Cover); the full set is in
+        # the menu bar.
         def extra_items(files: list[MP3File]) -> list:
-            items: list = []
+            items: list = [Separator()]
             # Reuses the actual File-menu QAction (F2) rather than
             # building a fresh one -- same object, so this shows the
             # real shortcut hint and can never drift out of sync with
             # it. Only offered for a single file -- renaming several to
-            # the same name doesn't make sense. Distinct from
-            # "Rename / Export Files..." (the pattern-based batch tool).
+            # the same name doesn't make sense.
             if len(files) == 1 and not files[0].load_error:
-                items.append(self.action_rename_file)
-            items.append(MenuAction(
-                "number_tracks", "Number Tracks...", lambda: self._quick_number_tracks(files)
-            ))
-            # Every lookup from the Import menu (MusicBrainz is the only
-            # one; Fetch Lyrics below is the other online fetch).
-            items.append(MenuAction(
-                "musicbrainz_lookup", "Look Up via MusicBrainz...", self.open_musicbrainz_lookup_dialog
-            ))
+                items.extend([self.action_rename_file, Separator()])
             items.extend([
-                Separator(),
-                MenuAction(
-                    "check_integrity", "Check Selected Files' Integrity", self.run_integrity_check
-                ),
-                MenuAction(
-                    "fix_integrity", "Fix Selected Files' Integrity Issues...", self.run_integrity_fix
-                ),
-                MenuAction(
-                    "deep_check", "Deep Check Selected Files' Integrity (ffmpeg)...", self.run_deep_check
-                ),
-                MenuAction("detect_bpm", "Detect BPM for Selected Files", self.run_bpm_check),
-                MenuAction("detect_key", "Detect Key for Selected Files", self.run_key_detection),
-                MenuAction(
-                    "measure_loudness", "Measure Loudness for Selected Files", self.run_loudness_measurement
-                ),
-                MenuAction("fetch_lyrics", "Fetch Lyrics for Selected Files", self.run_lyrics_fetch),
+                look_up_submenu([
+                    MenuAction("musicbrainz_lookup", "MusicBrainz…", self.open_musicbrainz_lookup_dialog),
+                    MenuAction("fetch_lyrics", "Lyrics", self.run_lyrics_fetch),
+                ]),
+                Submenu("Organize", [
+                    self.action_rename_files,
+                    MenuAction(
+                        "number_tracks", "Number Tracks…", lambda: self._quick_number_tracks(files)
+                    ),
+                ]),
+                Submenu("Analyze", [
+                    MenuAction("check_integrity", "Check Integrity", self.run_integrity_check),
+                    MenuAction("fix_integrity", "Fix Integrity Issues…", self.run_integrity_fix),
+                    MenuAction("deep_check", "Deep Check Integrity…", self.run_deep_check),
+                    Separator(),
+                    MenuAction("detect_bpm", "Detect BPM", self.run_bpm_check),
+                    MenuAction("detect_key", "Detect Key", self.run_key_detection),
+                    MenuAction("measure_loudness", "Measure Loudness", self.run_loudness_measurement),
+                ]),
             ])
+            cover_items: list = [
+                MenuAction("cover_set", "Set from Image File…", self.set_cover_from_file),
+                MenuAction("cover_from_folder", "Set from Folder Image", self.set_cover_from_folder_images),
+            ]
+            if any(mp3.has_cover for mp3 in files):
+                cover_items.append(MenuAction("cover_remove", "Remove Cover", self.remove_cover))
+            if len(files) == 1 and files[0].has_cover:
+                cover_items.append(MenuAction("cover_export", "Export Cover to Image File…", self.export_cover))
+            items.append(Submenu("Cover", cover_items))
             if len(files) == 1:
                 items.append(
-                    MenuAction("edit_lyrics", "Edit Lyrics...", lambda: self.open_lyrics_dialog(files[0]))
+                    MenuAction("edit_lyrics", "Edit Lyrics…", lambda: self.open_lyrics_dialog(files[0]))
                 )
-            items.extend([
-                Separator(),
-                MenuAction("cover_set", "Set Cover from Image File...", self.set_cover_from_file),
-                MenuAction("cover_from_folder", "Set Cover from Folder Image", self.set_cover_from_folder_images),
-            ])
-            if any(mp3.has_cover for mp3 in files):
-                items.append(MenuAction("cover_remove", "Remove Cover", self.remove_cover))
-            if len(files) == 1 and files[0].has_cover:
-                items.append(MenuAction("cover_export", "Export Cover...", self.export_cover))
+            items.extend([Separator(), self.action_redact, Separator(), self.action_remove_from_list])
             return items
 
         show_table_context_menu(

@@ -39,7 +39,7 @@ def detect_key(
 
     tool_path lets callers/tests inject a specific binary directly,
     bypassing find_tool() entirely. override_path is the user's
-    manually-set path from Settings > Locate External Tools
+    manually-set path from Tools > External Tools
     (core.settings.Settings.keyfinder_cli_path) -- same convention as
     core.mp3val_runner.check_integrity()'s override_path.
     """

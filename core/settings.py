@@ -131,7 +131,7 @@ class Settings:
 
     # Genre/Language quick-pick ("+" button next to those two fields in
     # the bulk-edit panel): built-in defaults (individually hideable/
-    # restorable via Settings > Add/Remove Genres.../Languages...) plus
+    # restorable via Tools > Genres.../Languages...) plus
     # any custom entries added the same way. Same shape as the epub/cbz
     # tools' equivalents -- see core/mp3_genres.py, core/mp3_languages.py.
     custom_genres: list[str] = field(default_factory=list)

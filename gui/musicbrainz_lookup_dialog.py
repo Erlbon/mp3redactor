@@ -14,7 +14,7 @@ A row's "fields" are a summary of the release for review; what's
 actually applied is per file (title, track, recording id...), built by
 file_changes() from the match remembered for that folder.
 
-With fpcalc available (Settings > Locate External Tools), each folder is
+With fpcalc available (Tools > External Tools), each folder is
 also identified by SOUND (core/acoustid_lookup.py, stage 2): every file
 is fingerprinted once, its AcoustID recordings make its track pairing
 certain on any release, and when the text search doesn't place every
@@ -86,7 +86,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
             " Each file is also identified by its sound (AcoustID fingerprints), which finds the album "
             "even when tags and names are missing."
             if fpcalc else
-            " Tip: with fpcalc set up (Settings > Locate External Tools) files are also identified "
+            " Tip: with fpcalc set up (Tools > External Tools) files are also identified "
             "by their sound, even when tags and names are missing."
         )
         super().__init__(

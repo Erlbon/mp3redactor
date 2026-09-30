@@ -244,7 +244,7 @@ class TagPanel(QWidget):
         """A QLineEdit plus a small "+" button requesting a quick-pick
         dialog from MainWindow (see class docstring) -- used for Genre
         and Language, the two fields with a curated default list plus
-        user-manageable custom entries (Settings > Add/Remove
+        user-manageable custom entries (Tools > Genres/Languages
         Genres.../Add/Remove Languages...)."""
         container = QWidget()
         row = QHBoxLayout(container)
@@ -286,7 +286,7 @@ class TagPanel(QWidget):
         """Shows/hides each field's row to match `visible_keys` (the
         set of field keys whose table column is currently shown) --
         called by MainWindow whenever column visibility changes
-        (Settings > Add/Remove Columns..., or right-clicking a
+        (Tools > Columns..., or right-clicking a
         header), so a column you've hidden from the table also stops
         cluttering this panel, and vice versa.
 

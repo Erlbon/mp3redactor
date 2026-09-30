@@ -8,7 +8,7 @@ up on AcoustID (acoustid.org), which returns the MusicBrainz recordings
 with that fingerprint and the releases they appear on.
 
 fpcalc is an external tool like mp3val and keyfinder-cli: never bundled,
-found on PATH or located via Settings > Locate External Tools (official
+found on PATH or located via Tools > External Tools (official
 builds per platform: github.com/acoustid/chromaprint/releases). Without
 it the lookup simply works as before, from tags and folder names.
 

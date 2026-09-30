@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-30#13 -- New menu layout (family skeleton)
+
+The menus now follow the same layout as the other Redactor tools: **File, Edit, View, Metadata, Analyze, Tools, Help**. Only the menus move in this release; every keyboard shortcut is unchanged (shortcut fixes follow in a later release, with the old keys kept for a while).
+
+- **Where things went:** Load Files / Load Folder are now **Open Files / Open Folder**. Import > Parse Filename and Look Up via MusicBrainz are under **Metadata**; Fetch Lyrics is **Metadata > Look Up > Lyrics**; Edit Lyrics, Number Tracks and Cover are under Metadata too. The integrity check, Fix, Deep Check, BPM, Key and Loudness are under **Analyze** (the "for Selected Files" wording is gone; they still act on the selection). Undo, Redo, Apply, Redact, Edit Redact Recipe and Auto-Number are under **Edit**. Refresh List moved to **View**. Import & Convert is **File > Import and Convert**; Rename / Export Files is **Rename / Export / Move**. Everything from Settings is under **Tools**: Preferences, External Tools (was Locate External Tools), Columns, Genres, Languages. Help: Changelog, Credits, About.
+- **New entries:** File > **Remove from List** (Delete key, asks first if a removed file has unsaved changes) and **Clear List**; Edit > **Search and Replace** (Ctrl+H) and **Change Case** on the selected files (in memory, Undo reverts, Save writes); **Save All** (Ctrl+Shift+A); View > Show Metadata Panel, Zoom In / Zoom Out / Reset Zoom (Ctrl+0); Tools > Preferences now has Ctrl+, . Export Settings / Import Settings are in the File menu but greyed out until they are wired up.
+- **Save now saves the selected files** (Ctrl+S); **Save All** saves every changed file, which is what Save File(s) used to do.
+- **Right-click menu is shorter:** Open in Default App, Open Containing Folder, Copy Path | Rename File | Look Up | Organize | Analyze | Cover submenus | Edit Lyrics | Redact | Remove from List.
+- **Toolbar:** Open Files, Open Folder | Save, Save All | Apply | Redact | Undo, Redo | Panel, zoom.
+- redactor_common pinned to 2026-09-30-13.
+
 ## 2026-09-30#12 -- Redact recipes keep their patterns
 
 - **A saved Redact recipe keeps the pattern it was saved with.** The Rename, Move into folders and folder-path tag steps no longer drift when you later change the pattern in Rename / Export Files or Parse Filename. The first time you open Edit Redact Recipe (nothing saved yet), each pattern is pre-filled with the one currently in effect, so pressing OK pins it. A recipe saved earlier just keeps its patterns; an empty one keeps following the app's current pattern. No need to recreate anything.
