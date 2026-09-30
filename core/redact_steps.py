@@ -7,7 +7,7 @@ operator input and leave a corrected file IN PLACE, the original in the
 Recycle Bin. Qt-free; gui/main_window.py wires it to the menu/toolbar.
 
 Every step wraps code the app already has (scan_service's tools, the
-MusicBrainz/AcoustID lookup, cover_art, the rename pattern) without the
+MusicBrainz/AcoustID and Discogs lookups, cover_art, the rename pattern) without the
 dialogs. How one file flows:
 
   1. Mp3Ctx makes a WORKING COPY of the MP3File (what steps edit) and a
@@ -39,6 +39,7 @@ unreadable) makes its first step answer StepResult.skipped(...).
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import os
 import re
 import shutil
@@ -50,6 +51,7 @@ from typing import Callable
 from redactor_common.core.move_plan import execute_move, plan_moves, render_relative_path
 from redactor_common.core.os_utils import rename_no_clobber
 from redactor_common.core.filename_parser import normalize_field_value
+from redactor_common.core.local_db import normalize_words
 from redactor_common.core.path_parser import PathParseResult, folder_value_counts, parse_path_detailed
 from redactor_common.core.pipeline import (
     CommitError,
@@ -65,6 +67,7 @@ from redactor_common.core.rename_pattern import render_filename, unique_path, ze
 from redactor_common.core.save_errors import describe_save_error
 from redactor_common.core.trash import move_to_trash
 
+from core import discogs_lookup as discogs
 from core.acoustid_lookup import FPCALC_EXE_NAME, AcoustIdError, candidate_releases, identify_files
 from core.bpm_detector import detect_bpm
 from core.cover_art import find_folder_image, read_cover, sniff_mime
@@ -126,14 +129,22 @@ class RedactEnv:
     trash: Callable[[str], None] | None = None  # None: the Recycle Bin (move_to_trash)
     items: list[MP3File] = field(default_factory=list)
     cleaned: int = 0  # scratch files of an earlier, interrupted run removed by begin()
+    # Discogs (DiscogsStep): how its requests are made. None = the real
+    # network and the process-wide pace; tests inject a mocked fetch/throttle.
+    discogs_fetch: Callable | None = None
+    discogs_throttle: object | None = None
     _albums: dict = field(default_factory=dict)
     _path_counts: dict = field(default_factory=dict)  # (pattern, root) -> folder_value_counts of the run
+    _discogs: dict = field(default_factory=dict)  # "client" -> the run's client (None: no token); (folder, query) -> lookup
+    _discogs_releases: dict = field(default_factory=dict)  # Discogs release id -> release, fetched once per run
 
     def begin(self, items) -> None:
         """Call before each run."""
         self.items = list(items)
         self._albums.clear()
         self._path_counts.clear()
+        self._discogs.clear()
+        self._discogs_releases.clear()
         self.cleaned = remove_stale_scratch_files(self.items)
 
 
@@ -667,6 +678,137 @@ class TagLookupStep(Mp3Step):
         return [f"{key} = {value!r}" for key, value in result.value.fields.items()]
 
 
+# The fields the Discogs step can fill; a file with all of them has nothing for it.
+_DISCOGS_FIELDS = (
+    "title", "artist", "albumartist", "album", "track", "year", "genre", "publisher", "catalognumber", "releasecountry",
+)
+DISCOGS_NO_TOKEN_NOTE = "Discogs lookup skipped: no Discogs token. " + discogs.TOKEN_HELP
+DISCOGS_STOPPED_NOTE = "Discogs lookup skipped: Discogs' rate limit (HTTP 429) was reached earlier in this run"
+# A file that already has a title which barely resembles its paired track's
+# is probably on another edition: its match is capped at the "fuzzy" level.
+_DISCOGS_TITLE_CLASH = 0.5
+
+
+@dataclass
+class DiscogsFolderLookup:
+    """One folder's Discogs result, computed once per run and query."""
+
+    files: list[MP3File]
+    facts: list
+    matches: list = field(default_factory=list)
+    error: str = ""
+
+
+def _discogs_client(env: RedactEnv):
+    """The run's Discogs client (one pace and one rate-limit flag for the
+    whole run), or None when no token is stored. The token is read once
+    per run."""
+    if "client" not in env._discogs:
+        token = discogs.load_token()
+        env._discogs["client"] = (
+            discogs.DiscogsClient(token, fetch=env.discogs_fetch, throttle=env.discogs_throttle) if token else None
+        )
+    return env._discogs["client"]
+
+
+def _discogs_lookup_folder(ctx: "Mp3Ctx", client, folder: str) -> tuple[DiscogsFolderLookup, discogs.DiscogsQuery]:
+    """Searches Discogs for the file's folder like the Look Up via Discogs
+    dialog does, without the review. The query uses the folder's files'
+    tags, with THIS file's working copy (what the earlier steps filled in)
+    standing in for itself. Results are kept per (folder, query), and a
+    failure is kept too, so the run doesn't retry it for every file."""
+    env, me = ctx.env, ctx.mp3
+    files = sorted(
+        (m for m in env.items if not m.load_error and os.path.dirname(os.path.realpath(m.path)) == folder),
+        key=lambda m: m.filename.casefold(),
+    )
+    tags = [ctx.work if m is me else m for m in files]
+    query = discogs.discogs_query(
+        [t.album for t in tags], [t.albumartist or t.artist for t in tags], [t.year for t in tags],
+        Path(folder), [t.title for t in tags],
+    )
+    # No year in the key: it is a weak part of the query, and the run's own
+    # earlier fills would change it mid-folder and cost a second search.
+    key = (folder, normalize_words(query.artist), normalize_words(query.album))
+    if key in env._discogs:
+        return env._discogs[key], query
+    result = DiscogsFolderLookup(files=files, facts=[facts_from_tags(t.title, t.track, t.discnumber, t.duration_seconds) for t in tags])
+    env._discogs[key] = result
+    try:
+        result.matches = discogs.find_release(client, result.facts, query, cache=env._discogs_releases)
+    except discogs.DiscogsRateLimited as exc:
+        result.error = f"{exc} Discogs is skipped for the rest of this run."
+    except discogs.DiscogsError as exc:
+        result.error = str(exc)
+    return result, query
+
+
+class DiscogsStep(Mp3Step):
+    key = "discogs"
+    label = "Fill missing tags (Discogs)"
+    description = (
+        "Finds the file's album on Discogs (by its tags or folder name, after the MusicBrainz step has "
+        "filled what it could) and fills tags that are EMPTY: title, artist, album, track, year, genre (with "
+        "Discogs' styles), label, catalogue number and country. Existing values are never replaced. The match "
+        "is 93% confident only when the artist and album match exactly, the release has as many tracks as the "
+        "folder has files and one release clearly fits best; an exact artist and album with a different track "
+        "count (or several equally good pressings) is 70%; anything looser is 60% at most. Below the threshold "
+        "the match is listed under Needs review and nothing is written. Needs a Discogs token (Tools > API "
+        "Keys) and network access; on by default only when a token is set. Discogs is asked about once a "
+        "second; if it answers HTTP 429 the step is skipped for the rest of the run."
+    )
+    options = (
+        OptionSpec("styles", "Add Discogs styles to Genre", "bool", True,
+                   tooltip="On: the Genre tag gets the genres then the styles (Rock; Prog Rock). Off: genres only."),
+    )
+
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        work = ctx.work
+        if all(getattr(work, k) for k in _DISCOGS_FIELDS):
+            return StepResult.nothing()  # complete already: no network round trip
+        client = _discogs_client(ctx.env)
+        if client is None:
+            return StepResult.nothing(note=DISCOGS_NO_TOKEN_NOTE)
+        if client.rate_limited:
+            return StepResult.nothing(note=DISCOGS_STOPPED_NOTE)
+        lookup, query = _discogs_lookup_folder(ctx, client, os.path.dirname(ctx.original))
+        if lookup.error:
+            return StepResult.nothing(note=f"Discogs lookup unavailable: {lookup.error}")
+        index = next((i for i, m in enumerate(lookup.files) if m is ctx.mp3), None)
+        if index is None or not lookup.matches:
+            return StepResult.nothing()
+        top = lookup.matches[0]
+        track = top.assignment.get(index)
+        if track is None:
+            return StepResult.nothing()
+        release = top.release
+
+        trust = discogs.confidence(lookup.matches)
+        reason = (
+            f"Discogs release '{release.title}' ({', '.join(b for b in (release.year, release.label, release.catno) if b)}): "
+            f"track {track.number} of {release.track_count}; "
+            + ("artist and album match exactly" if top.exact else f"a fuzzy match ({top.score:.0%}) on artist and album")
+            + ("" if top.count_equal else f"; the release has {release.track_count} tracks, the folder {top.file_count} files")
+        )
+        if work.title.strip() and normalize_words(work.title) != normalize_words(track.title):
+            similarity = difflib.SequenceMatcher(None, normalize_words(work.title), normalize_words(track.title)).ratio()
+            if similarity < _DISCOGS_TITLE_CLASH:
+                trust = min(trust, discogs.FUZZY_CAP)
+                reason += f"; the file's title {work.title!r} does not resemble {track.title!r}"
+        fill = {
+            key: value
+            for key, value in discogs.fields_for(release, track, self.options_for(ctx)["styles"]).items()
+            if not getattr(work, key, "")
+        }
+        if not fill:
+            return StepResult.nothing()
+        return StepResult.suggestion(TagFill(fill), trust, reason)
+
+    def apply_suggestion(self, ctx: Mp3Ctx, result: StepResult) -> list[str]:
+        ctx.work.apply_tags(result.value.fields)
+        return [f"{key} = {value!r}" for key, value in result.value.fields.items()]
+
+
 class CoverStep(Mp3Step):
     key = "cover"
     label = "Add missing cover art"
@@ -1015,7 +1157,8 @@ class MoveIntoFoldersStep(Mp3Step):
 def build_catalogue(settings: Settings | None = None) -> list[Step]:
     """The steps the recipe editor offers, in default order. `settings`
     gives Rename and Move their starting patterns and decides whether
-    Rename starts enabled (only once a pattern exists). The save stage is
+    Rename starts enabled (only once a pattern exists) and whether the
+    Discogs step does (only once a token is stored). The save stage is
     not a step: pass save_stage / FINALIZE_LABEL to run_redact."""
     return [
         IntegrityStep(),
@@ -1025,6 +1168,7 @@ def build_catalogue(settings: Settings | None = None) -> list[Step]:
         DeepCheckStep(),
         PathTagsStep(settings),
         TagLookupStep(),
+        DiscogsStep(default_enabled=discogs.has_token()),  # on only when a token is set
         CoverStep(),
         RenameStep(settings),
         MoveIntoFoldersStep(settings),

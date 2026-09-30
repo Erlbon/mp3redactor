@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-30#19 -- Redact: fill missing tags from Discogs
+
+- **New Redact step "Fill missing tags (Discogs)"**, right after the MusicBrainz / AcoustID step. It finds the file's album on Discogs (by its tags, which the MusicBrainz step may just have filled, or the folder name) and fills tags that are EMPTY only: title, artist, album artist, album, track, year, genre (Discogs genres plus styles; an option turns the styles off), label, catalogue number and country. Existing values are never replaced.
+- **How sure it is:** 93% (applied at the default 90% threshold) only when the artist and album match exactly, the Discogs release has as many tracks as the folder has files, and one release clearly fits best. An exact artist and album with a different track count, or several equally good pressings, is 70%; a looser match is 60% at most; a file whose own title doesn't resemble its paired track is capped at 60% too. Below the threshold the match is listed under Needs review and nothing is written.
+- **Needs a Discogs token** (Tools > API Keys). The step is on by default only when a token is stored; with none it is skipped with a note saying how to set one (not a failure). Offline is a note too. Discogs is asked about once a second, release details are fetched once per run, and if Discogs answers HTTP 429 ("too many requests") the step is skipped for the rest of the run.
+- Test-only: the key-detection cancel test no longer depends on thread timing.
+
 ## 2026-09-30#18 -- Look Up via Discogs, and Tools > API Keys
 
 - **New: Metadata > Look Up > Discogs...** (also in the right-click Look Up menu). Like the MusicBrainz lookup it finds the release each selected folder belongs to (by Artist + Album + Year from the tags, or an "Artist - Album (Year)" folder name), shows the release's cover next to your own, lists other pressings under Other Matches (label, catalogue number, year, country) and lets you correct the search and run it again. Apply is review-only: anything that would overwrite a different value goes through the per-field overwrite review first, and changes are written on Save. Files are paired with tracks by track number, then by title; vinyl positions (A1, B2...) are numbered down the release, "1-3", "2.4" and "CD1-5" carry the disc. Discogs' "Artist (2)" disambiguation numbers are dropped and "Various" becomes "Various Artists". "Add Styles to Genre" (on) writes genres then styles ("Rock; Prog Rock").

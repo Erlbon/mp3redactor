@@ -8,6 +8,7 @@ the concurrency behavior needs a bit more setup/explanation than that
 file's existing tests.
 """
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -118,7 +119,16 @@ def test_run_key_detection_workers_capped_at_file_count(_mock_cpu, _mock_detect)
     assert kwargs["max_workers"] == 2
 
 
-@patch("core.scan_service.detect_key", side_effect=_fake_detect_key)
+def _slow_fake_detect_key(path, override_path=None):
+    # A real keyfinder-cli call takes far longer than the main thread needs to
+    # notice a cancel; an instant fake let the worker finish all five files
+    # before the main thread woke up (a flaky failure that depended on thread
+    # scheduling, i.e. on which tests had run before).
+    time.sleep(0.05)
+    return _fake_detect_key(path, override_path)
+
+
+@patch("core.scan_service.detect_key", side_effect=_slow_fake_detect_key)
 def test_run_key_detection_should_cancel_stops_further_dispatch(mock_detect):
     # max_workers=1 keeps this close to deterministic (only one
     # keyfinder-cli call in flight at a time), but not exactly --

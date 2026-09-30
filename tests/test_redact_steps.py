@@ -612,8 +612,9 @@ def test_the_save_stage_reports_a_skip_even_when_no_step_runs(tmp_path):
 
 def test_defaults_match_the_brief():
     cat = {s.key: s for s in rs.build_catalogue(Settings())}
-    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "cover", "rename", "move_into_folders"]
-    assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "rename", "move_into_folders"]
+    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "rename", "move_into_folders"]
+    # discogs is on by default only once a Discogs token exists (none in tests)
+    assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "discogs", "rename", "move_into_folders"]
 
 
 def test_rename_is_a_last_step_whatever_the_stored_order_says():
