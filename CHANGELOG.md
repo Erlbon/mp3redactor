@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-30#05 -- Open in Default App
+
+- Right-click menu gains Open in Default App (redactor_common 2026-09-30-04).
+
 ## 2026-09-30#04 -- Lyrics must match the song, sturdier settings
 
 - **Fixed: Fetch Lyrics could write another song's lyrics.** The first LRCLIB hit was used blindly. Now a result must match the file's artist and title (ignoring case, accents and "(Remastered)" suffixes); the first matching hit is used, and if none matches the file is reported as "no lyrics found" with the closest result named.
