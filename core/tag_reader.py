@@ -23,6 +23,8 @@ from pathlib import Path
 from core.ffmpeg_probe import REPLAYGAIN_REFERENCE_LUFS
 from core.mp3_file import (
     ACOUSTID_FINGERPRINT_DESC,
+    DEEP_CHECK_SCAN_DESC,
+    INTEGRITY_SCAN_DESC,
     ITUNESADVISORY_DESC,
     MUSICBRAINZ_ALBUM_ID_DESC,
     MUSICBRAINZ_UFID_OWNER,
@@ -97,6 +99,12 @@ def load_tags(mp3: MP3File) -> None:
         # Deliberately does NOT set mp3.dirty here -- reading back a
         # tag that's already on disk isn't an unsaved change, same as
         # title/artist/etc. above never marking dirty on load either.
+        # Last validation scans (TXXX:REDACTOR_INTEGRITY / _DEEP_CHECK):
+        # shown as the file's last-known result; garbled values are
+        # ignored. Not an unsaved change either.
+        mp3.load_scan_stamp("integrity", _first(tags, f"TXXX:{INTEGRITY_SCAN_DESC}"))
+        mp3.load_scan_stamp("deep_check", _first(tags, f"TXXX:{DEEP_CHECK_SCAN_DESC}"))
+
         bpm_text = _first(tags, "TBPM")
         if bpm_text:
             try:

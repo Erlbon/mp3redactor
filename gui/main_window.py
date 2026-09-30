@@ -74,6 +74,8 @@ from core.mp3_file import (
     STATUS_TOOL_MISSING,
     STATUS_UNCHECKED,
     STATUS_WARNING,
+    scan_display,
+    scan_tooltip,
 )
 from core.mp3_converter import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, plan_conversions,
@@ -1814,8 +1816,9 @@ class MainWindow(QMainWindow):
         color = STATUS_COLORS.get(mp3.integrity_status)
         if color is not None:
             integrity_item.setForeground(color)
-        if mp3.integrity_message:
-            integrity_item.setToolTip(mp3.integrity_message)
+        tip = scan_tooltip(mp3.integrity_status, mp3.integrity_stamp, mp3.integrity_message)
+        if tip:
+            integrity_item.setToolTip(tip)
         self.table.setItem(row, self._col_index["integrity"], integrity_item)
 
         bpm_item = NumericTableWidgetItem(self._bpm_display(mp3))
@@ -1850,12 +1853,12 @@ class MainWindow(QMainWindow):
         deep_check_color = STATUS_COLORS.get(mp3.deep_check_status)
         if deep_check_color is not None:
             deep_check_item.setForeground(deep_check_color)
-        if mp3.deep_check_message:
-            deep_check_item.setToolTip(mp3.deep_check_message)
-        # No dirty highlight here -- unlike BPM/key/loudness, a deep
-        # check never writes anything to the file (see
-        # core.scan_service.run_deep_check()'s docstring), so it can
-        # never be part of what Save would act on.
+        tip = scan_tooltip(mp3.deep_check_status, mp3.deep_check_stamp, mp3.deep_check_message)
+        if tip:
+            deep_check_item.setToolTip(tip)
+        # No dirty highlight on the scan cells: the status text and
+        # colour are what matter, and the row's other cells already
+        # show the file as unsaved.
         self.table.setItem(row, self._col_index["deep_check"], deep_check_item)
 
         loudness_item = NumericTableWidgetItem(mp3.display_loudness(), sort_value=mp3.loudness_lufs)
@@ -1921,7 +1924,7 @@ class MainWindow(QMainWindow):
     def _integrity_display(mp3: MP3File) -> str:
         if mp3.integrity_status == STATUS_TOOL_MISSING:
             return "TOOL MISSING"
-        return mp3.integrity_status
+        return scan_display(mp3.integrity_status, mp3.integrity_stamp)
 
     @staticmethod
     def _bpm_display(mp3: MP3File) -> str:
@@ -1954,12 +1957,12 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _deep_check_display(mp3: MP3File) -> str:
-        # Same convention as _integrity_display() above -- shows the
-        # raw status word (including "UNCHECKED" for a file that's
-        # never been deep-checked), not blanked to an empty cell.
+        # Same convention as _integrity_display() above -- the status
+        # word plus the stamp's local time, or "UNCHECKED" for a file
+        # that's never been deep-checked, not blanked to an empty cell.
         if mp3.deep_check_status == STATUS_TOOL_MISSING:
             return "TOOL MISSING"
-        return mp3.deep_check_status
+        return scan_display(mp3.deep_check_status, mp3.deep_check_stamp)
 
     # -- context menu -----------------------------------------------------
 

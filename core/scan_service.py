@@ -86,15 +86,16 @@ def run_integrity_check(
     mp3val_path: str | None = None,
 ) -> None:
     """
-    Mutates each file's integrity_status/integrity_message in place.
+    Mutates each file's integrity_status/integrity_message in place and,
+    for a completed scan, stamps it and marks it dirty (see
+    MP3File.record_scan(): Save writes the stamp into the file).
     mp3val_path is the user's manual override from Settings > Locate
     External Tools (core.settings.Settings.mp3val_path), if set.
     """
     total = len(files)
     for i, mp3 in enumerate(files, start=1):
         status, message = check_integrity(mp3.path, override_path=mp3val_path)
-        mp3.integrity_status = status
-        mp3.integrity_message = message
+        mp3.record_scan("integrity", status, message)
         if progress is not None:
             progress(i, total)
 
@@ -125,10 +126,11 @@ def run_integrity_fix(
         status, message = fix_integrity(
             mp3.path, delete_backup=delete_backup, override_path=mp3val_path
         )
-        mp3.integrity_status = status
-        mp3.integrity_message = message
         if status != STATUS_TOOL_MISSING:
             reload_from_disk(mp3)  # mp3val -f rewrote the file
+        # After the reload, which would otherwise bring back the old
+        # stamp from disk over this scan's.
+        mp3.record_scan("integrity", status, message)
         if progress is not None:
             progress(i, total)
 
@@ -151,6 +153,14 @@ def reload_from_disk(mp3: MP3File) -> None:
     for key in BASELINE_KEYS:
         if not mp3.tag_changed(key):
             setattr(mp3, key, getattr(fresh, key))
+    # The scan stamps are BASELINE_KEYS too, so the loop above took the
+    # on-disk stamp unless a scan this session is still unsaved (kept).
+    # The displayed status follows the stamp that was taken.
+    for kind in ("integrity", "deep_check"):
+        key = f"{kind}_stamp"
+        if getattr(mp3, key) == getattr(fresh, key) and getattr(fresh, key):
+            setattr(mp3, f"{kind}_status", getattr(fresh, f"{kind}_status"))
+            setattr(mp3, f"{kind}_message", "")
     mp3.tag_baseline = fresh.tag_baseline
 
 
@@ -377,9 +387,9 @@ def run_deep_check(
     (aubio/keyfinder-cli) -- so it's exactly the case thread-pooling
     helps the most.
 
-    Read-only -- like run_integrity_check(), this never marks a file
-    dirty. Neither deep_check_status/message nor the probe fields are
-    ID3 data; there's nothing here for Save to write.
+    A completed decode is stamped and marks the file dirty, like
+    run_integrity_check() (the probe fields themselves are not ID3 data).
+    A crashed check stamps nothing.
     """
     if not files:
         return
@@ -400,10 +410,12 @@ def run_deep_check(
             mp3 = future_to_mp3[future]
             try:
                 (
-                    mp3.deep_check_status, mp3.deep_check_message,
+                    status, message,
                     encoder, sample_rate, channels, probe_status, _probe_message,
                 ) = future.result()
+                mp3.record_scan("deep_check", status, message)
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
+                # Shown as ERROR but not stamped: the check didn't complete.
                 mp3.deep_check_status, mp3.deep_check_message = STATUS_ERROR, _describe(e)
                 encoder, sample_rate, channels, probe_status = "", None, None, STATUS_ERROR
             # Probe info is kept independent of the deep-check result --

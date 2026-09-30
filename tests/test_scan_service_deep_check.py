@@ -43,15 +43,15 @@ def test_run_deep_check_sets_check_and_probe_fields(mock_check, mock_probe):
 
 @patch("core.scan_service.probe_format", side_effect=_fake_probe)
 @patch("core.scan_service.deep_check_integrity", side_effect=_fake_deep_check)
-def test_run_deep_check_never_marks_dirty(mock_check, mock_probe):
-    # Purely diagnostic -- neither deep_check_status/message nor the
-    # probe fields are ID3 data, so there's nothing for Save to write
-    # and this must never flip dirty, unlike BPM/key/loudness.
+def test_run_deep_check_stamps_and_marks_dirty(mock_check, mock_probe):
+    # The completed check is recorded in the file (TXXX stamp), so it is
+    # an unsaved change like a BPM/key detection.
     files = [MP3File(path=Path("song.mp3"))]
 
     run_deep_check(files, max_workers=1)
 
-    assert files[0].dirty is False
+    assert files[0].dirty is True
+    assert files[0].deep_check_scanned_at != ""
 
 
 @patch(

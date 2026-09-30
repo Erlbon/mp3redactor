@@ -53,6 +53,8 @@ from redactor_common.core.save_errors import describe_save_error
 from core.cover_art import FRONT_COVER
 from core.mp3_file import (
     ACOUSTID_FINGERPRINT_DESC,
+    DEEP_CHECK_SCAN_DESC,
+    INTEGRITY_SCAN_DESC,
     ITUNESADVISORY_DESC,
     MUSICBRAINZ_ALBUM_ID_DESC,
     MUSICBRAINZ_UFID_OWNER,
@@ -200,6 +202,8 @@ def save_tags(mp3: MP3File) -> bool:
     _write_bpm_frame(tags, mp3, TBPM)
     _write_key_frame(tags, mp3, TKEY)
     _write_loudness_frame(tags, mp3, TXXX)
+    _write_scan_frame(tags, mp3, TXXX, "integrity_stamp", INTEGRITY_SCAN_DESC)
+    _write_scan_frame(tags, mp3, TXXX, "deep_check_stamp", DEEP_CHECK_SCAN_DESC)
     _write_cover_frame(tags, mp3, APIC)
 
     try:
@@ -377,3 +381,17 @@ def _write_loudness_frame(tags, mp3: MP3File, txxx_cls) -> None:
         return
     tags.delall("TXXX:REPLAYGAIN_TRACK_GAIN")
     tags.add(txxx_cls(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=[f"{mp3.loudness_gain_db:+.2f} dB"]))
+
+
+def _write_scan_frame(tags, mp3: MP3File, txxx_cls, key: str, desc: str) -> None:
+    """The validation-scan record ("STATUS;UTC time", see
+    core.mp3_file.parse_scan_stamp()) as a TXXX frame, so it travels with
+    the file. Only touched when the stamp differs from what was loaded/
+    last saved -- i.e. a scan ran this session -- so a foreign or garbled
+    frame is left alone otherwise."""
+    if not mp3.tag_changed(key):
+        return
+    tags.delall(f"TXXX:{desc}")
+    value = getattr(mp3, key, "") or ""
+    if value:
+        tags.add(txxx_cls(encoding=3, desc=desc, text=[value]))

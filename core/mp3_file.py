@@ -6,6 +6,7 @@ state (see core/cover_art.py for why the image itself isn't kept here).
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from core.cover_art import next_version, read_cover
@@ -36,6 +37,56 @@ ITUNESADVISORY_DESC = "ITUNESADVISORY"
 # file permanently records which release/recording it was matched to.
 MUSICBRAINZ_ALBUM_ID_DESC = "MusicBrainz Album Id"
 MUSICBRAINZ_UFID_OWNER = "http://musicbrainz.org"
+# TXXX frames recording the last validation scans (mp3val integrity,
+# ffmpeg deep check) INSIDE the file, so the record survives copies of
+# the file. Value: "<STATUS>;<ISO-8601 UTC time>", e.g.
+# "OK;2026-09-30T14:05:11Z" -- see parse_scan_stamp()/MP3File.record_scan().
+INTEGRITY_SCAN_DESC = "REDACTOR_INTEGRITY"
+DEEP_CHECK_SCAN_DESC = "REDACTOR_DEEP_CHECK"
+# Only a scan that actually looked at the file is worth recording;
+# TOOL MISSING / UNCHECKED say nothing about it.
+STAMPABLE_STATUSES = frozenset({STATUS_OK, STATUS_WARNING, STATUS_ERROR})
+_STAMP_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def format_scan_stamp(status: str, when: datetime) -> str:
+    return f"{status};{when.astimezone(timezone.utc).strftime(_STAMP_TIME_FORMAT)}"
+
+
+def parse_scan_stamp(text: str) -> tuple[str, datetime] | None:
+    """(status, UTC time) from a stamp value, or None for anything
+    unknown or garbled -- a hand-edited or foreign frame must read as
+    "never scanned", never raise."""
+    try:
+        status, _, stamp = (text or "").partition(";")
+        status = status.strip()
+        if status not in STAMPABLE_STATUSES:
+            return None
+        when = datetime.strptime(stamp.strip(), _STAMP_TIME_FORMAT).replace(tzinfo=timezone.utc)
+        return status, when
+    except (ValueError, TypeError):
+        return None
+
+
+def scan_display(status: str, stamp: str) -> str:
+    """Scan-column text: "<STATUS> · 2026-09-30 14:05" (local time) when
+    `status` is the stamped result, else the bare status word."""
+    parsed = parse_scan_stamp(stamp)
+    if parsed is None or parsed[0] != status:
+        return status
+    return f"{status} · {parsed[1].astimezone().strftime('%Y-%m-%d %H:%M')}"
+
+
+def scan_tooltip(status: str, stamp: str, message: str) -> str:
+    """Full local timestamp (when `status` is the stamped result) plus
+    the scan's message."""
+    parsed = parse_scan_stamp(stamp)
+    lines = []
+    if parsed is not None and parsed[0] == status:
+        lines.append(f"Last scanned {parsed[1].astimezone().strftime('%Y-%m-%d %H:%M:%S %Z').strip()}")
+    if message:
+        lines.append(message)
+    return "\n".join(lines)
 
 
 # Every attribute core/tag_writer.py writes from plain in-memory text (the
@@ -49,6 +100,7 @@ BASELINE_KEYS = (
     "genre", "composer", "comment", "language", "albumsort", "artistsort",
     "albumartistsort", "acoustid_fingerprint", "itunesadvisory",
     "musicbrainz_albumid", "musicbrainz_trackid", "lyrics",
+    "integrity_stamp", "deep_check_stamp",
 )
 
 
@@ -85,6 +137,12 @@ class MP3File:
     # File-integrity check (mp3val)
     integrity_status: str = STATUS_UNCHECKED
     integrity_message: str = ""
+    # The persisted record of the last completed scan ("STATUS;time", see
+    # parse_scan_stamp()); "" = never. integrity_status above is the
+    # displayed result -- equal to the stamp's status for a real scan or
+    # a stamp loaded from disk (the "last known" result), but it can also
+    # be TOOL MISSING with an older stamp still standing.
+    integrity_stamp: str = ""
 
     # BPM detection (aubio)
     bpm: float | None = None
@@ -105,6 +163,7 @@ class MP3File:
     # overwrite the other.
     deep_check_status: str = STATUS_UNCHECKED
     deep_check_message: str = ""
+    deep_check_stamp: str = ""  # as integrity_stamp
 
     # Loudness measurement (ffmpeg's loudnorm filter, single-pass).
     # loudness_lufs is the measured integrated loudness; loudness_gain_db
@@ -180,6 +239,42 @@ class MP3File:
     @property
     def filename(self) -> str:
         return self.path.name
+
+    @property
+    def integrity_scanned_at(self) -> str:
+        """ISO-8601 UTC time of the last completed mp3val scan, "" = never."""
+        return self._scanned_at(self.integrity_stamp)
+
+    @property
+    def deep_check_scanned_at(self) -> str:
+        return self._scanned_at(self.deep_check_stamp)
+
+    @staticmethod
+    def _scanned_at(stamp: str) -> str:
+        parsed = parse_scan_stamp(stamp)
+        return parsed[1].strftime(_STAMP_TIME_FORMAT) if parsed else ""
+
+    def load_scan_stamp(self, kind: str, text: str) -> None:
+        """Adopts a stamp read from disk as the last-known result. Not an
+        unsaved change, so never marks dirty. Garbled text is ignored."""
+        parsed = parse_scan_stamp(text)
+        if parsed is None:
+            return
+        setattr(self, f"{kind}_stamp", format_scan_stamp(*parsed))
+        setattr(self, f"{kind}_status", parsed[0])
+        setattr(self, f"{kind}_message", "")
+
+    def record_scan(self, kind: str, status: str, message: str) -> None:
+        """Stores a scan result ("integrity" or "deep_check"). A completed
+        scan (OK/WARNING/ERROR) is stamped with the current UTC time and
+        marks the file dirty -- Save writes the stamp into the file.
+        TOOL MISSING changes the displayed status only: nothing was
+        scanned, so the stamp (and dirty flag) stay as they were."""
+        setattr(self, f"{kind}_status", status)
+        setattr(self, f"{kind}_message", message)
+        if status in STAMPABLE_STATUSES and not self.load_error:
+            setattr(self, f"{kind}_stamp", format_scan_stamp(status, datetime.now(timezone.utc)))
+            self.dirty = True
 
     def display_bpm(self) -> str:
         if self.bpm is None:

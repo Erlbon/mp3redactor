@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30#06 -- Scan results are remembered in the file
+
+- **Integrity and Deep Check results now carry a timestamp that is saved in the MP3 itself** (ID3 frames `REDACTOR_INTEGRITY` and `REDACTOR_DEEP_CHECK`, value like `OK;2026-09-30T14:05:11Z`), so the record survives copying the file. Running a check (or Fix) marks the file as unsaved; Save writes the stamp.
+- The Integrity and Deep Check columns show `OK · 2026-09-30 14:05` (local time) instead of "UNCHECKED" for a file scanned before; the tooltip has the full time. Files never scanned still say UNCHECKED. A stamp read from disk is the last known result and does not mark the file unsaved.
+- A missing tool or a crashed check does not stamp anything. Unreadable stamp values are ignored and left untouched.
+
 ## 2026-09-30#05 -- Open in Default App
 
 - Right-click menu gains Open in Default App (redactor_common 2026-09-30-04).
