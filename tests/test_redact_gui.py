@@ -191,3 +191,30 @@ def test_leftover_scratch_files_are_cleaned_and_mentioned(window, tmp_path, show
     window.redact_files()
     assert not stale.exists()
     assert "1 leftover scratch file" in shown[0].notes_label.text()
+
+
+def test_first_edit_pins_patterns_and_the_editor_shows_the_trail(window, monkeypatch):
+    from PyQt6.QtWidgets import QComboBox, QLabel
+
+    window.settings.redact_recipe = ""
+    window.settings.rename_pattern = "%artist% - %title%"
+    window.settings.pattern_history = ["%artist% - %title%", "%album%/%title%"]
+    monkeypatch.setattr(mw, "save_settings", lambda s, *a, **k: None)
+    seen = {}
+
+    def fake_exec(self):
+        self.list.setCurrentRow([s.key for s in rs.build_catalogue(window.settings)].index("rename"))
+        combo = self.options_host.findChild(QComboBox)
+        seen["text"] = combo.currentText()
+        seen["items"] = [combo.itemText(i) for i in range(combo.count())]
+        seen["caption"] = self.options_host.findChild(QLabel, "pattern_caption").text()
+        seen["preview"] = self.options_host.findChild(QLabel, "pattern_preview").text()
+        return mw.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(mw.RecipeEditorDialog, "exec", fake_exec)
+    window.edit_redact_recipe()
+    assert seen["text"] == "%artist% - %title%" and seen["items"] == ["%artist% - %title%", "%album%/%title%"]
+    assert "set in this recipe" in seen["caption"] and "Queen - Bohemian Rhapsody" in seen["preview"]
+    # pinned: the saved recipe holds the pattern, so a later Rename / Export change does not steer it
+    window.settings.rename_pattern = "%title%"
+    assert window._redact_recipe().options["rename"]["pattern"] == "%artist% - %title%"

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30#12 -- Redact recipes keep their patterns
+
+- **A saved Redact recipe keeps the pattern it was saved with.** The Rename, Move into folders and folder-path tag steps no longer drift when you later change the pattern in Rename / Export Files or Parse Filename. The first time you open Edit Redact Recipe (nothing saved yet), each pattern is pre-filled with the one currently in effect, so pressing OK pins it. A recipe saved earlier just keeps its patterns; an empty one keeps following the app's current pattern. No need to recreate anything.
+- **The recipe editor shows the pattern trail:** a dropdown of recent patterns (newest first), a line "In effect: ... -- set in this recipe / follows: ...", a preview on a sample song, and a **Use fallback** button that clears the pattern so the step follows the app's current one again.
+- redactor_common pinned to 2026-09-30-12.
+
 ## 2026-09-30#11 -- Read tags back out of the folder path
 
 - **Import > Parse Filename now understands folders.** A pattern containing `/` (for example `%albumartist%/%album%/%track% - %title%`, the mirror of Move into folders) switches the dialog to path mode: the last part matches the file name, the parts before it the folders above, and a Library Root row and a confidence column appear. The library root is the same one Move into folders uses, and is remembered. Rows are ticked from 50% confidence. Filename-only patterns work as before; the starting pattern is still a filename pattern when the history has both kinds.

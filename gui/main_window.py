@@ -92,6 +92,7 @@ from core.redact_steps import (
     Mp3Ctx,
     RedactEnv,
     build_catalogue,
+    pin_patterns,
     recipe_from_setting,
     recipe_to_setting,
     save_stage,
@@ -1476,7 +1477,12 @@ class MainWindow(QMainWindow):
     def edit_redact_recipe(self) -> None:
         """Operations > Edit Redact Recipe...: the shared recipe editor over
         this app's steps; the result is stored in the settings file."""
-        dialog = RecipeEditorDialog(build_catalogue(self.settings), self._redact_recipe(), self)
+        catalogue = build_catalogue(self.settings)
+        recipe = self._redact_recipe()
+        if not self.settings.redact_recipe.strip():
+            # Never saved: pre-fill each pattern with its current value so OK pins it.
+            recipe = pin_patterns(recipe, catalogue)
+        dialog = RecipeEditorDialog(catalogue, recipe, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.settings.redact_recipe = recipe_to_setting(dialog.recipe())
             save_settings(self.settings)

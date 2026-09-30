@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from redactor_common.core.move_plan import execute_move, plan_moves
+from redactor_common.core.move_plan import execute_move, plan_moves, render_relative_path
 from redactor_common.core.os_utils import rename_no_clobber
 from redactor_common.core.filename_parser import normalize_field_value
 from redactor_common.core.path_parser import PathParseResult, folder_value_counts, parse_path_detailed
@@ -59,6 +59,7 @@ from redactor_common.core.pipeline import (
     Step,
     StepResult,
     commit_in_place,
+    effective_option_source,
 )
 from redactor_common.core.rename_pattern import render_filename, unique_path, zero_pad_numeric_value
 from redactor_common.core.save_errors import describe_save_error
@@ -568,10 +569,11 @@ class PathTagsStep(Mp3Step):
     def __init__(self, settings: Settings | None = None, *, default_enabled: bool | None = None):
         super().__init__(default_enabled=True if default_enabled is None else default_enabled)
         self.options = (
-            OptionSpec(
-                "pattern", "Folder path pattern", "str",
-                settings.saved_path_pattern() if settings else DEFAULT_MOVE_PATTERN,
-                tooltip="Starts as the last folder pattern used in Parse Filename or Move into folders. The last part matches the file name, the others the folders above it.",
+            _pattern_option(
+                "pattern", "Folder path pattern",
+                "Kept as saved; clear it (Use fallback) to follow the last folder pattern used in Parse Filename or Move into folders. The last part matches the file name, the others the folders above it.",
+                settings, (lambda: settings.saved_path_pattern()) if settings else (lambda: DEFAULT_MOVE_PATTERN),
+                "the last folder pattern used in Parse Filename / Move into folders", _preview_path(settings),
             ),
         )
 
@@ -585,7 +587,7 @@ class PathTagsStep(Mp3Step):
             )
         if not _is_under(str(ctx.mp3.path), root):
             return StepResult.nothing()
-        pattern = self.options_for(ctx)["pattern"].strip() or settings.saved_path_pattern()
+        pattern, _source = resolve_pattern(self, ctx, settings.saved_path_pattern)
         counts = _run_folder_counts(ctx.env, pattern, root)
         result = _parse_path(
             ctx.mp3, pattern, root, lambda name, value: counts.get((name, normalize_field_value(value)), 0)
@@ -809,6 +811,87 @@ def _filename_values(ctx: Mp3Ctx) -> dict[str, str]:
     return values
 
 
+# --- pattern trail -----------------------------------------------------------------
+# A saved recipe KEEPS the pattern it was saved with; an EMPTY stored pattern
+# follows the app's current one (the fallback). The editor shows the trail:
+# the pattern in effect and where it came from, recent patterns, a preview.
+
+# What the pattern previews are rendered on.
+_SAMPLE_VALUES = {
+    "artist": "Queen", "albumartist": "Queen", "album": "A Night at the Opera", "title": "Bohemian Rhapsody",
+    "track": "11", "disc": "1", "year": "1975", "genre": "Rock",
+}
+
+
+def _sample_values(settings: Settings | None) -> dict[str, str]:
+    values = {key: "" for key, _label, _multiline in FIELDS}
+    values.update(_SAMPLE_VALUES)
+    if settings is not None and settings.rename_zero_pad:
+        values["track"] = zero_pad_numeric_value(values["track"], settings.rename_zero_pad_width)
+    return values
+
+
+def _preview_filename(settings: Settings | None) -> Callable[[str], str]:
+    def preview(pattern: str) -> str:
+        if not pattern.strip():
+            return ""
+        try:
+            ascii_only = bool(settings and settings.ascii_filenames)
+            return render_filename(_sample_values(settings), pattern, fallback="untitled", ascii_only=ascii_only) + ".mp3"
+        except Exception:
+            return ""
+
+    return preview
+
+
+def _preview_path(settings: Settings | None) -> Callable[[str], str]:
+    def preview(pattern: str) -> str:
+        if not pattern.strip():
+            return ""
+        try:
+            ascii_only = bool(settings and settings.ascii_filenames)
+            parts = render_relative_path(_sample_values(settings), pattern, fallback_segment="untitled", ascii_only=ascii_only)
+            return "/".join(parts) + ".mp3"
+        except Exception:
+            return ""
+
+    return preview
+
+
+def _pattern_option(key: str, label: str, tooltip: str, settings: Settings | None,
+                    fallback: Callable[[], str], fallback_label: str, preview) -> OptionSpec:
+    """A pattern option: stored "" follows `fallback`; a non-empty stored
+    pattern is always kept."""
+    return OptionSpec(
+        key, label, "str", "", tooltip=tooltip,
+        suggestions=lambda: list(settings.pattern_history) if settings else [],
+        fallback=fallback, fallback_label=fallback_label, preview=preview,
+    )
+
+
+def resolve_pattern(step: Step, ctx, fallback: Callable[[], str]) -> tuple[str, str]:
+    """(pattern, source) of a step's pattern option at run time: the stored
+    value wins, an empty one follows the app's CURRENT setting (taken from
+    the run's own settings, not the catalogue's)."""
+    spec = next(o for o in step.options if o.key == "pattern")
+    spec = dataclasses.replace(spec, fallback=fallback)
+    value, source = effective_option_source(spec, (step.options_for(ctx)["pattern"] or "").strip())
+    return value.strip(), source
+
+
+def pin_patterns(recipe: Recipe, catalogue: list[Step]) -> Recipe:
+    """First-save pinning: write each pattern option's CURRENT effective
+    value into a never-saved recipe, so saving it keeps that pattern even
+    when Rename / Export or Parse Filename change later."""
+    for step in catalogue:
+        for spec in step.options:
+            if spec.kind == "str" and spec.fallback is not None:
+                stored = recipe.options.setdefault(step.key, {})
+                if not (stored.get(spec.key) or ""):
+                    stored[spec.key] = effective_option_source(spec, "")[0]
+    return recipe
+
+
 class RenameStep(Mp3Step):
     """A "last" step: renames the finished file with the pattern last used
     in Rename / Export Files."""
@@ -826,15 +909,17 @@ class RenameStep(Mp3Step):
         saved = settings.saved_rename_pattern() if settings else ""
         super().__init__(default_enabled=bool(saved) if default_enabled is None else default_enabled)
         self.options = (
-            OptionSpec(
-                "pattern", "Filename pattern", "str", saved,
-                tooltip="Starts as the pattern last used in Rename / Export Files. Placeholders like %artist% and %title%.",
+            _pattern_option(
+                "pattern", "Filename pattern",
+                "Kept as saved; clear it (Use fallback) to follow the pattern last used in Rename / Export Files. Placeholders like %artist% and %title%.",
+                settings, (lambda: settings.saved_rename_pattern()) if settings else (lambda: ""),
+                "the last Rename / Export pattern", _preview_filename(settings),
             ),
         )
 
     def process(self, ctx: Mp3Ctx) -> StepResult:
         settings, work = ctx.env.settings, ctx.work
-        pattern = self.options_for(ctx)["pattern"].strip() or settings.saved_rename_pattern()
+        pattern, _source = resolve_pattern(self, ctx, settings.saved_rename_pattern)
         if not pattern:
             return StepResult.nothing(
                 note="Rename skipped: no rename pattern saved yet (use File > Rename / Export Files once)"
@@ -878,10 +963,11 @@ class MoveIntoFoldersStep(Mp3Step):
     def __init__(self, settings: Settings | None = None, *, default_enabled: bool | None = None):
         super().__init__(default_enabled=False if default_enabled is None else default_enabled)
         self.options = (
-            OptionSpec(
-                "pattern", "Folder and filename pattern", "str",
-                settings.saved_move_pattern() if settings else DEFAULT_MOVE_PATTERN,
-                tooltip="Relative to the library root; / starts a sub-folder. Placeholders like %albumartist% and %album%.",
+            _pattern_option(
+                "pattern", "Folder and filename pattern",
+                "Relative to the library root; / starts a sub-folder. Kept as saved; clear it (Use fallback) to follow the last Move into folders pattern. Placeholders like %albumartist% and %album%.",
+                settings, (lambda: settings.saved_move_pattern()) if settings else (lambda: DEFAULT_MOVE_PATTERN),
+                "the last Move into folders pattern", _preview_path(settings),
             ),
         )
 
@@ -892,7 +978,7 @@ class MoveIntoFoldersStep(Mp3Step):
             return StepResult.nothing(
                 note="Move skipped: no library root folder (choose one in File > Rename / Export Files > Move into folders)"
             )
-        pattern = self.options_for(ctx)["pattern"].strip() or settings.saved_move_pattern()
+        pattern, _source = resolve_pattern(self, ctx, settings.saved_move_pattern)
         ctx.save()  # the engine's save stage comes after the "last" steps
         if ctx.save_failed:
             return StepResult.nothing()

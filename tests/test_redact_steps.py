@@ -395,13 +395,14 @@ def test_rename_default_depends_on_a_saved_pattern():
 
 
 def test_rename_pattern_is_a_dedicated_setting_history_is_only_a_first_run_default():
-    # first run: the most recent history entry is the starting pattern
+    # first run: the most recent history entry is what an empty (following) pattern resolves to
     step = rs.RenameStep(Settings(pattern_history=["%title%"]))
-    assert step.options[0].key == "pattern" and step.options[0].kind == "str" and step.options[0].default == "%title%"
+    assert step.options[0].key == "pattern" and step.options[0].kind == "str" and step.options[0].default == ""
+    assert step.options[0].fallback() == "%title%"
     # once saved, Parse Filename pushing another pattern into the history no longer changes it
     settings = Settings(pattern_history=["%artist%", "%title%"], rename_pattern="%track% %title%")
     step = rs.RenameStep(settings)
-    assert step.options[0].default == "%track% %title%" and step.default_enabled
+    assert step.options[0].fallback() == "%track% %title%" and step.default_enabled
     assert not rs.RenameStep(Settings()).default_enabled
 
 
@@ -455,8 +456,8 @@ def _library(tmp_path):
 def test_move_step_is_off_by_default_and_last():
     step = rs.MoveIntoFoldersStep(Settings())
     assert not step.default_enabled and step.position == "last"
-    assert step.options[0].kind == "str" and step.options[0].default == "%albumartist%/%album%/%track% - %title%"
-    assert rs.MoveIntoFoldersStep(Settings(move_pattern="%artist%/%title%")).options[0].default == "%artist%/%title%"
+    assert step.options[0].kind == "str" and step.options[0].fallback() == "%albumartist%/%album%/%track% - %title%"
+    assert rs.MoveIntoFoldersStep(Settings(move_pattern="%artist%/%title%")).options[0].fallback() == "%artist%/%title%"
     cat = rs.build_catalogue(Settings())
     assert [s.key for s in cat][-2:] == ["rename", "move_into_folders"]
     assert "move_into_folders" not in [s.key for s, _ in Recipe.default_for(cat).resolve(cat)]
@@ -662,13 +663,13 @@ def test_path_tags_is_on_by_default_and_runs_before_the_tag_lookup():
     cat = [s.key for s, _ in Recipe.default_for(rs.build_catalogue(Settings())).resolve(rs.build_catalogue(Settings()))]
     assert cat.index("path_tags") < cat.index("tags")
     step = next(s for s in rs.build_catalogue(Settings()) if s.key == "path_tags")
-    assert step.default_enabled and step.options[0].default == "%albumartist%/%album%/%track% - %title%"
+    assert step.default_enabled and step.options[0].fallback() == "%albumartist%/%album%/%track% - %title%"
 
 
 def test_path_tags_default_pattern_is_the_latest_saved_path_pattern():
     settings = Settings(pattern_history=["%track% - %title%", "%genre%/%title%", "%album%/%title%"])
     step = next(s for s in rs.build_catalogue(settings) if s.key == "path_tags")
-    assert step.options[0].default == "%genre%/%title%"
+    assert step.options[0].fallback() == "%genre%/%title%"
 
 
 def test_path_tags_fills_empty_fields_from_a_well_matching_path(tmp_path, recycle_bin):
@@ -737,3 +738,67 @@ def test_path_tags_uses_the_runs_other_files_to_corroborate_a_folder(tmp_path, r
     _, env = run(a, {"path_tags"}, bare, settings=settings, items=[a, b])
     together = rs._run_folder_counts(env, bare["pattern"], settings.library_root)
     assert max(alone.values()) == 1 and together[("album", "album")] == 2 and together[("albumartist", "band")] == 2
+
+
+# --- pattern trail: a saved recipe keeps its pattern, empty follows the fallback ---
+
+
+def test_pattern_options_carry_the_trail_fields():
+    settings = Settings(pattern_history=["%album%/%title%", "%artist% - %title%"], rename_pattern="%title%")
+    for step in rs.build_catalogue(settings):
+        if step.key not in ("rename", "move_into_folders", "path_tags"):
+            continue
+        spec = step.options[0]
+        assert spec.default == "" and spec.fallback_label
+        assert spec.suggestions() == ["%album%/%title%", "%artist% - %title%"]
+        assert spec.preview(spec.fallback() or "%title%")
+    rename = next(s for s in rs.build_catalogue(settings) if s.key == "rename")
+    assert rename.options[0].preview("%artist% - %title%") == "Queen - Bohemian Rhapsody.mp3"
+    move = next(s for s in rs.build_catalogue(settings) if s.key == "move_into_folders")
+    assert move.options[0].preview("%artist%/%album%/%title%") == "Queen/A Night at the Opera/Bohemian Rhapsody.mp3"
+
+
+def test_stored_pattern_wins_and_empty_follows_the_fallback(tmp_path):
+    settings = Settings(rename_pattern="%title%")
+    first = make_file(tmp_path, "one.mp3", title="Song", artist="Band")
+    run(first, {"rename"}, {"rename": {"pattern": "%artist% - %title%"}}, settings=settings)
+    assert first.path.name == "Band - Song.mp3"
+    second = make_file(tmp_path, "two.mp3", title="Tune", artist="Band")
+    run(second, {"rename"}, {"rename": {"pattern": ""}}, settings=settings)
+    assert second.path.name == "Tune.mp3"
+    settings.rename_pattern = "%artist% %title%"
+    third = make_file(tmp_path, "three.mp3", title="Air", artist="Band")
+    run(third, {"rename"}, {"rename": {"pattern": ""}}, settings=settings)
+    assert third.path.name == "Band Air.mp3"
+
+
+def test_first_save_pins_the_current_patterns_later_changes_do_not_steer(tmp_path):
+    settings = Settings(rename_pattern="%title%", move_pattern="%artist%/%title%", pattern_history=["%album%/%title%"])
+    cat = rs.build_catalogue(settings)
+    recipe = rs.pin_patterns(Recipe.default_for(cat), cat)
+    assert recipe.options["rename"]["pattern"] == "%title%"
+    assert recipe.options["move_into_folders"]["pattern"] == "%artist%/%title%"
+    assert recipe.options["path_tags"]["pattern"] == "%album%/%title%"
+    stored = rs.recipe_to_setting(recipe)
+    # Rename / Export later changes; the stored recipe still does what it did at save time
+    settings.rename_pattern = "%artist% - %title%"
+    reloaded = rs.recipe_from_setting(stored, rs.build_catalogue(settings))
+    mp3 = make_file(tmp_path, title="Song", artist="Band")
+    env = rs.RedactEnv(settings)
+    env.begin([mp3])
+    cat = rs.build_catalogue(settings)
+    reloaded.enabled = {s.key: s.key == "rename" for s in cat}
+    run_recipe_on_item(
+        mp3, reloaded.resolve(cat), 0.9, lambda m: rs.Mp3Ctx(m, env), lambda m: m.filename,
+        finalize=rs.save_stage, finalize_label=rs.FINALIZE_LABEL,
+    )
+    assert mp3.path.name == "Song.mp3"
+
+
+def test_pinning_keeps_an_existing_stored_pattern_and_old_json_loads_unchanged():
+    cat = rs.build_catalogue(Settings(rename_pattern="%title%"))
+    old = '{"order":["rename"],"enabled":{"rename":true},"options":{"rename":{"pattern":"%track% %title%"},"move_into_folders":{"pattern":""}},"confidence_threshold":0.8}'
+    recipe = rs.recipe_from_setting(old, cat)
+    assert recipe.options["rename"]["pattern"] == "%track% %title%"
+    assert recipe.options["move_into_folders"]["pattern"] == ""
+    assert rs.recipe_to_setting(recipe) == rs.recipe_to_setting(Recipe.from_json(old))
