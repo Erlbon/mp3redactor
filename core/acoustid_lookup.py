@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-from core.subprocess_utils import no_window_kwargs
+from core.subprocess_utils import run_tool
 from core.version import APP_VERSION
 
 ACOUSTID_APP_KEY = "1SFIKRwE2H"
@@ -69,11 +69,9 @@ class RecordingHit:
 def fingerprint_file(path: Path, fpcalc: Path) -> Fingerprint:
     """fpcalc's fingerprint of one file (~0.25 s for a song)."""
     try:
-        result = subprocess.run(
-            [str(fpcalc), "-json", str(path)],
-            capture_output=True, text=True, timeout=FPCALC_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL, **no_window_kwargs(),
-        )
+        # run_tool(): UTF-8 output decoded with errors="replace" (text=True's
+        # locale decoding could raise UnicodeDecodeError, aborting the batch).
+        result = run_tool([str(fpcalc), "-json", str(path)], timeout=FPCALC_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise AcoustIdError(f"fpcalc couldn't run: {exc}") from exc
     if result.returncode != 0:

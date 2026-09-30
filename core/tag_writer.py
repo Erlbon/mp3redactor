@@ -44,6 +44,10 @@ the same save can't help), not a transient failure a raw exception
 message would otherwise make look retriable.
 """
 
+import os
+import shutil
+import tempfile
+
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
@@ -122,9 +126,32 @@ def save_tags(mp3: MP3File) -> bool:
         "TSOA": TSOA, "TSOP": TSOP, "TSO2": TSO2,
     }
 
+    if mp3.load_error:
+        # Its in-memory fields are blank defaults, not what's on disk --
+        # saving would overwrite the real tags with them.
+        mp3.save_error = f"not saved: the file could not be read ({mp3.load_error})"
+        return False
+
+    target = os.path.realpath(mp3.path)  # save through a symlink, don't replace it
+    tmp_path = ""
     try:
-        audio = MP3(mp3.path)
+        # Edit a same-folder copy and swap it in with os.replace(): a
+        # crash/full disk mid-write can't leave the original half
+        # rewritten (mutagen otherwise shifts the audio in place).
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".mp3redactor-", suffix=".tmp", dir=os.path.dirname(target)
+        )
+        os.close(fd)
+        shutil.copy2(target, tmp_path)  # keeps the permissions
+    except OSError as e:
+        _discard(tmp_path)
+        mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
+        return False
+
+    try:
+        audio = MP3(tmp_path)
     except Exception as e:  # noqa: BLE001 -- any open/parse failure blocks writing too
+        _discard(tmp_path)
         mp3.save_error = f"failed to open file: {describe_save_error(e)}"
         return False
 
@@ -132,11 +159,20 @@ def save_tags(mp3: MP3File) -> bool:
         try:
             audio.add_tags()
         except Exception as e:  # noqa: BLE001
+            _discard(tmp_path)
             mp3.save_error = f"failed to add a tag header: {describe_save_error(e)}"
             return False
 
     tags = audio.tags
+    # Keep the file's ID3v2 version (mutagen would upgrade 2.3 to 2.4).
+    v2_version = 3 if tags.version[:2] == (2, 3) else 4
+
+    # Only frames whose value changed since load/last save are touched
+    # (MP3File.tag_changed): everything is held as one string, so
+    # rewriting an untouched multi-valued frame would collapse it.
     for key, frame_id in _SIMPLE_FRAME_IDS.items():
+        if not mp3.tag_changed(key):
+            continue
         value = getattr(mp3, key, "") or ""
         if value:
             tags.setall(frame_id, [frame_classes[frame_id](encoding=3, text=value)])
@@ -144,6 +180,8 @@ def save_tags(mp3: MP3File) -> bool:
             tags.delall(frame_id)
 
     for key, desc in _TXXX_DESCRIPTIONS.items():
+        if not mp3.tag_changed(key):
+            continue
         value = getattr(mp3, key, "") or ""
         frame_key = f"TXXX:{desc}"
         tags.delall(frame_key)
@@ -151,10 +189,11 @@ def save_tags(mp3: MP3File) -> bool:
             tags.add(TXXX(encoding=3, desc=desc, text=[value]))
 
     # MusicBrainz recording id: a UFID frame, as Picard writes it.
-    ufid_key = f"UFID:{MUSICBRAINZ_UFID_OWNER}"
-    tags.delall(ufid_key)
-    if mp3.musicbrainz_trackid:
-        tags.add(UFID(owner=MUSICBRAINZ_UFID_OWNER, data=mp3.musicbrainz_trackid.encode("ascii", errors="replace")))
+    if mp3.tag_changed("musicbrainz_trackid"):
+        ufid_key = f"UFID:{MUSICBRAINZ_UFID_OWNER}"
+        tags.delall(ufid_key)
+        if mp3.musicbrainz_trackid:
+            tags.add(UFID(owner=MUSICBRAINZ_UFID_OWNER, data=mp3.musicbrainz_trackid.encode("ascii", errors="replace")))
 
     _write_comment_frame(tags, mp3, COMM)
     _write_lyrics_frame(tags, mp3, USLT)
@@ -164,15 +203,27 @@ def save_tags(mp3: MP3File) -> bool:
     _write_cover_frame(tags, mp3, APIC)
 
     try:
-        audio.save()
+        audio.save(v2_version=v2_version)
+        os.replace(tmp_path, target)
     except Exception as e:  # noqa: BLE001
+        _discard(tmp_path)
         mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
         return False
 
+    mp3.snapshot_tag_baseline()
     mp3.mark_cover_saved()
     mp3.dirty = False
     mp3.save_error = ""
     return True
+
+
+def _discard(tmp_path: str) -> None:
+    """Removes a leftover temp copy (best effort)."""
+    if tmp_path:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def _write_cover_frame(tags, mp3: MP3File, apic_cls) -> None:
@@ -202,18 +253,34 @@ def _write_comment_frame(tags, mp3: MP3File, comm_cls) -> None:
     delall() wouldn't fully clean up.
 
     This app treats Comment as one field, same as everywhere else in
-    the bulk-edit panel -- so ALL existing COMM frames (any desc/lang)
-    are cleared first, then at most one is written back (lang="eng",
-    empty description), rather than trying to preserve multiple
-    variants this app has no UI to distinguish between. See
+    the bulk-edit panel -- so once the text is edited, ALL existing COMM
+    frames (any desc/lang) are cleared and at most one is written back
+    (with the first frame's language/description, "eng"/empty if there
+    was none), rather than trying to preserve multiple variants this app
+    has no UI to distinguish between. An untouched comment leaves every
+    frame alone. See
     core.tag_reader._first_comm()'s docstring for the read side of
     this same simplification.
     """
+    if not mp3.tag_changed("comment"):
+        return  # untouched: keep every COMM frame (and its language) as is
+    lang, desc = _first_lang_desc(tags, "COMM")
     for key in [k for k in tags.keys() if k.startswith("COMM")]:
         tags.delall(key)
     value = mp3.comment or ""
     if value:
-        tags.add(comm_cls(encoding=3, lang="eng", desc="", text=[value]))
+        tags.add(comm_cls(encoding=3, lang=lang, desc=desc, text=[value]))
+
+
+def _first_lang_desc(tags, prefix: str) -> tuple[str, str]:
+    """Language and description of the first existing COMM/USLT frame,
+    so an edited comment/lyrics text keeps them ("eng"/"" if none)."""
+    for key in tags.keys():
+        if key.startswith(prefix):
+            frame = tags.get(key)
+            lang = str(getattr(frame, "lang", "") or "eng")
+            return lang, str(getattr(frame, "desc", "") or "")
+    return "eng", ""
 
 
 def _write_lyrics_frame(tags, mp3: MP3File, uslt_cls) -> None:
@@ -232,11 +299,14 @@ def _write_lyrics_frame(tags, mp3: MP3File, uslt_cls) -> None:
     even though lyrics isn't itself a FIELDS entry (see
     gui/lyrics_dialog.py's docstring for why: full song lyrics don't
     fit a single-line field the way every FIELDS entry does)."""
+    if not mp3.tag_changed("lyrics"):
+        return
+    lang, desc = _first_lang_desc(tags, "USLT")
     for key in [k for k in tags.keys() if k.startswith("USLT")]:
         tags.delall(key)
     value = mp3.lyrics or ""
     if value:
-        tags.add(uslt_cls(encoding=3, lang="eng", desc="", text=value))
+        tags.add(uslt_cls(encoding=3, lang=lang, desc=desc, text=value))
 
 
 def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:

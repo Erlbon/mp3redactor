@@ -8,16 +8,15 @@ an OSError launching it, is treated as STATUS_ERROR. See
 https://github.com/Erlbon/keyfinder-cli-windows for how the Windows
 binary is built (no prebuilt one exists upstream).
 
-Every subprocess.run() call passes core.subprocess_utils.no_window_kwargs()
-so keyfinder-cli.exe never pops up (or flashes) its own console window,
-same reasoning as core/mp3val_runner.py.
+The call goes through redactor_common's run_tool() (via
+core.subprocess_utils): no console window, stdin=DEVNULL, UTF-8 output.
 """
 
 import subprocess
 from pathlib import Path
 
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
-from core.subprocess_utils import no_window_kwargs
+from core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
 KEYFINDER_EXE_NAME = "keyfinder-cli.exe"
@@ -46,18 +45,13 @@ def detect_key(
     """
     exe = tool_path if tool_path is not None else find_tool(KEYFINDER_EXE_NAME, override=override_path)
     if exe is None:
-        return "", STATUS_TOOL_MISSING, "keyfinder-cli.exe not found (not bundled and not on PATH)"
+        return "", STATUS_TOOL_MISSING, "keyfinder-cli not found (not bundled and not on PATH)"
 
     try:
-        result = subprocess.run(
-            [str(exe), str(path)],
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
-            # Never let a console tool wait on an inherited stdin handle.
-            stdin=subprocess.DEVNULL,
-            **no_window_kwargs(),
-        )
+        # run_tool(): no console window, stdin=DEVNULL, UTF-8 output
+        # decoded with errors="replace" (text=True's locale decoding
+        # could raise UnicodeDecodeError on non-ASCII output).
+        result = run_tool([str(exe), str(path)], timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         return "", STATUS_ERROR, f"keyfinder-cli timed out after {TIMEOUT_SECONDS}s"
     except OSError as e:

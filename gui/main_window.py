@@ -1006,7 +1006,9 @@ class MainWindow(QMainWindow):
         in the tag panel -- see TagPanel.apply_bulk_edit(). Writes them
         into memory for every currently selected file and marks each
         dirty; does not touch disk (that's save_changed())."""
-        targets = self._selected_files()
+        # A file that failed to load holds blank defaults, not its real
+        # tags -- editing/saving it would overwrite them (see _cover_targets).
+        targets = [mp3 for mp3 in self._selected_files() if not mp3.load_error]
         if not targets:
             return
         self._push_undo("Bulk Edit", targets)
@@ -1025,10 +1027,20 @@ class MainWindow(QMainWindow):
     def _snapshot_mp3(mp3: MP3File) -> MP3File:
         return dataclasses.replace(mp3)
 
+    # Fields an undo/redo must NOT roll back: `path` (a rename is a disk
+    # operation Undo doesn't cover -- restoring the old path would point
+    # at a file that no longer exists) and `tag_baseline` (what's on disk
+    # now, which a Save since the snapshot has changed).
+    _UNDO_KEEPS = frozenset({"path", "tag_baseline"})
+
     @staticmethod
     def _restore_mp3(mp3: MP3File, snapshot: MP3File) -> None:
         for f in dataclasses.fields(MP3File):
-            setattr(mp3, f.name, getattr(snapshot, f.name))
+            if f.name not in MainWindow._UNDO_KEEPS:
+                setattr(mp3, f.name, getattr(snapshot, f.name))
+        # The restored values may differ from disk (e.g. after a Save
+        # since the snapshot), so they must be saved again.
+        mp3.dirty = True
 
     def _push_undo(self, label: str, targets: list[MP3File]) -> None:
         self.undo_manager.push(label, targets, self._snapshot_mp3)
@@ -1069,7 +1081,7 @@ class MainWindow(QMainWindow):
         # yet Applied -- Save should act on it too, not silently drop it.
         self.tag_panel.apply_bulk_edit()
 
-        dirty_files = [mp3 for mp3 in self.files if mp3.dirty]
+        dirty_files = [mp3 for mp3 in self.files if mp3.dirty and not mp3.load_error]
         if not dirty_files:
             QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
             return
@@ -1446,6 +1458,8 @@ class MainWindow(QMainWindow):
         core.fields.FIELDS row. Triggered by double-clicking a file's
         Lyrics cell, or via the Operations menu / table's right-click
         menu."""
+        if mp3.load_error:
+            return  # blank defaults, not its real tags -- see _apply_bulk_edit()
         dialog = LyricsDialog(mp3, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

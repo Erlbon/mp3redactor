@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-30#02 -- Saving no longer damages tags
+
+- **Fixed: Save rewrote tags you never touched.** Editing one field collapsed multi-valued frames (an artist tag holding two names became one), several comment/lyrics frames became one, and a comment's language was reset to English. Save now rewrites only the fields you actually changed; a changed comment or lyrics text keeps its language.
+- **Fixed: Save upgraded ID3v2.3 files to v2.4.** The file's tag version (and an existing ID3v1 tag) is kept.
+- **Safer writes.** Tags are written to a temporary copy next to the file, which then replaces it, so a crash or full disk can't leave a half-rewritten MP3.
+- **Fixed: files that failed to load could be overwritten with blank tags.** They're now skipped by edits, detections and Save, and the writer refuses them.
+- **Fixed: Undo.** After a rename, Undo no longer points the file back at its old name, and after a Save, Undo marks the file unsaved again so the restored values are written.
+- **Fixed: one odd file could abort a whole scan.** Tool output (mp3val, keyfinder-cli, fpcalc) is decoded as UTF-8 with replacement, and a check that fails on one file is reported on that file only.
+- mp3val: a non-zero exit with no WARNING/ERROR lines is now reported as an error, not "OK".
+- redactor_common 2026-09-30-02 (from 2026-09-30-01).
+
 ## 2026-09-30#01 -- Zero-padding remembered, MusicBrainz in the right-click menu
 
 - Rename / Export by Pattern remembers the zero-pad checkbox and width,

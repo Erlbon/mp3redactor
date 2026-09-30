@@ -60,7 +60,7 @@ def convert_to_mp3(
     """
     exe = tool_path if tool_path is not None else find_tool(FFMPEG_EXE_NAME, override=override_path)
     if exe is None:
-        return STATUS_TOOL_MISSING, "ffmpeg.exe not found (not bundled and not on PATH)"
+        return STATUS_TOOL_MISSING, "ffmpeg not found (not bundled and not on PATH)"
 
     try:
         result = run_tool(

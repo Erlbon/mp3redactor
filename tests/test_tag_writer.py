@@ -161,6 +161,7 @@ def test_save_tags_blanking_comment_removes_every_comm_frame(tmp_path):
     tags.save(path)
 
     mp3 = MP3File(path=path)
+    load_tags(mp3)  # Save only touches fields changed since load
     mp3.apply_tags({"comment": ""})
     assert save_tags(mp3) is True
 
@@ -216,6 +217,7 @@ def test_save_tags_blanking_lyrics_removes_every_uslt_frame(tmp_path):
     tags.save(path)
 
     mp3 = MP3File(path=path)
+    load_tags(mp3)
     mp3.lyrics = ""
     mp3.dirty = True
     assert save_tags(mp3) is True
@@ -490,3 +492,112 @@ def test_save_tags_leaves_an_existing_loudness_frame_alone_when_measurement_fail
 
     reloaded_tags = ID3(path)
     assert str(reloaded_tags["TXXX:REPLAYGAIN_TRACK_GAIN"].text[0]) == "-2.50 dB"
+
+
+# -- round-trip fidelity: only changed fields are rewritten, file stays v2.3 --
+
+def _tag_fixture(tmp_path, version=4):
+    from mutagen.id3 import COMM, ID3, TCON, TPE1, USLT
+
+    path = _copy_fixture(tmp_path)
+    tags = ID3(path)
+    tags.add(TPE1(encoding=3, text=["A", "B"]))
+    tags.add(TCON(encoding=3, text=["Rock"]))
+    tags.add(COMM(encoding=3, lang="deu", desc="", text=["Hallo"]))
+    tags.add(COMM(encoding=3, lang="eng", desc="Notiz", text=["second"]))
+    tags.add(USLT(encoding=3, lang="fra", desc="", text="paroles"))
+    tags.save(path, v2_version=version)
+    return path
+
+
+def test_editing_one_field_keeps_multivalued_frames_and_languages(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _tag_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    mp3.apply_tags({"genre": "Jazz"})
+    assert save_tags(mp3) is True
+
+    tags = ID3(path)
+    assert tags["TPE1"].text == ["A", "B"]
+    assert tags["TCON"].text == ["Jazz"]
+    assert tags["COMM:Notiz:eng"].text == ["second"]
+    assert tags["COMM::deu"].text == ["Hallo"]
+    assert tags["USLT::fra"].text == "paroles"
+
+
+def test_editing_comment_keeps_its_language(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _tag_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    mp3.apply_tags({"comment": "Neu"})
+    assert save_tags(mp3) is True
+
+    comms = [f for f in ID3(path).values() if f.FrameID == "COMM"]
+    assert len(comms) == 1 and comms[0].lang == "deu" and comms[0].text == ["Neu"]
+
+
+def test_second_save_after_edit_uses_the_new_baseline(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _tag_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    mp3.apply_tags({"artist": "C"})
+    assert save_tags(mp3) is True
+    mp3.apply_tags({"genre": "Jazz"})
+    assert save_tags(mp3) is True
+    assert ID3(path)["TPE1"].text == ["C"]
+
+
+def test_save_keeps_id3v2_3(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _tag_fixture(tmp_path, version=3)
+    assert ID3(path).version == (2, 3, 0)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    mp3.apply_tags({"title": "T"})
+    assert save_tags(mp3) is True
+    assert ID3(path).version == (2, 3, 0)
+
+
+def test_save_keeps_id3v1_and_leaves_no_temp_files(tmp_path):
+    from mutagen.id3 import ID3
+
+    path = _tag_fixture(tmp_path)
+    ID3(path).save(path, v1=2)
+    with open(path, "rb") as handle:
+        handle.seek(-128, 2)
+        assert handle.read(3) == b"TAG"
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    mp3.apply_tags({"title": "T"})
+    assert save_tags(mp3) is True
+    with open(path, "rb") as handle:
+        handle.seek(-128, 2)
+        assert handle.read(3) == b"TAG"
+    assert [p.name for p in tmp_path.iterdir()] == ["song.mp3"]
+
+
+def test_save_refuses_a_file_that_failed_to_load(tmp_path):
+    path = _copy_fixture(tmp_path)
+    mp3 = MP3File(path=path)
+    mp3.load_error = "failed to read tags: boom"
+    mp3.title = "Blank-defaults overwrite"
+    mp3.dirty = True
+    before = path.read_bytes()
+    assert save_tags(mp3) is False
+    assert "could not be read" in mp3.save_error
+    assert mp3.dirty is True
+    assert path.read_bytes() == before
+
+
+def test_apply_tags_ignores_a_file_that_failed_to_load(tmp_path):
+    mp3 = MP3File(path=_copy_fixture(tmp_path))
+    mp3.load_error = "failed to read tags: boom"
+    mp3.apply_tags({"title": "x"})
+    assert mp3.title == "" and mp3.dirty is False

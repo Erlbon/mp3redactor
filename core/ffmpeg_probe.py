@@ -68,7 +68,7 @@ def deep_check_integrity(
     """
     exe = tool_path if tool_path is not None else find_tool(FFMPEG_EXE_NAME, override=override_path)
     if exe is None:
-        return STATUS_TOOL_MISSING, "ffmpeg.exe not found (not bundled and not on PATH)"
+        return STATUS_TOOL_MISSING, "ffmpeg not found (not bundled and not on PATH)"
 
     try:
         result = run_tool(
@@ -113,7 +113,7 @@ def measure_loudness(
     """
     exe = tool_path if tool_path is not None else find_tool(FFMPEG_EXE_NAME, override=override_path)
     if exe is None:
-        return None, None, STATUS_TOOL_MISSING, "ffmpeg.exe not found (not bundled and not on PATH)"
+        return None, None, STATUS_TOOL_MISSING, "ffmpeg not found (not bundled and not on PATH)"
 
     try:
         result = run_tool(
@@ -170,7 +170,7 @@ def probe_format(
     """
     exe = tool_path if tool_path is not None else find_tool(FFPROBE_EXE_NAME, override=override_path)
     if exe is None:
-        return "", None, None, STATUS_TOOL_MISSING, "ffprobe.exe not found (not bundled and not on PATH)"
+        return "", None, None, STATUS_TOOL_MISSING, "ffprobe not found (not bundled and not on PATH)"
 
     try:
         result = run_tool(

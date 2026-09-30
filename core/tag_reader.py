@@ -58,6 +58,7 @@ def load_tags(mp3: MP3File) -> None:
 
     if audio is None:
         mp3.has_cover = False  # no ID3 tag at all, so no embedded picture
+        mp3.snapshot_tag_baseline()
         return
 
     tags = audio.tags
@@ -131,6 +132,8 @@ def load_tags(mp3: MP3File) -> None:
         mp3.duration_seconds = getattr(audio.info, "length", None)
         bitrate = getattr(audio.info, "bitrate", None)
         mp3.bitrate_kbps = int(bitrate / 1000) if bitrate else None
+
+    mp3.snapshot_tag_baseline()  # see core.mp3_file.BASELINE_KEYS
 
 
 def _first(tags, frame_id: str) -> str:

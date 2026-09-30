@@ -71,7 +71,16 @@ def test_detect_key_forwards_override_path_to_find_tool(mock_find_tool, mock_run
 @patch("core.keyfinder_runner.subprocess.run")
 def test_detect_key_passes_no_window_kwargs(mock_run):
     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-    with patch("core.keyfinder_runner.no_window_kwargs", return_value={"creationflags": 0x08000000}):
+    with patch("redactor_common.core.subprocess_utils.no_window_kwargs", return_value={"creationflags": 0x08000000}):
         detect_key(Path("song.mp3"), tool_path=Path("keyfinder-cli.exe"))
     _, call_kwargs = mock_run.call_args
     assert call_kwargs.get("creationflags") == 0x08000000
+
+
+def test_undecodable_output_does_not_raise():
+    import subprocess
+
+    raw = subprocess.CompletedProcess([], 0, stdout=bytes([65, 255, 10]), stderr=b"")
+    with patch("core.keyfinder_runner.subprocess.run", return_value=raw):
+        key, status, _ = detect_key(Path("song.mp3"), tool_path=Path("keyfinder-cli.exe"))
+    assert status == "OK" and key.startswith("A")

@@ -14,17 +14,17 @@ of the original before fixing by default; -nb has it delete that backup
 once done instead, controlled by core.settings.Settings.delete_backup_after_fix
 (off by default -- keep the backup unless the user opts in via Settings).
 
-Every subprocess.run() call here passes core.subprocess_utils.no_window_kwargs()
-so mp3val.exe never pops up (or flashes) its own console window, even
-though this app itself is built --windowed -- same class of bug the
-epub tool hit and fixed for Calibre (v35).
+The call goes through redactor_common's run_tool() (via
+core.subprocess_utils): no console window even though this app is built
+--windowed (same class of bug the epub tool hit for Calibre, v35),
+stdin=DEVNULL, UTF-8 output.
 """
 
 import subprocess
 from pathlib import Path
 
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING, STATUS_WARNING
-from core.subprocess_utils import no_window_kwargs
+from core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
 MP3VAL_EXE_NAME = "mp3val.exe"
@@ -89,27 +89,22 @@ def _run(
 ) -> tuple[str, str]:
     exe = tool_path if tool_path is not None else find_tool(MP3VAL_EXE_NAME, override=override_path)
     if exe is None:
-        return STATUS_TOOL_MISSING, "mp3val.exe not found (not bundled and not on PATH)"
+        return STATUS_TOOL_MISSING, "mp3val not found (not bundled and not on PATH)"
 
     try:
-        result = subprocess.run(
-            [str(exe), *extra_args, str(path)],
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
-            # Never let a console tool wait on an inherited stdin handle.
-            stdin=subprocess.DEVNULL,
-            **no_window_kwargs(),
-        )
+        # run_tool(): no console window, stdin=DEVNULL, UTF-8 output
+        # decoded with errors="replace" (mp3val echoes the file name, so
+        # text=True's locale decoding could raise on a non-ASCII one).
+        result = run_tool([str(exe), *extra_args, str(path)], timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         return STATUS_ERROR, f"mp3val timed out after {TIMEOUT_SECONDS}s"
     except OSError as e:
         return STATUS_ERROR, f"failed to launch mp3val: {e}"
 
-    return _parse_output(result.stdout)
+    return _parse_output(result.stdout, result.returncode, result.stderr)
 
 
-def _parse_output(stdout: str) -> tuple[str, str]:
+def _parse_output(stdout: str, returncode: int = 0, stderr: str = "") -> tuple[str, str]:
     warning_lines = []
     error_lines = []
     for line in stdout.splitlines():
@@ -123,4 +118,9 @@ def _parse_output(stdout: str) -> tuple[str, str]:
         return STATUS_ERROR, "\n".join(error_lines + warning_lines)
     if warning_lines:
         return STATUS_WARNING, "\n".join(warning_lines)
+    if returncode != 0:
+        # A crash or bad invocation prints no WARNING/ERROR lines --
+        # that's not a clean file.
+        detail = (stderr or "").strip() or (stdout or "").strip()
+        return STATUS_ERROR, detail or f"mp3val exited with code {returncode}"
     return STATUS_OK, ""

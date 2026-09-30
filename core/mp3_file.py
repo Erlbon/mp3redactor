@@ -38,6 +38,20 @@ MUSICBRAINZ_ALBUM_ID_DESC = "MusicBrainz Album Id"
 MUSICBRAINZ_UFID_OWNER = "http://musicbrainz.org"
 
 
+# Every attribute core/tag_writer.py writes from plain in-memory text (the
+# FIELDS entries plus MusicBrainz ids, comment and lyrics). load_tags()
+# and a successful save_tags() record their values in
+# MP3File.tag_baseline, and Save only rewrites a frame whose value now
+# differs from it -- so a multi-valued TPE1, several COMM/USLT frames
+# or a comment's language survive an edit of some other field.
+BASELINE_KEYS = (
+    "title", "artist", "albumartist", "album", "track", "discnumber", "year",
+    "genre", "composer", "comment", "language", "albumsort", "artistsort",
+    "albumartistsort", "acoustid_fingerprint", "itunesadvisory",
+    "musicbrainz_albumid", "musicbrainz_trackid", "lyrics",
+)
+
+
 @dataclass
 class MP3File:
     path: Path
@@ -150,6 +164,19 @@ class MP3File:
     # the file stays visibly unsaved) if a save attempt fails.
     dirty: bool = False
 
+    # What the file on disk held for each BASELINE_KEYS attribute at the
+    # last load/save (empty for a file never loaded). Replaced, never
+    # mutated in place, so undo snapshots sharing it stay valid.
+    tag_baseline: dict = field(default_factory=dict)
+
+    def snapshot_tag_baseline(self) -> None:
+        """Records the current text fields as "what's on disk"."""
+        self.tag_baseline = {key: getattr(self, key, "") or "" for key in BASELINE_KEYS}
+
+    def tag_changed(self, key: str) -> bool:
+        """True if `key` differs from what was last loaded/saved."""
+        return (getattr(self, key, "") or "") != self.tag_baseline.get(key, "")
+
     @property
     def filename(self) -> str:
         return self.path.name
@@ -220,7 +247,10 @@ class MP3File:
         from core.fields.FIELDS) onto this file's in-memory tag
         attributes and marks it dirty. Mirrors the epub tool's
         EpubBook.apply_metadata() -- does not touch disk, that's
-        core.tag_writer.save_tags()'s job."""
+        core.tag_writer.save_tags()'s job. A file that failed to load
+        is left alone (its fields are blank defaults, not its tags)."""
+        if self.load_error:
+            return
         for key, value in values.items():
             setattr(self, key, value)
         self.dirty = True
