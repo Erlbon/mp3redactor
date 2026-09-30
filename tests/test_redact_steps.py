@@ -1,6 +1,7 @@
 """Redact steps (core/redact_steps.py) with mocked tools and network, driven
 through the real engine (run_recipe_on_item) on copies of tests/fixtures/tiny.mp3."""
 
+import os
 import shutil
 from pathlib import Path
 
@@ -442,6 +443,87 @@ def test_rename_without_a_pattern_or_title_is_a_noted_nothing(tmp_path):
     assert untitled.path.name == "u.mp3" and "no title" in notes_of(entry)
 
 
+# --- move into folders ------------------------------------------------------------
+
+
+def _library(tmp_path):
+    root = tmp_path / "library"
+    root.mkdir()
+    return root
+
+
+def test_move_step_is_off_by_default_and_last():
+    step = rs.MoveIntoFoldersStep(Settings())
+    assert not step.default_enabled and step.position == "last"
+    assert step.options[0].kind == "str" and step.options[0].default == "%albumartist%/%album%/%track% - %title%"
+    assert rs.MoveIntoFoldersStep(Settings(move_pattern="%artist%/%title%")).options[0].default == "%artist%/%title%"
+    cat = rs.build_catalogue(Settings())
+    assert [s.key for s in cat][-2:] == ["rename", "move_into_folders"]
+    assert "move_into_folders" not in [s.key for s, _ in Recipe.default_for(cat).resolve(cat)]
+
+
+def test_move_files_the_saved_file_under_the_library_root_and_undo_puts_it_back(tmp_path):
+    from redactor_common.core.rename_log import RenameLog
+
+    root = _library(tmp_path)
+    log = RenameLog(str(tmp_path / "log.json"))
+    mp3 = make_file(tmp_path, title="Song", artist="Band", album="Album", track="3", albumartist="Band")
+    original = mp3.path
+    settings = Settings(library_root=str(root), rename_zero_pad=True)
+    opts = {"move_into_folders": {"pattern": "%albumartist%/%album%/%track% - %title%"}}
+    entry, _ = run(mp3, {"bpm", "move_into_folders"}, opts, settings=settings, rename_log=log)
+    target = root / "Band" / "Album" / "03 - Song.mp3"
+    assert not entry.failures, entry
+    assert target.exists() and not original.exists() and mp3.path == target
+    assert any("moved to" in a for a in entry.applied)
+    fresh = MP3File(path=target)
+    load_tags(fresh)
+    assert fresh.title == "Song" and not fresh.load_error
+    assert leftovers(tmp_path) == [] and leftovers(target.parent) == []
+
+    batch = log.last_batch()
+    assert batch.root == str(root) and [os.path.basename(d) for d in batch.created_dirs] == ["Band", "Album"]
+    result = log.undo_last()
+    assert original.exists() and not target.exists() and result.restored == [(str(target), str(original))]
+    assert [os.path.basename(d) for d in result.created_dirs] == ["Album", "Band"]  # offered for tidying, deepest first
+
+
+def test_move_saves_pending_changes_first_and_reports_the_save_once(tmp_path, monkeypatch):
+    root = _library(tmp_path)
+    monkeypatch.setattr(rs, "detect_bpm", lambda p: (100.0, STATUS_OK, ""))
+    mp3 = make_file(tmp_path, title="Song", artist="Band", album="Album", track="1")
+    opts = {"move_into_folders": {"pattern": "%artist%/%title%"}}
+    entry, _ = run(mp3, {"bpm", "move_into_folders"}, opts, settings=Settings(library_root=str(root)))
+    assert mp3.path == root / "Band" / "Song.mp3"
+    fresh = MP3File(path=mp3.path)
+    load_tags(fresh)
+    assert fresh.bpm == 100.0
+    assert len([a for a in entry.applied if a.startswith(rs.FINALIZE_LABEL)]) == 1
+
+
+def test_move_without_a_library_root_is_a_noted_nothing(tmp_path):
+    mp3 = make_file(tmp_path, title="Song")
+    entry, _ = run(mp3, {"move_into_folders"}, settings=Settings())
+    assert entry.status is FileStatus.UNCHANGED and "no library root" in notes_of(entry)
+    entry, _ = run(mp3, {"move_into_folders"}, settings=Settings(library_root=str(tmp_path / "gone")))
+    assert "no library root" in notes_of(entry) and mp3.path.parent == tmp_path
+
+
+def test_move_leaves_a_file_that_is_already_in_place_and_never_overwrites(tmp_path):
+    root = _library(tmp_path)
+    settings = Settings(library_root=str(root))
+    opts = {"move_into_folders": {"pattern": "%artist%/%title%"}}
+    (root / "Band").mkdir()
+    (root / "Band" / "Song.mp3").write_bytes(b"someone else's file")
+    mp3 = make_file(tmp_path, title="Song", artist="Band")
+    run(mp3, {"move_into_folders"}, opts, settings=settings)
+    assert mp3.path == root / "Band" / "Song (2).mp3"
+    assert (root / "Band" / "Song.mp3").read_bytes() == b"someone else's file"
+    again = {"move_into_folders": {"pattern": "%artist%/%title% (2)"}}
+    entry, _ = run(mp3, {"move_into_folders"}, again, settings=settings)
+    assert entry.status is FileStatus.UNCHANGED  # already where the pattern puts it
+
+
 # --- save stage, guards ---------------------------------------------------------------
 
 
@@ -529,8 +611,8 @@ def test_the_save_stage_reports_a_skip_even_when_no_step_runs(tmp_path):
 
 def test_defaults_match_the_brief():
     cat = {s.key: s for s in rs.build_catalogue(Settings())}
-    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "tags", "cover", "rename"]
-    assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "rename"]
+    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "tags", "cover", "rename", "move_into_folders"]
+    assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "rename", "move_into_folders"]
 
 
 def test_rename_is_a_last_step_whatever_the_stored_order_says():

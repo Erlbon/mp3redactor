@@ -150,6 +150,7 @@ from redactor_common.gui.redact_dialog import (
     redact_menu_action,
 )
 from redactor_common.gui.redact_dialog import run_redact as run_redact_dialog
+from redactor_common.gui.move_runner import run_planned_moves
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.core.rename_log import RenameLog
 from redactor_common.gui.rename_undo import undo_last_rename
@@ -814,6 +815,25 @@ class MainWindow(QMainWindow):
         self.settings.rename_pattern = pattern
         save_settings(self.settings)
 
+    def _remember_move_pattern(self, pattern: str) -> None:
+        self.settings.move_pattern = pattern
+        save_settings(self.settings)
+
+    def _remember_library_root(self, folder: str) -> None:
+        self.settings.library_root = folder
+        save_settings(self.settings)
+
+    def _move_into_folders(self, planned) -> None:
+        """The Rename dialog's "Move into folders" mode: the shared runner
+        moves the files (progress, cancel, per-file errors) and records
+        the batch -- with the folders it created -- in the rename log, so
+        File > Undo Last Rename puts them back. Like a rename it isn't on
+        the Undo stack; the rows just take on their new paths."""
+        summary = run_planned_moves(self, planned, False, _rename_log(), "Move into Folders")
+        for mp3, _old_path, new_path in summary.done:
+            mp3.path = Path(new_path)
+        self._rebuild_table()
+
     def _require_targets(self, action_desc: str) -> list[MP3File]:
         """Same "selection required, else a clear message" convention
         every other Operations/File action in this app already uses
@@ -853,12 +873,18 @@ class MainWindow(QMainWindow):
             on_ascii_only_changed=self._remember_ascii_filenames,
             zero_pad_initial=(self.settings.rename_zero_pad, self.settings.rename_zero_pad_width),
             on_zero_pad_changed=self._remember_rename_zero_pad,
+            library_root=self.settings.library_root,
+            on_library_root_changed=self._remember_library_root,
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
         self._remember_pattern_used(dialog.pattern_edit.text())
+        if dialog.is_move_mode():
+            self._remember_move_pattern(dialog.pattern_edit.text())
+            self._move_into_folders(dialog.planned_moves())
+            return
         self._remember_rename_pattern(dialog.pattern_edit.text())
         export_mode = dialog.is_export_mode()
         errors: list[str] = []

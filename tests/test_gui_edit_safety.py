@@ -94,6 +94,9 @@ def test_export_copy_runs_under_progress_and_reports_errors(window, tmp_path, mo
         def is_export_mode(self):
             return True
 
+        def is_move_mode(self):
+            return False
+
         def planned_renames(self):
             return [(a, str(a.path), str(out))]
 

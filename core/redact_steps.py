@@ -24,9 +24,9 @@ dialogs. How one file flows:
      (tag_writer.apply_tags_to_file), verifies it reloads with the same
      audio length and tags, then commit_in_place() swaps it in and sends
      the original to the Recycle Bin.
-  4. The "last" step (rename) acts on the finished file. The engine runs
-     `finalize` after it, so it calls Mp3Ctx.save() first; that saves
-     once and the save stage reports it.
+  4. The "last" steps (rename, move into folders) act on the finished
+     file. The engine runs `finalize` after them, so they call
+     Mp3Ctx.save() first; it saves once and the save stage reports it.
 
 A scan-based step never acts on a failed tool: TOOL ERROR/TOOL MISSING is
 never stamped (MP3File.record_scan) and never triggers mp3val -f.
@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from redactor_common.core.move_plan import execute_move, plan_moves
 from redactor_common.core.os_utils import rename_no_clobber
 from redactor_common.core.pipeline import (
     CommitError,
@@ -90,7 +91,7 @@ from core.musicbrainz_lookup import (
     rank_matches,
 )
 from core.scan_service import REDACT_SCRATCH_PREFIX, reload_from_disk
-from core.settings import Settings
+from core.settings import DEFAULT_MOVE_PATTERN, Settings
 from core.tag_reader import load_tags
 from core.tag_writer import apply_tags_to_file
 from core.tool_locator import find_tool
@@ -118,7 +119,7 @@ class RedactEnv:
     in the run (an album lookup works on a whole folder, once)."""
 
     settings: Settings
-    rename_log: object | None = None  # anything with .record(label, [(old, new)])
+    rename_log: object | None = None  # anything with .record(label, [(old, new)], **move_details)
     trash: Callable[[str], None] | None = None  # None: the Recycle Bin (move_to_trash)
     items: list[MP3File] = field(default_factory=list)
     cleaned: int = 0  # scratch files of an earlier, interrupted run removed by begin()
@@ -768,6 +769,69 @@ class RenameStep(Mp3Step):
         return StepResult.applied(f"renamed to {os.path.basename(new_path)!r}")
 
 
+class MoveIntoFoldersStep(Mp3Step):
+    """A "last" step, after Rename: files the finished file under the
+    library root by a folder pattern (the Rename / Export dialog's "Move
+    into folders" mode, one file at a time)."""
+
+    key = "move_into_folders"
+    label = "Move into library folders"
+    description = (
+        "Moves the file into the library root (chosen in File > Rename / Export Files > Move into folders) "
+        "by a pattern such as %albumartist%/%album%/%track% - %title%; missing folders are created, nothing "
+        "is overwritten, and it is logged for Undo Last Rename. Runs last, after the file is saved. Off by "
+        "default. Empty folders left behind are not removed."
+    )
+    position = "last"
+
+    def __init__(self, settings: Settings | None = None, *, default_enabled: bool | None = None):
+        super().__init__(default_enabled=False if default_enabled is None else default_enabled)
+        self.options = (
+            OptionSpec(
+                "pattern", "Folder and filename pattern", "str",
+                settings.saved_move_pattern() if settings else DEFAULT_MOVE_PATTERN,
+                tooltip="Relative to the library root; / starts a sub-folder. Placeholders like %albumartist% and %album%.",
+            ),
+        )
+
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        settings = ctx.env.settings
+        root = settings.library_root
+        if not root or not os.path.isdir(root):
+            return StepResult.nothing(
+                note="Move skipped: no library root folder (choose one in File > Rename / Export Files > Move into folders)"
+            )
+        pattern = self.options_for(ctx)["pattern"].strip() or settings.saved_move_pattern()
+        ctx.save()  # the engine's save stage comes after the "last" steps
+        if ctx.save_failed:
+            return StepResult.nothing()
+        old_path = str(ctx.mp3.path)
+        stem = os.path.splitext(os.path.basename(old_path))[0]
+        values = _filename_values(ctx)
+        (plan,) = plan_moves(
+            [ctx.mp3], root, pattern, lambda _mp3: values, lambda mp3: str(mp3.path),
+            ascii_only=settings.ascii_filenames, fallback_segment=stem,
+        )
+        if plan.blocking:
+            return StepResult.failed(f"couldn't move: {plan.warning}")
+        if plan.is_noop:
+            return StepResult.nothing()
+        try:
+            moved = execute_move(old_path, plan.new_path, copy=False, trash=ctx.env.trash or move_to_trash)
+        except OSError as exc:
+            return StepResult.failed(f"couldn't move to {plan.new_path!r}: {exc}")
+        ctx.mp3.path = Path(moved.new_path)
+        if ctx.env.rename_log is not None and not moved.original_kept:
+            trashed = [(old_path, moved.new_path)] if moved.original_trashed else []
+            ctx.env.rename_log.record(
+                "Redact", [(old_path, moved.new_path)],
+                created_dirs=moved.created_dirs, trashed=trashed, root=plan.root,
+            )
+        result = StepResult.applied(f"moved to {os.path.relpath(moved.new_path, plan.root)!r}")
+        result.note = moved.warning
+        return result
+
+
 # --- catalogue, recipe ---------------------------------------------------------
 
 
@@ -785,6 +849,7 @@ def build_catalogue(settings: Settings | None = None) -> list[Step]:
         TagLookupStep(),
         CoverStep(),
         RenameStep(settings),
+        MoveIntoFoldersStep(settings),
     ]
 
 

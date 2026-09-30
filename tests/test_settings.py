@@ -246,3 +246,10 @@ def test_rename_pattern_round_trips_and_history_is_only_the_first_run_default(tm
     loaded = load_settings(tmp_path)
     assert loaded.rename_pattern == "%track% %title%" and loaded.saved_rename_pattern() == "%track% %title%"
     assert Settings().saved_rename_pattern() == ""
+
+
+def test_library_root_and_move_pattern_round_trip(tmp_path):
+    assert Settings().library_root == "" and Settings().saved_move_pattern() == "%albumartist%/%album%/%track% - %title%"
+    save_settings(Settings(library_root="/music", move_pattern="%artist%/%title%"), tmp_path)
+    loaded = load_settings(tmp_path)
+    assert loaded.library_root == "/music" and loaded.saved_move_pattern() == "%artist%/%title%"

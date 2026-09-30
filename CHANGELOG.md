@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30#10 -- Move into folders
+
+- **File > Rename / Export Files has a third mode, "Move into folders".** Pick a library root folder and a pattern with `/` for sub-folders (for example `%albumartist%/%album%/%track% - %title%`); the preview shows where each file will go, missing folders are created, and nothing is overwritten (a name already taken gets "(2)"). The root is remembered between runs.
+- Moves are logged as one batch: **Undo Last Rename** puts the files back and offers to remove the folders the move created. After a move, the list offers to remove source folders that are now empty.
+- **Redact gets a "Move into library folders" step** (off by default, runs last, after Rename) with its own folder/filename pattern option, starting as the pattern last used in Move into folders, and the same library root. Each file is saved first, then filed; a missing root is noted in the report and the file stays put.
+
 ## 2026-09-30#09 -- Redact on the improved engine
 
 - Redact now runs on redactor_common 2026-09-30-10 (pinned). The report text is the same, with two visible differences: a file that is skipped (unsaved edits, unreadable) now appears under a **SKIPPED** heading instead of as an aborted file, and notes such as "mp3val not found" or "Tag lookup unavailable" are listed per file under **NOTES** instead of as one grouped block below the report.

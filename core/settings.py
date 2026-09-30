@@ -44,6 +44,10 @@ SECTION = "general"
 # Settings object instead.
 MAX_PATTERN_HISTORY = 15
 
+# The Redact "Move into library folders" step's starting pattern, until
+# the user has used Rename / Export Files' "Move into folders" mode once.
+DEFAULT_MOVE_PATTERN = "%albumartist%/%album%/%track% - %title%"
+
 
 def dedupe_and_trim_pattern_history(history: list[str], new_pattern: str) -> list[str]:
     """Move new_pattern to the front of history, deduped, trimmed to
@@ -147,11 +151,15 @@ class Settings:
     rename_zero_pad: bool = False
     rename_zero_pad_width: int = 2
     auto_number_padding: int = 2
-    # The pattern Redact's Rename step starts from: the last one applied in
-    # Rename / Export Files. Kept apart from pattern_history, which Parse
-    # Filename writes to as well; "" means none yet -- see
-    # saved_rename_pattern().
+    # The patterns Redact's Rename and Move steps start from: the last
+    # one applied in Rename / Export Files' Rename/Export mode and in its
+    # "Move into folders" mode (whose patterns contain "/"). Kept apart
+    # from pattern_history, which Parse Filename writes to as well; ""
+    # means none yet -- see saved_rename_pattern().
     rename_pattern: str = ""
+    move_pattern: str = ""
+    # "Move into folders": the root every moved file is filed under.
+    library_root: str = ""
 
     # The Redact recipe (which steps run, their order/options, the
     # confidence threshold) as one line of JSON -- see
@@ -163,6 +171,9 @@ class Settings:
         """The dedicated rename pattern; before one was ever saved, the most
         recent pattern in the shared history (a first-run default only)."""
         return self.rename_pattern or (self.pattern_history[0] if self.pattern_history else "")
+
+    def saved_move_pattern(self) -> str:
+        return self.move_pattern or DEFAULT_MOVE_PATTERN
 
     def to_config(self) -> configparser.ConfigParser:
         # interpolation=None -- pattern_history stores literal "%field%"
@@ -192,6 +203,8 @@ class Settings:
             "rename_zero_pad_width": str(self.rename_zero_pad_width),
             "auto_number_padding": str(self.auto_number_padding),
             "rename_pattern": self.rename_pattern,
+            "move_pattern": self.move_pattern,
+            "library_root": self.library_root,
             "redact_recipe": self.redact_recipe,
         }
         return config
@@ -222,6 +235,8 @@ class Settings:
             rename_zero_pad_width=_get_int(section, "rename_zero_pad_width", 2),
             auto_number_padding=_get_int(section, "auto_number_padding", 2),
             rename_pattern=section.get("rename_pattern", fallback=""),
+            move_pattern=section.get("move_pattern", fallback=""),
+            library_root=section.get("library_root", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
         )
 
