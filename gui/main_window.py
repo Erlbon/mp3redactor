@@ -87,6 +87,15 @@ from core.mp3_genres import merge_genres
 from core.mp3_languages import DEFAULT_LANGUAGES
 from core.mp3_languages import exclude_hidden as exclude_hidden_languages
 from core.mp3_languages import merge_languages
+from core.redact_steps import (
+    Mp3Ctx,
+    RedactEnv,
+    build_catalogue,
+    recipe_for_run,
+    recipe_from_setting,
+    recipe_to_setting,
+    run_catalogue,
+)
 from core.scan_service import (
     find_mp3_files,
     load_files,
@@ -111,6 +120,7 @@ from core.settings import (
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
+from gui.redact_results import Mp3RedactResultsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.tag_panel import TagPanel
 from redactor_common.core.error_summary import summarize_errors
@@ -134,6 +144,12 @@ from redactor_common.gui.menu_builder import MenuAction, Separator, Submenu, bui
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import ProgressReporter, run_with_progress
+from redactor_common.gui.redact_dialog import (
+    RecipeEditorDialog,
+    edit_recipe_menu_action,
+    redact_menu_action,
+)
+from redactor_common.gui.redact_dialog import run_redact as run_redact_dialog
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.core.rename_log import RenameLog
 from redactor_common.gui.rename_undo import undo_last_rename
@@ -404,6 +420,12 @@ class MainWindow(QMainWindow):
                     "apply_bulk_edit", "&Apply to 0 selected file(s)", self.tag_panel.apply_bulk_edit
                 ),
                 Separator(),
+                # One click: the recipe's checks/fixes/lookups on the selected
+                # files (or all loaded, if none selected), saved in place with
+                # each original in the Recycle Bin. See redact_files().
+                redact_menu_action(self.redact_files, text="Re&dact"),
+                edit_recipe_menu_action(self.edit_redact_recipe, text="Edit Redact Reci&pe..."),
+                Separator(),
                 MenuAction(
                     "check_integrity", "&Check Selected Files' Integrity", self.run_integrity_check
                 ),
@@ -477,13 +499,14 @@ class MainWindow(QMainWindow):
         self.action_check_key = actions["check_key"]
         self.action_measure_loudness = actions["measure_loudness"]
         self.action_import_convert = actions["import_convert"]
+        self.action_redact = actions["redact"]
         self.action_undo = actions["undo"]
         self.action_undo.setEnabled(False)
         self.action_redo = actions["redo"]
         self.action_redo.setEnabled(False)
 
-        # Toolbar carries only the everyday five (Load Files, Load
-        # Folder, Save, Apply, Undo) -- everything else (Check
+        # Toolbar carries only the everyday six (Load Files, Load
+        # Folder, Save, Apply, Redact, Undo) -- everything else (Check
         # Integrity, Detect BPM, Detect Key) stays reachable only via
         # the Operations menu and the table's right-click context menu
         # (_show_context_menu), both of which already have them, rather
@@ -496,6 +519,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.action_save)
         toolbar.addSeparator()
         toolbar.addAction(self.action_apply_bulk_edit)
+        toolbar.addAction(self.action_redact)
         toolbar.addSeparator()
         toolbar.addAction(self.action_undo)
         toolbar.addAction(self.action_redo)
@@ -1397,6 +1421,76 @@ class MainWindow(QMainWindow):
             self.settings.ffprobe_path = ffprobe_path
             self.settings.fpcalc_path = fpcalc_path
             save_settings(self.settings)
+
+    # -- redact ---------------------------------------------------------------
+
+    def _redact_recipe(self):
+        return recipe_from_setting(self.settings.redact_recipe, build_catalogue(self.settings))
+
+    def edit_redact_recipe(self) -> None:
+        """Operations > Edit Redact Recipe...: the shared recipe editor over
+        this app's steps; the result is stored in the settings file."""
+        dialog = RecipeEditorDialog(build_catalogue(self.settings), self._redact_recipe(), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.settings.redact_recipe = recipe_to_setting(dialog.recipe())
+            save_settings(self.settings)
+
+    def _redact_targets(self) -> list[MP3File]:
+        """The selected files, else -- after asking -- every loaded file.
+        (Unlike the other batch actions, nothing selected is not an
+        error: Redact is meant to be one click on a whole folder.)"""
+        targets = self._selected_files()
+        if targets:
+            return targets
+        if not self.files:
+            QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+            return []
+        reply = QMessageBox.question(
+            self,
+            "Redact all files?",
+            f"Nothing is selected. Redact all {len(self.files)} loaded file(s)?\n\n"
+            "Each file is fixed and saved in place; the original goes to the Recycle Bin.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        return list(self.files) if reply == QMessageBox.StandardButton.Yes else []
+
+    def redact_files(self) -> None:
+        """Operations > Redact (Ctrl+Shift+E): runs the saved recipe on the
+        targets through redactor_common's engine (progress, cancel, results
+        with Needs review). A file with unsaved edits is skipped and named
+        in the report, never silently overwritten; a file that failed to
+        load is skipped too. Redact is not on the Undo stack -- the Recycle
+        Bin copy of each original is the undo -- so the stack is cleared,
+        like Refresh List does, rather than left pointing at old states."""
+        targets = self._redact_targets()
+        if not targets:
+            return
+        unsaved = [mp3 for mp3 in targets if mp3.dirty]
+        if unsaved and QMessageBox.question(
+            self,
+            "Unsaved changes",
+            f"{len(unsaved)} of the {len(targets)} file(s) have unsaved edits. Redact works on saved "
+            "files, so those will be skipped (and listed in the report). Continue with the rest?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        env = RedactEnv(self.settings, rename_log=_rename_log())
+        env.begin(targets)
+        recipe = self._redact_recipe()
+        catalogue = run_catalogue(self.settings)
+        report = run_redact_dialog(
+            self, targets, recipe_for_run(recipe, catalogue), catalogue,
+            make_context=lambda mp3: Mp3Ctx(mp3, env),
+            describe=lambda mp3: mp3.filename,
+            show_results=False,
+        )
+        self.undo_manager.clear()
+        self._update_undo_action()
+        self._update_redo_action()
+        self._after_cover_change()  # table rebuild + lazily reloaded cover thumbnails
+        if report is not None:
+            Mp3RedactResultsDialog(report, env.notes_text(), self).exec()
 
     def run_integrity_check(self) -> None:
         self._run_check_with_progress(

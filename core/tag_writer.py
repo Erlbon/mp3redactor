@@ -112,22 +112,6 @@ def save_tags(mp3: MP3File) -> bool:
     than written as an empty frame -- this is also how you clear a tag:
     blank the field in the bulk-edit panel, tick it, Apply, Save.
     """
-    try:
-        from mutagen.id3 import (
-            APIC, COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
-            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, UFID, USLT,
-        )
-        from mutagen.mp3 import MP3
-    except ImportError:
-        mp3.save_error = "mutagen is not installed"
-        return False
-
-    frame_classes = {
-        "TIT2": TIT2, "TPE1": TPE1, "TPE2": TPE2, "TALB": TALB, "TRCK": TRCK,
-        "TPOS": TPOS, "TDRC": TDRC, "TCON": TCON, "TCOM": TCOM, "TLAN": TLAN,
-        "TSOA": TSOA, "TSOP": TSOP, "TSO2": TSO2,
-    }
-
     if mp3.load_error:
         # Its in-memory fields are blank defaults, not what's on disk --
         # saving would overwrite the real tags with them.
@@ -150,20 +134,59 @@ def save_tags(mp3: MP3File) -> bool:
         mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
         return False
 
-    try:
-        audio = MP3(tmp_path)
-    except Exception as e:  # noqa: BLE001 -- any open/parse failure blocks writing too
+    error = apply_tags_to_file(mp3, tmp_path)
+    if not error:
+        try:
+            os.replace(tmp_path, target)
+        except OSError as e:
+            error = f"failed to write tags: {describe_save_error(e)}"
+    if error:
         _discard(tmp_path)
-        mp3.save_error = f"failed to open file: {describe_save_error(e)}"
+        mp3.save_error = error
         return False
+
+    mp3.snapshot_tag_baseline()
+    mp3.mark_cover_saved()
+    mp3.dirty = False
+    mp3.save_error = ""
+    return True
+
+
+def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
+    """
+    Writes mp3's changed tag fields into the file at `file_path`, IN
+    PLACE (mutagen shifts the audio as it goes), so `file_path` must be
+    a scratch copy: save_tags() edits a same-folder copy and swaps it in,
+    Redact (core/redact_steps.py) edits its working copy and hands it to
+    the shared commit_in_place(). Returns "" on success, else the
+    message for mp3.save_error; never raises, and touches none of mp3's
+    own state (the caller decides what a successful write means).
+    """
+    try:
+        from mutagen.id3 import (
+            APIC, COMM, TALB, TBPM, TCOM, TCON, TDRC, TIT2, TKEY, TLAN, TPE1, TPE2,
+            TPOS, TRCK, TSO2, TSOA, TSOP, TXXX, UFID, USLT,
+        )
+        from mutagen.mp3 import MP3
+    except ImportError:
+        return "mutagen is not installed"
+
+    frame_classes = {
+        "TIT2": TIT2, "TPE1": TPE1, "TPE2": TPE2, "TALB": TALB, "TRCK": TRCK,
+        "TPOS": TPOS, "TDRC": TDRC, "TCON": TCON, "TCOM": TCOM, "TLAN": TLAN,
+        "TSOA": TSOA, "TSOP": TSOP, "TSO2": TSO2,
+    }
+
+    try:
+        audio = MP3(file_path)
+    except Exception as e:  # noqa: BLE001 -- any open/parse failure blocks writing too
+        return f"failed to open file: {describe_save_error(e)}"
 
     if audio.tags is None:
         try:
             audio.add_tags()
         except Exception as e:  # noqa: BLE001
-            _discard(tmp_path)
-            mp3.save_error = f"failed to add a tag header: {describe_save_error(e)}"
-            return False
+            return f"failed to add a tag header: {describe_save_error(e)}"
 
     tags = audio.tags
     # Keep the file's ID3v2 version (mutagen would upgrade 2.3 to 2.4).
@@ -208,17 +231,9 @@ def save_tags(mp3: MP3File) -> bool:
 
     try:
         audio.save(v2_version=v2_version)
-        os.replace(tmp_path, target)
     except Exception as e:  # noqa: BLE001
-        _discard(tmp_path)
-        mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
-        return False
-
-    mp3.snapshot_tag_baseline()
-    mp3.mark_cover_saved()
-    mp3.dirty = False
-    mp3.save_error = ""
-    return True
+        return f"failed to write tags: {describe_save_error(e)}"
+    return ""
 
 
 def _discard(tmp_path: str) -> None:

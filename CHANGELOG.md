@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-30#08 -- Redact: one button to check, fix and fill in a folder
+
+- **New: Operations > Redact (Ctrl+Shift+E, also on the toolbar)** runs a recipe on the selected files (or every loaded file, after asking, when nothing is selected) with no further questions. Each file is fixed and saved IN PLACE and the original goes to the Recycle Bin -- that copy is the undo; Redact is not on the in-app Undo stack (the stack is cleared). If the Recycle Bin can't take the original it is kept beside the new file as `<name>.redact-orig.mp3`.
+- Default recipe: integrity check (mp3val, and fix what it can, on a copy), BPM, key, loudness (ReplayGain), fill MISSING tags from MusicBrainz/AcoustID, add a missing cover (folder image, or the Cover Art Archive). Off by default: deep check (slow) and rename by the saved pattern (on only once you have used Rename / Export). Scan results are stamped inside the file; a tool failure (TOOL ERROR / not installed) is never stamped and never triggers a fix.
+- Guesses (tag lookup, cover) are applied only at confidence >= the threshold (default 90%); below it they are listed under **Needs review** in the results and left alone. Existing tag values are never replaced unless the recipe option says so; an existing BPM/Key tag is kept by default.
+- **Operations > Edit Redact Recipe...** chooses, orders and configures the steps and sets the threshold; the recipe is stored in the settings file.
+- Files with unsaved edits, or that failed to load, are skipped and named in the report. Every new file is verified (opens, same audio length, tags read back) before it replaces the original.
+- Needs `send2trash` (added to requirements.txt); redactor_common pinned to 2026-09-30-06.
+
 ## 2026-09-30#07 -- A failed tool is not a bad file
 
 - **Fixed: a timed-out or crashed mp3val/ffmpeg could stamp a false ERROR into a healthy file.** Integrity and Deep Check now show `TOOL ERROR` (orange, message in the tooltip) when the tool itself failed -- timeout, could not start, or exited with no findings -- and nothing is stamped or marked unsaved. An earlier good stamp stays as it was.

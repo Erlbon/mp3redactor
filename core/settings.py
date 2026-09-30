@@ -148,6 +148,12 @@ class Settings:
     rename_zero_pad_width: int = 2
     auto_number_padding: int = 2
 
+    # The Redact recipe (which steps run, their order/options, the
+    # confidence threshold) as one line of JSON -- see
+    # core.redact_steps.recipe_to_setting(). "" = never edited: every step
+    # at its default.
+    redact_recipe: str = ""
+
     def to_config(self) -> configparser.ConfigParser:
         # interpolation=None -- pattern_history stores literal "%field%"
         # tokens (see core.rename_pattern's docstring); configparser's
@@ -175,6 +181,7 @@ class Settings:
             "rename_zero_pad": str(self.rename_zero_pad),
             "rename_zero_pad_width": str(self.rename_zero_pad_width),
             "auto_number_padding": str(self.auto_number_padding),
+            "redact_recipe": self.redact_recipe,
         }
         return config
 
@@ -203,6 +210,7 @@ class Settings:
             rename_zero_pad=_get_bool(section, "rename_zero_pad", False),
             rename_zero_pad_width=_get_int(section, "rename_zero_pad_width", 2),
             auto_number_padding=_get_int(section, "auto_number_padding", 2),
+            redact_recipe=section.get("redact_recipe", fallback=""),
         )
 
 

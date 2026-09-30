@@ -1,0 +1,502 @@
+"""Redact steps (core/redact_steps.py) with mocked tools and network, driven
+through the real engine (run_recipe_on_item) on copies of tests/fixtures/tiny.mp3."""
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+import core.redact_steps as rs
+from core.mp3_file import (
+    MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_WARNING,
+)
+from core.musicbrainz_lookup import MusicBrainzError, Release, ReleaseTrack, match_release
+from core.settings import Settings
+from core.tag_reader import load_tags
+from redactor_common.core.pipeline import FileStatus, Recipe, run_recipe_on_item
+
+FIXTURE = Path(__file__).parent / "fixtures" / "tiny.mp3"
+
+
+def make_file(tmp_path, name="a.mp3", **tags):
+    path = tmp_path / name
+    shutil.copyfile(FIXTURE, path)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    for key, value in tags.items():
+        setattr(mp3, key, value)
+    if tags:  # tags given: write them to disk so they are the file's saved state
+        from core.tag_writer import save_tags
+        assert save_tags(mp3)
+    return mp3
+
+
+def run(mp3, only, recipe_opts=None, threshold=0.9, settings=None, items=None, rename_log=None):
+    """Runs just the `only` steps (plus save) on one file; returns (report entry, env)."""
+    settings = settings or Settings()
+    env = rs.RedactEnv(settings, rename_log=rename_log)
+    env.begin(items or [mp3])
+    catalogue = rs.run_catalogue(settings)
+    recipe = Recipe.default_for(catalogue)
+    recipe.enabled = {s.key: s.key in only for s in catalogue}
+    recipe.options = {k: v for k, v in (recipe_opts or {}).items()}
+    recipe.confidence_threshold = threshold
+    resolved = rs.recipe_for_run(recipe, catalogue).resolve(catalogue)
+    entry = run_recipe_on_item(mp3, resolved, threshold, lambda m: rs.Mp3Ctx(m, env), lambda m: m.filename)
+    return entry, env
+
+
+def leftovers(folder):
+    return [p.name for p in folder.iterdir() if p.name.startswith(".mp3redactor-redact-")]
+
+
+# --- integrity ------------------------------------------------------------------
+
+
+def test_integrity_ok_is_stamped_in_the_file_and_original_trashed(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    before = mp3.path.read_bytes()
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
+    entry, _env = run(mp3, {"integrity"})
+    assert entry.status is FileStatus.CHANGED
+    assert any("saved in place" in a for a in entry.applied)
+    assert len(recycle_bin.trashed) == 1
+    assert mp3.path.read_bytes() != before  # rewritten in place
+    fresh = MP3File(path=mp3.path)
+    load_tags(fresh)
+    assert not fresh.load_error and fresh.integrity_stamp.startswith("OK;")
+    assert not mp3.dirty and mp3.integrity_stamp == fresh.integrity_stamp
+    assert leftovers(tmp_path) == []
+
+
+def test_integrity_fix_runs_on_the_scratch_copy_then_rechecks(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    calls = []
+    results = iter([(STATUS_WARNING, "WARNING: a"), (STATUS_OK, "")])
+
+    def check(path, override_path=None):
+        calls.append(("check", str(path)))
+        return next(results)
+
+    def fix(path, delete_backup=False, override_path=None):
+        calls.append(("fix", str(path)))
+        return STATUS_OK, ""
+
+    monkeypatch.setattr(rs, "check_integrity", check)
+    monkeypatch.setattr(rs, "fix_integrity", fix)
+    entry, _ = run(mp3, {"integrity"})
+    assert [c[0] for c in calls] == ["check", "fix", "check"]
+    assert all(Path(c[1]) != mp3.path for c in calls)  # never the original
+    assert any("fixed 1 problem" in a for a in entry.applied)
+    assert mp3.integrity_status == STATUS_OK
+
+
+def test_fix_option_off_does_not_fix(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_WARNING, "WARNING: a"))
+    monkeypatch.setattr(rs, "fix_integrity", lambda *a, **k: pytest.fail("must not fix"))
+    entry, _ = run(mp3, {"integrity"}, {"integrity": {"fix": False}})
+    assert any("not fixed" in a for a in entry.applied)
+
+
+def test_tool_error_is_never_fixed_or_stamped(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    before = mp3.path.read_bytes()
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_TOOL_ERROR, "timed out"))
+    monkeypatch.setattr(rs, "fix_integrity", lambda *a, **k: pytest.fail("must not fix on a tool error"))
+    entry, _ = run(mp3, {"integrity"})
+    assert entry.status is FileStatus.FAILED and "timed out" in entry.failures[0]
+    assert mp3.integrity_stamp == ""
+    assert mp3.path.read_bytes() == before and recycle_bin.trashed == []
+
+
+def test_tool_missing_is_nothing_with_a_note(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_TOOL_MISSING, "mp3val not found"))
+    monkeypatch.setattr(rs, "fix_integrity", lambda *a, **k: pytest.fail("must not fix"))
+    entry, env = run(mp3, {"integrity"})
+    assert entry.status is FileStatus.UNCHANGED and not entry.failures
+    assert "mp3val not found" in env.notes_text() and recycle_bin.trashed == []
+
+
+def test_failed_fix_restores_the_scratch_copy_and_reports(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_ERROR, "ERROR: bad"))
+
+    def fix(path, delete_backup=False, override_path=None):
+        Path(path).write_bytes(b"garbage")  # crashed midway
+        return STATUS_TOOL_ERROR, "crashed"
+
+    monkeypatch.setattr(rs, "fix_integrity", fix)
+    entry, _ = run(mp3, {"integrity"})
+    assert any("left as it was" in f for f in entry.failures)
+    # the stamp from the pre-fix check (ERROR) was still saved, into an intact file
+    fresh = MP3File(path=mp3.path)
+    load_tags(fresh)
+    assert not fresh.load_error and fresh.integrity_stamp.startswith("ERROR;") and fresh.duration_seconds
+
+
+@pytest.mark.parametrize("keep_backups", [True, False])
+def test_mp3val_backup_follows_the_setting(tmp_path, monkeypatch, keep_backups):
+    mp3 = make_file(tmp_path)
+    results = iter([(STATUS_WARNING, "WARNING: a"), (STATUS_OK, "")])
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: next(results))
+
+    def fix(path, delete_backup=False, override_path=None):
+        assert delete_backup == (not keep_backups)
+        if not delete_backup:
+            shutil.copyfile(path, str(path) + ".bak")
+        return STATUS_OK, ""
+
+    monkeypatch.setattr(rs, "fix_integrity", fix)
+    run(mp3, {"integrity"}, settings=Settings(delete_backup_after_fix=not keep_backups))
+    assert (tmp_path / "a.mp3.bak").exists() == keep_backups
+    assert leftovers(tmp_path) == [] and not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp.bak")]
+
+
+# --- bpm / key / loudness / deep check -----------------------------------------
+
+
+def test_bpm_key_loudness_are_written(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "detect_bpm", lambda p: (127.6, STATUS_OK, ""))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("Am", STATUS_OK, ""))
+    monkeypatch.setattr(rs, "measure_loudness", lambda p, override_path=None: (-14.0, -4.0, STATUS_OK, ""))
+    entry, _ = run(mp3, {"bpm", "key", "loudness"})
+    assert entry.status is FileStatus.CHANGED
+    from mutagen.id3 import ID3
+    tags = ID3(str(mp3.path))
+    assert str(tags["TBPM"].text[0]) == "128" and str(tags["TKEY"].text[0]) == "Am"
+    assert "-4.00 dB" in str(tags["TXXX:REPLAYGAIN_TRACK_GAIN"].text[0])
+
+
+def test_existing_bpm_and_key_tags_are_kept_by_default(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    from mutagen.id3 import ID3, TBPM, TKEY
+    tags = ID3(str(mp3.path))
+    tags.add(TBPM(encoding=3, text="90"))
+    tags.add(TKEY(encoding=3, text="C"))
+    tags.save(str(mp3.path))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p: pytest.fail("must not measure"))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: pytest.fail("must not detect"))
+    entry, _ = run(mp3, {"bpm", "key"})
+    assert entry.status is FileStatus.UNCHANGED
+
+
+def test_missing_and_failed_tools_do_not_touch_the_file(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_TOOL_MISSING, "aubio is not installed"))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("", STATUS_ERROR, "boom"))
+    monkeypatch.setattr(rs, "measure_loudness", lambda p, override_path=None: (None, None, STATUS_TOOL_MISSING, "ffmpeg not found"))
+    entry, env = run(mp3, {"bpm", "key", "loudness"})
+    assert entry.status is FileStatus.FAILED and len(entry.failures) == 1  # only the key tool failing
+    assert recycle_bin.trashed == []
+    assert "aubio is not installed" in env.notes_text() and "ffmpeg not found" in env.notes_text()
+
+
+def test_deep_check_is_off_by_default_and_stamps_when_on(tmp_path, monkeypatch):
+    assert not rs.DeepCheckStep().default_enabled
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "deep_check_integrity", lambda p, override_path=None: (STATUS_ERROR, "decode error"))
+    monkeypatch.setattr(rs, "probe_format", lambda p, override_path=None: ("LAME", 44100, 2, STATUS_OK, ""))
+    entry, _ = run(mp3, {"deep_check"})
+    assert entry.status is FileStatus.CHANGED
+    assert mp3.deep_check_stamp.startswith("ERROR;") and mp3.sample_rate_hz == 44100
+
+
+def test_deep_check_tool_error_is_not_stamped(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "deep_check_integrity", lambda p, override_path=None: (STATUS_TOOL_ERROR, "timeout"))
+    entry, _ = run(mp3, {"deep_check"})
+    assert entry.status is FileStatus.FAILED and mp3.deep_check_stamp == ""
+
+
+# --- tag lookup -------------------------------------------------------------------
+
+
+def _release():
+    return Release(
+        id="rel1", title="Album", artist="Artist", date="1999-05-01",
+        tracks=[ReleaseTrack(1, 1, "Song", 0.4, "rec1", "Artist")], track_count=1,
+    )
+
+
+def _patch_musicbrainz(monkeypatch):
+    monkeypatch.setattr(rs, "find_tool", lambda *a, **k: None)
+    monkeypatch.setattr(rs, "find_album", lambda facts, query: [match_release(facts, _release())])
+
+
+def test_exact_tag_match_fills_only_missing_fields(tmp_path, monkeypatch):
+    _patch_musicbrainz(monkeypatch)
+    mp3 = make_file(tmp_path, title="Song", album="Album", artist="Artist", genre="Mine")
+    entry, _ = run(mp3, {"tags"})
+    assert entry.status is FileStatus.CHANGED
+    assert mp3.track == "1" and mp3.year == "1999" and mp3.albumartist == "Artist"
+    assert mp3.musicbrainz_albumid == "rel1" and mp3.musicbrainz_trackid == "rec1"
+    assert mp3.genre == "Mine" and mp3.title == "Song"
+    assert not mp3.dirty
+
+
+def test_existing_values_are_not_overwritten_unless_asked(tmp_path, monkeypatch):
+    _patch_musicbrainz(monkeypatch)
+    mp3 = make_file(tmp_path, title="Song", album="Album", artist="Artist", year="1985")
+    run(mp3, {"tags"})
+    assert mp3.year == "1985"
+    run(mp3, {"tags"}, {"tags": {"overwrite": True}})
+    assert mp3.year == "1999"
+
+
+def test_complete_tags_make_no_network_request(tmp_path, monkeypatch):
+    monkeypatch.setattr(rs, "find_album", lambda *a: pytest.fail("no lookup needed"))
+    mp3 = make_file(
+        tmp_path, title="Song", album="Album", artist="Artist", albumartist="Artist", track="1", year="1999"
+    )
+    entry, _ = run(mp3, {"tags"})
+    assert entry.status is FileStatus.UNCHANGED
+
+
+def test_weaker_match_routes_by_threshold(tmp_path, monkeypatch):
+    _patch_musicbrainz(monkeypatch)
+    # no artist tag: the match is about 85% -> applied at 0.5, reviewed at 0.9 and 0.95
+    low = make_file(tmp_path, "low.mp3", title="Song", album="Album")
+    entry, _ = run(low, {"tags"}, threshold=0.5)
+    assert entry.status is FileStatus.CHANGED and low.track == "1"
+    assert any("auto-applied at" in a for a in entry.applied)
+    for threshold in (0.9, 0.95):
+        file = make_file(tmp_path, f"t{threshold}.mp3", title="Song", album="Album")
+        entry, _ = run(file, {"tags"}, threshold=threshold)
+        assert entry.status is FileStatus.NEEDS_REVIEW and not entry.applied
+        assert 0.8 < entry.review[0].confidence < 0.9
+        assert file.track == ""
+    assert "track=" in str(entry.review[0].value)
+
+
+def test_album_mismatch_is_low_confidence(tmp_path, monkeypatch):
+    _patch_musicbrainz(monkeypatch)
+    mp3 = make_file(tmp_path, title="Song", album="Something Else", artist="Artist")
+    entry, _ = run(mp3, {"tags"})
+    assert entry.status is FileStatus.NEEDS_REVIEW and entry.review[0].confidence < 0.7
+
+
+def test_fingerprint_match_uses_the_acoustid_score(tmp_path, monkeypatch):
+    from core.acoustid_lookup import RecordingHit
+
+    mp3 = make_file(tmp_path, title="junk", album="junk")
+    monkeypatch.setattr(rs, "find_tool", lambda *a, **k: Path("fpcalc"))
+    monkeypatch.setattr(
+        rs, "identify_files", lambda paths, fpcalc: ([[RecordingHit("rec1", 0.97, {"rel1"})]], [])
+    )
+    monkeypatch.setattr(rs, "find_album", lambda facts, query: [])
+    monkeypatch.setattr(rs, "candidate_releases", lambda hits, limit=5: ["rel1"])
+    monkeypatch.setattr(rs, "find_album_by_recordings", lambda facts, ids: [match_release(facts, _release())])
+    entry, _ = run(mp3, {"tags"}, threshold=0.99)
+    assert entry.status is FileStatus.NEEDS_REVIEW
+    assert entry.review[0].confidence == pytest.approx(0.97) and "AcoustID" in entry.review[0].reason
+    entry, _ = run(mp3, {"tags"}, threshold=0.95)
+    assert entry.status is FileStatus.CHANGED and mp3.title == "junk"  # existing title kept
+    assert mp3.musicbrainz_trackid == "rec1"
+
+
+def test_offline_is_nothing_with_a_note_not_a_failure(tmp_path, monkeypatch, recycle_bin):
+    monkeypatch.setattr(rs, "find_tool", lambda *a, **k: None)
+
+    def offline(facts, query):
+        raise MusicBrainzError("Could not reach MusicBrainz")
+
+    monkeypatch.setattr(rs, "find_album", offline)
+    mp3 = make_file(tmp_path, title="Song", album="Album")
+    entry, env = run(mp3, {"tags"})
+    assert entry.status is FileStatus.UNCHANGED and not entry.failures
+    assert "Could not reach MusicBrainz" in env.notes_text() and recycle_bin.trashed == []
+
+
+def test_album_lookup_happens_once_per_folder(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(rs, "find_tool", lambda *a, **k: None)
+    monkeypatch.setattr(rs, "find_album", lambda facts, query: calls.append(len(facts)) or [])
+    a = make_file(tmp_path, "a.mp3", title="One", album="Album")
+    b = make_file(tmp_path, "b.mp3", title="Two", album="Album")
+    env = rs.RedactEnv(Settings())
+    env.begin([a, b])
+    catalogue = rs.run_catalogue()
+    recipe = Recipe.default_for(catalogue)
+    recipe.enabled = {s.key: s.key == "tags" for s in catalogue}
+    resolved = rs.recipe_for_run(recipe, catalogue).resolve(catalogue)
+    for m in (a, b):
+        run_recipe_on_item(m, resolved, 0.9, lambda x: rs.Mp3Ctx(x, env))
+    assert calls == [2]
+
+
+# --- cover ------------------------------------------------------------------------
+
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+
+def test_folder_image_is_embedded_at_default_threshold(tmp_path):
+    (tmp_path / "cover.jpg").write_bytes(JPEG)
+    mp3 = make_file(tmp_path)
+    entry, _ = run(mp3, {"cover"})
+    assert entry.status is FileStatus.CHANGED and mp3.has_cover
+    from core.cover_art import read_cover
+    assert read_cover(mp3.path)[0] == JPEG
+
+
+def test_cover_below_threshold_goes_to_review(tmp_path):
+    (tmp_path / "cover.jpg").write_bytes(JPEG)
+    mp3 = make_file(tmp_path)
+    before = mp3.path.read_bytes()
+    entry, _ = run(mp3, {"cover"}, threshold=0.95)
+    assert entry.status is FileStatus.NEEDS_REVIEW and mp3.path.read_bytes() == before
+
+
+def test_existing_cover_is_left_alone(tmp_path):
+    (tmp_path / "cover.jpg").write_bytes(JPEG)
+    mp3 = make_file(tmp_path)
+    mp3.set_cover(JPEG, "image/jpeg")
+    from core.tag_writer import save_tags
+    assert save_tags(mp3)
+    entry, _ = run(mp3, {"cover"})
+    assert entry.status is FileStatus.UNCHANGED
+
+
+def test_online_cover_needs_a_release_id(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.setattr(rs, "fetch_front_cover", lambda rid, fetch=None, size=250: asked.append((rid, size)) or JPEG)
+    plain = make_file(tmp_path, "p.mp3")
+    assert run(plain, {"cover"})[0].status is FileStatus.UNCHANGED and asked == []
+    tagged = make_file(tmp_path, "t.mp3", musicbrainz_albumid="rel1")
+    entry, _ = run(tagged, {"cover"})
+    assert entry.status is FileStatus.CHANGED and asked == [("rel1", 500)]
+
+
+# --- rename -----------------------------------------------------------------------
+
+
+class Log:
+    def __init__(self):
+        self.recorded = []
+
+    def record(self, label, renames):
+        self.recorded.append((label, renames))
+
+
+def test_rename_default_depends_on_a_saved_pattern():
+    assert not rs.RenameStep(Settings()).default_enabled
+    assert rs.RenameStep(Settings(pattern_history=["%title%"])).default_enabled
+
+
+def test_rename_uses_the_saved_pattern_and_logs(tmp_path):
+    settings = Settings(pattern_history=["%track% - %title%"], rename_zero_pad=True, rename_zero_pad_width=2)
+    mp3 = make_file(tmp_path, title="Song", track="3")
+    log = Log()
+    entry, _ = run(mp3, {"rename"}, settings=settings, rename_log=log)
+    assert mp3.path.name == "03 - Song.mp3" and mp3.path.exists()
+    assert not (tmp_path / "a.mp3").exists()
+    assert log.recorded == [("Redact", [(str(tmp_path / "a.mp3"), str(mp3.path))])]
+    assert any("renamed to" in a for a in entry.applied)
+
+
+def test_rename_never_clobbers_and_skips_when_already_named(tmp_path):
+    settings = Settings(pattern_history=["%title%"])
+    (tmp_path / "Song.mp3").write_bytes(b"someone else's file")
+    mp3 = make_file(tmp_path, title="Song")
+    run(mp3, {"rename"}, settings=settings)
+    assert mp3.path.name == "Song (2).mp3"
+    assert (tmp_path / "Song.mp3").read_bytes() == b"someone else's file"
+    entry, _ = run(mp3, {"rename"}, settings=Settings(pattern_history=["%title% (2)"]))
+    assert entry.status is FileStatus.UNCHANGED  # already matches: own path is no collision
+
+
+def test_rename_without_a_pattern_or_title_is_a_noted_nothing(tmp_path):
+    mp3 = make_file(tmp_path, title="Song")
+    entry, env = run(mp3, {"rename"})
+    assert entry.status is FileStatus.UNCHANGED and "no rename pattern" in env.notes_text()
+    untitled = make_file(tmp_path, "u.mp3")
+    entry, env = run(untitled, {"rename"}, settings=Settings(pattern_history=["%title%"]))
+    assert untitled.path.name == "u.mp3" and "no title" in env.notes_text()
+
+
+# --- save stage, guards ---------------------------------------------------------------
+
+
+def test_unsaved_edits_and_load_errors_are_skipped_with_a_report_line(tmp_path, recycle_bin):
+    dirty = make_file(tmp_path, "d.mp3")
+    dirty.title, dirty.dirty = "unsaved", True
+    broken = make_file(tmp_path, "b.mp3")
+    broken.load_error = "boom"
+    before = {m.path: m.path.read_bytes() for m in (dirty, broken)}
+    for mp3, phrase in ((dirty, "unsaved edits"), (broken, "could not be read")):
+        entry, _ = run(mp3, {"integrity"})
+        assert entry.status is FileStatus.ABORTED and phrase in entry.failures[0]
+    assert {m.path: m.path.read_bytes() for m in (dirty, broken)} == before
+    assert dirty.title == "unsaved" and dirty.dirty and recycle_bin.trashed == []
+    assert leftovers(tmp_path) == []
+
+
+def test_failed_verification_leaves_the_original_untouched(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    before = mp3.path.read_bytes()
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
+    monkeypatch.setattr(rs, "verify_written_file", lambda *a: False)
+    entry, _ = run(mp3, {"integrity"})
+    assert any("NOT SAVED" in f and "verification" in f for f in entry.failures)
+    assert mp3.path.read_bytes() == before and recycle_bin.trashed == [] and leftovers(tmp_path) == []
+
+
+def test_write_error_is_reported_as_not_saved(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
+    monkeypatch.setattr(rs, "apply_tags_to_file", lambda m, p: "disk full")
+    entry, _ = run(mp3, {"integrity"})
+    assert any("NOT SAVED" in f and "disk full" in f for f in entry.failures)
+    assert recycle_bin.trashed == [] and leftovers(tmp_path) == []
+
+
+def test_a_failed_recycle_bin_keeps_the_original_beside_the_new_file(tmp_path, monkeypatch, recycle_bin):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
+    recycle_bin.fail_with = OSError("no bin on this share")
+    entry, env = run(mp3, {"integrity"})
+    assert any("original is kept at" in a for a in entry.applied)
+    assert (tmp_path / "a.redact-orig.mp3").exists() and "no bin" in env.notes_text()
+
+
+def test_nothing_changed_means_no_rewrite(tmp_path, recycle_bin):
+    mp3 = make_file(tmp_path)
+    before = mp3.path.read_bytes()
+    entry, _ = run(mp3, set())
+    assert entry.status is FileStatus.UNCHANGED and mp3.path.read_bytes() == before
+    assert recycle_bin.trashed == []
+
+
+# --- recipe ---------------------------------------------------------------------
+
+
+def test_defaults_match_the_brief():
+    cat = {s.key: s for s in rs.build_catalogue(Settings())}
+    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "tags", "cover", "rename"]
+    assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "rename"]
+
+
+def test_recipe_for_run_pins_save_then_rename_last():
+    cat = rs.run_catalogue(Settings())
+    recipe = Recipe(order=["rename", "save", "cover", "integrity"], enabled={"save": False, "rename": True})
+    resolved = [s.key for s, _ in rs.recipe_for_run(recipe, cat).resolve(cat)]
+    assert resolved[-2:] == ["save", "rename"] and "save" in resolved
+
+
+def test_recipe_round_trips_through_the_settings_file(tmp_path):
+    from core.settings import load_settings, save_settings
+
+    cat = rs.build_catalogue(Settings())
+    recipe = Recipe.default_for(cat)
+    recipe.enabled["deep_check"] = True
+    recipe.options["integrity"] = {"fix": False}
+    recipe.confidence_threshold = 0.75
+    recipe.order.reverse()
+    save_settings(Settings(redact_recipe=rs.recipe_to_setting(recipe)), tmp_path)
+    loaded = rs.recipe_from_setting(load_settings(tmp_path).redact_recipe, cat)
+    assert loaded.to_dict() == recipe.to_dict()
+    assert rs.recipe_from_setting("", cat).enabled["integrity"] is True
+    assert rs.recipe_from_setting("not json", cat).confidence_threshold == 0.9

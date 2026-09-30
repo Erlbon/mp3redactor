@@ -237,12 +237,13 @@ def fetch_release(release_id: str, fetch: Optional[Callable] = None) -> Release:
     return release
 
 
-def fetch_front_cover(release_id: str, fetch: Optional[Callable] = None) -> Optional[bytes]:
-    """The release's front cover (250px) from the Cover Art Archive, or
-    None -- a preview only, never written anywhere by the lookup."""
+def fetch_front_cover(release_id: str, fetch: Optional[Callable] = None, size: int = 250) -> Optional[bytes]:
+    """The release's front cover (`size` px: 250, 500 or 1200) from the
+    Cover Art Archive, or None. The lookup dialog only previews the
+    default 250; Redact (core/redact_steps.py) embeds a 500."""
     fetch = fetch or _raw_fetch
     try:
-        return fetch_bytes(f"{COVER_ART_BASE}/release/{release_id}/front-250", fetch, error_cls=MusicBrainzError)
+        return fetch_bytes(f"{COVER_ART_BASE}/release/{release_id}/front-{size}", fetch, error_cls=MusicBrainzError)
     except MusicBrainzError:
         return None
 
