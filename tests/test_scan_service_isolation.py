@@ -5,7 +5,7 @@ still runs. Load-error files never get marked dirty by a detection."""
 from pathlib import Path
 from unittest.mock import patch
 
-from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK
+from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR
 from core.scan_service import (
     run_bpm_check, run_deep_check, run_key_detection, run_loudness_measurement,
     run_lyrics_fetch,
@@ -61,7 +61,7 @@ def test_loudness_isolates_a_raising_file(_m):
 def test_deep_check_isolates_a_raising_file(_m, _p):
     bad, good = _files()
     run_deep_check([bad, good], max_workers=2)
-    assert bad.deep_check_status == STATUS_ERROR
+    assert bad.deep_check_status == STATUS_TOOL_ERROR
     assert good.deep_check_status == STATUS_OK
 
 

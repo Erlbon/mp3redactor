@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-30#07 -- A failed tool is not a bad file
+
+- **Fixed: a timed-out or crashed mp3val/ffmpeg could stamp a false ERROR into a healthy file.** Integrity and Deep Check now show `TOOL ERROR` (orange, message in the tooltip) when the tool itself failed -- timeout, could not start, or exited with no findings -- and nothing is stamped or marked unsaved. An earlier good stamp stays as it was.
+- Real findings are unchanged: mp3val ERROR/WARNING lines and ffmpeg decode errors are still ERROR/WARNING and are stamped. After a Fix that ends in TOOL ERROR the file is re-read from disk (the tool may have modified it) but not stamped.
+
 ## 2026-09-30#06 -- Scan results are remembered in the file
 
 - **Integrity and Deep Check results now carry a timestamp that is saved in the MP3 itself** (ID3 frames `REDACTOR_INTEGRITY` and `REDACTOR_DEEP_CHECK`, value like `OK;2026-09-30T14:05:11Z`), so the record survives copying the file. Running a check (or Fix) marks the file as unsaved; Save writes the stamp.

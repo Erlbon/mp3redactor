@@ -46,7 +46,7 @@ import shutil
 from pathlib import Path
 
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QSize, Qt
-from PyQt6.QtGui import QIcon, QImage
+from PyQt6.QtGui import QColor, QIcon, QImage
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -71,6 +71,7 @@ from core.mp3_file import (
     MP3File,
     STATUS_ERROR,
     STATUS_OK,
+    STATUS_TOOL_ERROR,
     STATUS_TOOL_MISSING,
     STATUS_UNCHECKED,
     STATUS_WARNING,
@@ -225,6 +226,9 @@ STATUS_COLORS = {
     STATUS_WARNING: Qt.GlobalColor.darkYellow,
     STATUS_ERROR: Qt.GlobalColor.red,
     STATUS_TOOL_MISSING: Qt.GlobalColor.gray,
+    # Orange: distinct from a WARNING verdict (yellow) and an ERROR verdict
+    # (red) -- the tool failed, the file was never judged.
+    STATUS_TOOL_ERROR: QColor("darkorange"),
 }
 
 TAG_PANEL_COLLAPSED_WIDTH = 32
@@ -1922,8 +1926,8 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _integrity_display(mp3: MP3File) -> str:
-        if mp3.integrity_status == STATUS_TOOL_MISSING:
-            return "TOOL MISSING"
+        if mp3.integrity_status in (STATUS_TOOL_MISSING, STATUS_TOOL_ERROR):
+            return mp3.integrity_status
         return scan_display(mp3.integrity_status, mp3.integrity_stamp)
 
     @staticmethod
@@ -1960,8 +1964,8 @@ class MainWindow(QMainWindow):
         # Same convention as _integrity_display() above -- the status
         # word plus the stamp's local time, or "UNCHECKED" for a file
         # that's never been deep-checked, not blanked to an empty cell.
-        if mp3.deep_check_status == STATUS_TOOL_MISSING:
-            return "TOOL MISSING"
+        if mp3.deep_check_status in (STATUS_TOOL_MISSING, STATUS_TOOL_ERROR):
+            return mp3.deep_check_status
         return scan_display(mp3.deep_check_status, mp3.deep_check_stamp)
 
     # -- context menu -----------------------------------------------------

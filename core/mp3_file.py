@@ -20,6 +20,10 @@ STATUS_OK = "OK"
 STATUS_WARNING = "WARNING"
 STATUS_ERROR = "ERROR"
 STATUS_TOOL_MISSING = "TOOL MISSING"
+# The external tool itself failed (timeout, launch/OS failure, crash with
+# no verdict) -- NOT a finding about the file, so it is never stamped and
+# never reported as a bad file. See core/mp3val_runner.py / ffmpeg_probe.py.
+STATUS_TOOL_ERROR = "TOOL ERROR"
 
 # TXXX frame descriptions for the two mp3tag "advanced" fields that
 # aren't backed by a dedicated 4-letter ID3 frame -- shared between
@@ -44,7 +48,7 @@ MUSICBRAINZ_UFID_OWNER = "http://musicbrainz.org"
 INTEGRITY_SCAN_DESC = "REDACTOR_INTEGRITY"
 DEEP_CHECK_SCAN_DESC = "REDACTOR_DEEP_CHECK"
 # Only a scan that actually looked at the file is worth recording;
-# TOOL MISSING / UNCHECKED say nothing about it.
+# TOOL MISSING / TOOL ERROR / UNCHECKED say nothing about it.
 STAMPABLE_STATUSES = frozenset({STATUS_OK, STATUS_WARNING, STATUS_ERROR})
 _STAMP_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -268,8 +272,9 @@ class MP3File:
         """Stores a scan result ("integrity" or "deep_check"). A completed
         scan (OK/WARNING/ERROR) is stamped with the current UTC time and
         marks the file dirty -- Save writes the stamp into the file.
-        TOOL MISSING changes the displayed status only: nothing was
-        scanned, so the stamp (and dirty flag) stay as they were."""
+        TOOL MISSING and TOOL ERROR change the displayed status only:
+        nothing was judged, so the stamp (and dirty flag) stay as they
+        were -- a previous good stamp survives a failed re-scan."""
         setattr(self, f"{kind}_status", status)
         setattr(self, f"{kind}_message", message)
         if status in STAMPABLE_STATUSES and not self.load_error:

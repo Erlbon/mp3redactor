@@ -29,7 +29,7 @@ import math
 import subprocess
 from pathlib import Path
 
-from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 from redactor_common.core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
@@ -61,8 +61,11 @@ def deep_check_integrity(
     being much slower (a real decode, not a header scan).
 
     Returns (status, message): STATUS_OK / STATUS_ERROR /
-    STATUS_TOOL_MISSING. message is ffmpeg's stderr (decode errors) on
-    STATUS_ERROR, empty on STATUS_OK. -v error means ffmpeg prints
+    STATUS_TOOL_MISSING / STATUS_TOOL_ERROR. message is ffmpeg's stderr
+    (decode errors) on STATUS_ERROR, empty on STATUS_OK. A timeout,
+    launch failure, or a non-zero exit with no stderr at all (ffmpeg
+    itself failed, nothing said about the audio) is STATUS_TOOL_ERROR
+    and is never stamped. -v error means ffmpeg prints
     nothing at all on a clean decode -- any stderr output at that
     verbosity is a genuine problem.
     """
@@ -76,13 +79,15 @@ def deep_check_integrity(
             timeout=DEEP_CHECK_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        return STATUS_ERROR, f"ffmpeg timed out after {DEEP_CHECK_TIMEOUT_SECONDS}s"
-    except OSError as e:
-        return STATUS_ERROR, f"failed to launch ffmpeg: {e}"
+        return STATUS_TOOL_ERROR, f"ffmpeg timed out after {DEEP_CHECK_TIMEOUT_SECONDS}s"
+    except (OSError, UnicodeDecodeError) as e:
+        return STATUS_TOOL_ERROR, f"failed to run ffmpeg: {e}"
 
     stderr = result.stderr.strip()
-    if result.returncode != 0 or stderr:
-        return STATUS_ERROR, stderr or f"ffmpeg exited with code {result.returncode}"
+    if stderr:
+        return STATUS_ERROR, stderr  # decode errors: a verdict on the file
+    if result.returncode != 0:
+        return STATUS_TOOL_ERROR, f"ffmpeg exited with code {result.returncode}"
     return STATUS_OK, ""
 
 

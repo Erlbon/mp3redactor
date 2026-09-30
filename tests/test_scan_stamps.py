@@ -15,7 +15,8 @@ import pytest  # noqa: E402
 from mutagen.id3 import ID3, TALB, TIT2, TPE1, TXXX  # noqa: E402
 
 from core.mp3_file import (  # noqa: E402
-    MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING, STATUS_UNCHECKED, STATUS_WARNING,
+    MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_UNCHECKED,
+    STATUS_WARNING,
     parse_scan_stamp, scan_display, scan_tooltip,
 )
 from core.scan_service import run_deep_check, run_integrity_check, run_integrity_fix  # noqa: E402
@@ -139,7 +140,7 @@ def test_crashed_deep_check_does_not_stamp(tmp_path):
     with patch("core.scan_service.deep_check_integrity", side_effect=RuntimeError("boom")), \
             patch("core.scan_service.probe_format", return_value=("", None, None, STATUS_ERROR, "")):
         run_deep_check([mp3], max_workers=1)
-    assert mp3.deep_check_status == STATUS_ERROR
+    assert mp3.deep_check_status == STATUS_TOOL_ERROR
     assert mp3.deep_check_stamp == "" and mp3.dirty is False
 
 

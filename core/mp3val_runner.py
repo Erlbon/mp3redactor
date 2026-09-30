@@ -23,7 +23,9 @@ stdin=DEVNULL, UTF-8 output.
 import subprocess
 from pathlib import Path
 
-from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING, STATUS_WARNING
+from core.mp3_file import (
+    STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_WARNING,
+)
 from core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
@@ -39,9 +41,11 @@ def check_integrity(
     touches the file. See fix_integrity() for the mutating counterpart.
 
     status is one of STATUS_OK / STATUS_WARNING / STATUS_ERROR /
-    STATUS_TOOL_MISSING. message is empty for STATUS_OK, otherwise the
-    concatenated WARNING/ERROR lines mp3val printed (or a short
-    explanation for TOOL_MISSING / a launch failure).
+    STATUS_TOOL_MISSING / STATUS_TOOL_ERROR. message is empty for
+    STATUS_OK, otherwise the concatenated WARNING/ERROR lines mp3val
+    printed (or a short explanation for TOOL_MISSING / TOOL_ERROR).
+    STATUS_ERROR is only ever mp3val's verdict on the file; a timeout,
+    launch failure or crash is STATUS_TOOL_ERROR, which is never stamped.
 
     tool_path lets callers/tests inject a specific binary directly,
     bypassing find_tool() entirely. override_path is different -- it's
@@ -97,9 +101,9 @@ def _run(
         # text=True's locale decoding could raise on a non-ASCII one).
         result = run_tool([str(exe), *extra_args, str(path)], timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        return STATUS_ERROR, f"mp3val timed out after {TIMEOUT_SECONDS}s"
-    except OSError as e:
-        return STATUS_ERROR, f"failed to launch mp3val: {e}"
+        return STATUS_TOOL_ERROR, f"mp3val timed out after {TIMEOUT_SECONDS}s"
+    except (OSError, UnicodeDecodeError) as e:
+        return STATUS_TOOL_ERROR, f"failed to run mp3val: {e}"
 
     return _parse_output(result.stdout, result.returncode, result.stderr)
 
@@ -119,8 +123,8 @@ def _parse_output(stdout: str, returncode: int = 0, stderr: str = "") -> tuple[s
     if warning_lines:
         return STATUS_WARNING, "\n".join(warning_lines)
     if returncode != 0:
-        # A crash or bad invocation prints no WARNING/ERROR lines --
-        # that's not a clean file.
+        # A crash or bad invocation prints no WARNING/ERROR lines -- not
+        # a clean file, but not a verdict on it either: the tool failed.
         detail = (stderr or "").strip() or (stdout or "").strip()
-        return STATUS_ERROR, detail or f"mp3val exited with code {returncode}"
+        return STATUS_TOOL_ERROR, detail or f"mp3val exited with code {returncode}"
     return STATUS_OK, ""

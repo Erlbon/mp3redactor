@@ -26,7 +26,9 @@ from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_form
 from core.keyfinder_runner import detect_key
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_converter import DEFAULT_BITRATE_KBPS, convert_to_mp3
-from core.mp3_file import BASELINE_KEYS, MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import (
+    BASELINE_KEYS, MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING,
+)
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
 from core.tag_writer import save_tags
@@ -127,7 +129,9 @@ def run_integrity_fix(
             mp3.path, delete_backup=delete_backup, override_path=mp3val_path
         )
         if status != STATUS_TOOL_MISSING:
-            reload_from_disk(mp3)  # mp3val -f rewrote the file
+            # mp3val -f rewrote the file. Also after a TOOL ERROR: a
+            # timed-out or crashed fix may have modified it anyway.
+            reload_from_disk(mp3)
         # After the reload, which would otherwise bring back the old
         # stamp from disk over this scan's.
         mp3.record_scan("integrity", status, message)
@@ -415,8 +419,8 @@ def run_deep_check(
                 ) = future.result()
                 mp3.record_scan("deep_check", status, message)
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
-                # Shown as ERROR but not stamped: the check didn't complete.
-                mp3.deep_check_status, mp3.deep_check_message = STATUS_ERROR, _describe(e)
+                # Shown as TOOL ERROR, not stamped: the check didn't complete.
+                mp3.deep_check_status, mp3.deep_check_message = STATUS_TOOL_ERROR, _describe(e)
                 encoder, sample_rate, channels, probe_status = "", None, None, STATUS_ERROR
             # Probe info is kept independent of the deep-check result --
             # a file can fail to fully decode and still have perfectly

@@ -1,7 +1,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING, STATUS_WARNING
+from core.mp3_file import (
+    STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_WARNING,
+)
 from core.mp3val_runner import _parse_output, check_integrity, fix_integrity
 
 
@@ -48,7 +50,7 @@ def test_check_integrity_runs_tool_and_parses_result(mock_run):
 def test_check_integrity_handles_launch_failure(mock_run):
     mock_run.side_effect = OSError("permission denied")
     status, message = check_integrity(Path("song.mp3"), tool_path=Path("mp3val.exe"))
-    assert status == STATUS_ERROR
+    assert status == STATUS_TOOL_ERROR
     assert "permission denied" in message
 
 
@@ -146,10 +148,10 @@ def test_run_passes_no_window_kwargs(mock_run):
 def test_parse_output_nonzero_exit_without_issue_lines_is_an_error():
     nl = chr(10)
     status, message = _parse_output("Analyzing song.mp3" + nl, returncode=2, stderr="boom")
-    assert status == STATUS_ERROR
+    assert status == STATUS_TOOL_ERROR
     assert message == "boom"
     status, message = _parse_output("", returncode=3)
-    assert status == STATUS_ERROR and "3" in message
+    assert status == STATUS_TOOL_ERROR and "3" in message
 
 
 def test_parse_output_warnings_still_win_over_a_nonzero_exit():
