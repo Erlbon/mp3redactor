@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-30#21 -- Adopt redactor_common 2026-09-30-15
+
+- Adopt redactor_common 2026-09-30-15: Redact saves retry briefly when Windows antivirus/indexer briefly locks a file (the shared rename/commit helpers now retry too).
+
 ## 2026-09-30#20 -- Saving survives a briefly locked file
 
 - **Save and Redact no longer fail when Windows holds a file for a moment** (a virus scanner checking the fresh temporary copy, the search indexer). Copying the working file, opening it, writing the tags and swapping it in are retried a few times (6 attempts, 0.15 s apart) when the failure is a file-lock error. Other errors still fail at once, the original is untouched and the temporary copy removed, and if the lock never clears the message now says the file is locked by another program.
