@@ -49,6 +49,8 @@ from typing import Callable
 
 from redactor_common.core.move_plan import execute_move, plan_moves
 from redactor_common.core.os_utils import rename_no_clobber
+from redactor_common.core.filename_parser import normalize_field_value
+from redactor_common.core.path_parser import PathParseResult, folder_value_counts, parse_path_detailed
 from redactor_common.core.pipeline import (
     CommitError,
     FileReport,
@@ -124,11 +126,13 @@ class RedactEnv:
     items: list[MP3File] = field(default_factory=list)
     cleaned: int = 0  # scratch files of an earlier, interrupted run removed by begin()
     _albums: dict = field(default_factory=dict)
+    _path_counts: dict = field(default_factory=dict)  # (pattern, root) -> folder_value_counts of the run
 
     def begin(self, items) -> None:
         """Call before each run."""
         self.items = list(items)
         self._albums.clear()
+        self._path_counts.clear()
         self.cleaned = remove_stale_scratch_files(self.items)
 
 
@@ -516,6 +520,93 @@ def _lookup_folder(env: RedactEnv, folder: str, use_fingerprint: bool) -> Folder
     return result
 
 
+# Field keys and numeric handling the path pattern shares with Parse Filename.
+_PATH_FIELD_KEYS = {key for key, _label, _multiline in FIELDS}
+_PATH_NUMERIC_FIELDS = {"track", "discnumber", "year"}
+
+
+def _is_under(path: str, root: str) -> bool:
+    try:
+        path, root = os.path.normcase(os.path.abspath(path)), os.path.normcase(os.path.abspath(root))
+        return os.path.commonpath([path, root]) == root and path != root
+    except ValueError:  # another drive
+        return False
+
+
+def _parse_path(mp3: MP3File, pattern: str, root: str, corroborate=None) -> PathParseResult:
+    return parse_path_detailed(
+        str(mp3.path), pattern, root, _PATH_FIELD_KEYS, _PATH_NUMERIC_FIELDS,
+        strip_leading_zeros_fields={"track"}, corroborate=corroborate,
+    )
+
+
+def _run_folder_counts(env: RedactEnv, pattern: str, root: str) -> dict:
+    """First pass over the run's files (cheap string work, once per run):
+    how many files share each folder value, so a folder that several files
+    agree on scores higher."""
+    key = (pattern, root)
+    if key not in env._path_counts:
+        results = [_parse_path(m, pattern, root) for m in env.items if not m.load_error]
+        env._path_counts[key] = folder_value_counts(results)
+    return env._path_counts[key]
+
+
+class PathTagsStep(Mp3Step):
+    key = "path_tags"
+    label = "Fill empty tags from the folder path"
+    description = (
+        "Reads tags back out of the file's folders, the mirror of Move into folders: with the pattern "
+        "%albumartist%/%album%/%track% - %title% and the library root set in Import > Parse Filename (or "
+        "Rename / Export Files > Move into folders), Music/Queen/Jazz/03 - Fat Bottomed Girls.mp3 gives "
+        "album artist, album, track and title. Only EMPTY tags are filled; existing values are never "
+        "replaced. The confidence reflects how well the path fits the pattern (a folder shared by several "
+        "files of the run counts for more); below the threshold the match is listed under Needs review. "
+        "Does nothing until a library root is set, and only for files under it. Runs before the online "
+        "tag lookup."
+    )
+
+    def __init__(self, settings: Settings | None = None, *, default_enabled: bool | None = None):
+        super().__init__(default_enabled=True if default_enabled is None else default_enabled)
+        self.options = (
+            OptionSpec(
+                "pattern", "Folder path pattern", "str",
+                settings.saved_path_pattern() if settings else DEFAULT_MOVE_PATTERN,
+                tooltip="Starts as the last folder pattern used in Parse Filename or Move into folders. The last part matches the file name, the others the folders above it.",
+            ),
+        )
+
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        settings = ctx.env.settings
+        root = settings.library_root
+        if not root or not os.path.isdir(root):
+            return StepResult.nothing(
+                note="Folder-path tags skipped: no library root folder "
+                "(choose one in Parse Filename with a path pattern, or in Rename / Export Files > Move into folders)"
+            )
+        if not _is_under(str(ctx.mp3.path), root):
+            return StepResult.nothing()
+        pattern = self.options_for(ctx)["pattern"].strip() or settings.saved_path_pattern()
+        counts = _run_folder_counts(ctx.env, pattern, root)
+        result = _parse_path(
+            ctx.mp3, pattern, root, lambda name, value: counts.get((name, normalize_field_value(value)), 0)
+        )
+        if not result.matched:
+            return StepResult.nothing()
+        fill = {key: value for key, value in result.values.items() if value and not getattr(ctx.work, key, "")}
+        if not fill:
+            return StepResult.nothing()
+        reason = f"folder path matched {pattern!r}"
+        if result.missing_segments:
+            reason += f"; no match for {', '.join(result.missing_segments)}"
+        if result.matched_segments:
+            reason += "; matched " + ", ".join(f"{seg} = {name!r}" for seg, name in result.matched_segments)
+        return StepResult.suggestion(TagFill(fill), result.confidence, reason)
+
+    def apply_suggestion(self, ctx: Mp3Ctx, result: StepResult) -> list[str]:
+        ctx.work.apply_tags(result.value.fields)
+        return [f"{key} = {value!r}" for key, value in result.value.fields.items()]
+
+
 class TagLookupStep(Mp3Step):
     key = "tags"
     label = "Fill missing tags (MusicBrainz / AcoustID)"
@@ -846,6 +937,7 @@ def build_catalogue(settings: Settings | None = None) -> list[Step]:
         KeyStep(),
         LoudnessStep(),
         DeepCheckStep(),
+        PathTagsStep(settings),
         TagLookupStep(),
         CoverStep(),
         RenameStep(settings),

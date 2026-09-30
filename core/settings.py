@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.app_paths import base_dir
+from redactor_common.core.path_parser import is_path_pattern
 from redactor_common.core.pattern_history import dedupe_and_trim
 
 SETTINGS_FILENAME = "mp3redactor_settings.ini"
@@ -174,6 +175,16 @@ class Settings:
 
     def saved_move_pattern(self) -> str:
         return self.move_pattern or DEFAULT_MOVE_PATTERN
+
+    def saved_path_pattern(self) -> str:
+        """The most recent folder-path pattern in the shared history (Parse
+        Filename and Move into folders both write them); the Move default
+        before there is one. Redact's "fill from folder path" step starts
+        here."""
+        for pattern in self.pattern_history:
+            if is_path_pattern(pattern):
+                return pattern
+        return DEFAULT_MOVE_PATTERN
 
     def to_config(self) -> configparser.ConfigParser:
         # interpolation=None -- pattern_history stores literal "%field%"

@@ -611,7 +611,7 @@ def test_the_save_stage_reports_a_skip_even_when_no_step_runs(tmp_path):
 
 def test_defaults_match_the_brief():
     cat = {s.key: s for s in rs.build_catalogue(Settings())}
-    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "tags", "cover", "rename", "move_into_folders"]
+    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "cover", "rename", "move_into_folders"]
     assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "rename", "move_into_folders"]
 
 
@@ -630,11 +630,110 @@ def test_recipe_round_trips_through_the_settings_file(tmp_path):
     cat = rs.build_catalogue(Settings())
     recipe = Recipe.default_for(cat)
     recipe.enabled["deep_check"] = True
+    recipe.enabled["path_tags"] = False
     recipe.options["integrity"] = {"fix": False}
+    recipe.options["path_tags"] = {"pattern": "%genre%/%artist%/%title%"}
     recipe.confidence_threshold = 0.75
     recipe.order.reverse()
     save_settings(Settings(redact_recipe=rs.recipe_to_setting(recipe)), tmp_path)
     loaded = rs.recipe_from_setting(load_settings(tmp_path).redact_recipe, cat)
     assert loaded.to_dict() == recipe.to_dict()
+    assert loaded.options["path_tags"] == {"pattern": "%genre%/%artist%/%title%"} and loaded.enabled["path_tags"] is False
     assert rs.recipe_from_setting("", cat).enabled["integrity"] is True
+    assert rs.recipe_from_setting("", cat).enabled["path_tags"] is True
     assert rs.recipe_from_setting("not json", cat).confidence_threshold == 0.9
+
+
+# --- fill empty tags from the folder path ------------------------------------------
+
+
+def make_in_library(tmp_path, *parts, **tags):
+    """A file at library/<parts...> (the last part is the file name)."""
+    folder = tmp_path / "library" / Path(*parts[:-1])
+    folder.mkdir(parents=True, exist_ok=True)
+    return make_file(folder, parts[-1], **tags)
+
+
+def path_settings(tmp_path, **kw):
+    return Settings(library_root=str(tmp_path / "library"), **kw)
+
+
+def test_path_tags_is_on_by_default_and_runs_before_the_tag_lookup():
+    cat = [s.key for s, _ in Recipe.default_for(rs.build_catalogue(Settings())).resolve(rs.build_catalogue(Settings()))]
+    assert cat.index("path_tags") < cat.index("tags")
+    step = next(s for s in rs.build_catalogue(Settings()) if s.key == "path_tags")
+    assert step.default_enabled and step.options[0].default == "%albumartist%/%album%/%track% - %title%"
+
+
+def test_path_tags_default_pattern_is_the_latest_saved_path_pattern():
+    settings = Settings(pattern_history=["%track% - %title%", "%genre%/%title%", "%album%/%title%"])
+    step = next(s for s in rs.build_catalogue(settings) if s.key == "path_tags")
+    assert step.options[0].default == "%genre%/%title%"
+
+
+def test_path_tags_fills_empty_fields_from_a_well_matching_path(tmp_path, recycle_bin):
+    mp3 = make_in_library(tmp_path, "Queen", "Jazz", "03 - Fat Bottomed Girls.mp3")
+    sibling = make_in_library(tmp_path, "Queen", "Jazz", "04 - Dreamer's Ball.mp3")
+    entry, _ = run(mp3, {"path_tags"}, settings=path_settings(tmp_path), items=[mp3, sibling])
+    assert entry.status is FileStatus.CHANGED
+    assert (mp3.albumartist, mp3.album, mp3.track, mp3.title) == ("Queen", "Jazz", "3", "Fat Bottomed Girls")
+    assert not entry.review
+
+
+def test_path_tags_alone_is_a_bare_folder_guess_and_needs_review(tmp_path, recycle_bin):
+    # a bare %field% folder matches any name (0.75) and nothing else in the run backs it up
+    mp3 = make_in_library(tmp_path, "Queen", "Jazz", "03 - Fat Bottomed Girls.mp3")
+    entry, _ = run(mp3, {"path_tags"}, settings=path_settings(tmp_path))
+    assert entry.status is FileStatus.NEEDS_REVIEW and not mp3.album
+    assert entry.review[0].step_key == "path_tags" and entry.review[0].confidence < 0.9
+
+
+def test_path_tags_never_replaces_existing_values(tmp_path, recycle_bin):
+    mp3 = make_in_library(tmp_path, "Queen", "Jazz", "03 - Fat Bottomed Girls.mp3", title="Kept", album="Kept Album")
+    sibling = make_in_library(tmp_path, "Queen", "Jazz", "04 - Dreamer's Ball.mp3")
+    run(mp3, {"path_tags"}, settings=path_settings(tmp_path), items=[mp3, sibling])
+    assert (mp3.title, mp3.album) == ("Kept", "Kept Album")
+    assert (mp3.albumartist, mp3.track) == ("Queen", "3")
+
+
+def test_path_tags_sends_a_weak_match_to_needs_review(tmp_path, recycle_bin):
+    # the file name doesn't fit "<track> - <title>": the path pattern is only met by the folders
+    mp3 = make_in_library(tmp_path, "Queen", "Jazz", "Fat Bottomed Girls.mp3")
+    entry, _ = run(mp3, {"path_tags"}, settings=path_settings(tmp_path))
+    assert entry.status is FileStatus.UNCHANGED  # the file name doesn't match: nothing to offer
+    assert not mp3.albumartist and not mp3.title
+    # a pattern with one more folder than the path has: matched below the threshold
+    short = make_in_library(tmp_path, "Jazz", "03 - Fat Bottomed Girls.mp3")
+    entry, _ = run(short, {"path_tags"}, settings=path_settings(tmp_path))
+    assert not short.albumartist
+    assert entry.status is FileStatus.NEEDS_REVIEW and "no match for" in entry.review[0].reason
+    # ...and the same result applies once the threshold is lowered
+    entry, _ = run(short, {"path_tags"}, threshold=0.5, settings=path_settings(tmp_path))
+    assert short.album == "Jazz" and short.title == "Fat Bottomed Girls" and not short.albumartist
+
+
+def test_path_tags_without_a_library_root_is_a_noted_nothing(tmp_path, recycle_bin):
+    mp3 = make_in_library(tmp_path, "Queen", "Jazz", "03 - Fat Bottomed Girls.mp3")
+    entry, _ = run(mp3, {"path_tags"}, settings=Settings())
+    assert entry.status is not FileStatus.FAILED and not mp3.album
+    assert "no library root" in notes_of(entry)
+
+
+def test_path_tags_leaves_a_file_outside_the_library_root_alone(tmp_path, recycle_bin):
+    (tmp_path / "library").mkdir()
+    outside = make_file(tmp_path, "03 - Elsewhere.mp3")
+    entry, _ = run(outside, {"path_tags"}, settings=path_settings(tmp_path))
+    assert not outside.title and entry.status is not FileStatus.FAILED
+
+
+def test_path_tags_uses_the_runs_other_files_to_corroborate_a_folder(tmp_path, recycle_bin):
+    bare = {"pattern": "%albumartist%/%album%/%title%"}
+    solo = make_in_library(tmp_path, "Solo", "Only", "Song.mp3")
+    a = make_in_library(tmp_path, "Band", "Album", "One.mp3")
+    b = make_in_library(tmp_path, "Band", "Album", "Two.mp3")
+    settings = path_settings(tmp_path)
+    _, env = run(solo, {"path_tags"}, bare, settings=settings, items=[solo])
+    alone = rs._run_folder_counts(env, bare["pattern"], settings.library_root)
+    _, env = run(a, {"path_tags"}, bare, settings=settings, items=[a, b])
+    together = rs._run_folder_counts(env, bare["pattern"], settings.library_root)
+    assert max(alone.values()) == 1 and together[("album", "album")] == 2 and together[("albumartist", "band")] == 2

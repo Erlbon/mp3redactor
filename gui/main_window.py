@@ -141,6 +141,7 @@ from redactor_common.gui.column_settings_dialog import ColumnSettingsDialog
 from redactor_common.gui.manage_list_dialog import ManageListDialog
 from redactor_common.gui.menu_builder import MenuAction, Separator, Submenu, build_menu_bar
 from redactor_common.gui.context_menu import show_table_context_menu
+from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.progress import ProgressReporter, run_with_progress
 from redactor_common.gui.redact_dialog import (
@@ -926,15 +927,21 @@ class MainWindow(QMainWindow):
         if not targets:
             return
 
+        # Filename patterns first, so a path pattern left by Move into
+        # folders doesn't become the starting pattern; the dialog itself
+        # switches to path mode for any pattern containing "/".
+        names, paths = split_pattern_history(self.settings.pattern_history)
         dialog = ParseFilenameDialog(
             targets, FILENAME_PLACEHOLDERS, lambda mp3: str(mp3.path),
-            pattern_history=self.settings.pattern_history,
+            pattern_history=names + paths,
             default_pattern=DEFAULT_RENAME_PATTERN,
             valid_field_keys={key for key, _label in FILENAME_PLACEHOLDERS},
             numeric_fields=NUMERIC_FILENAME_FIELDS,
             strip_leading_zeros_fields={"track"},
             title="Parse Filename → Metadata",
             item_noun="file",
+            library_root=self.settings.library_root,
+            on_library_root_changed=self._remember_library_root,
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:

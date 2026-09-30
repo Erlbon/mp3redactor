@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30#11 -- Read tags back out of the folder path
+
+- **Import > Parse Filename now understands folders.** A pattern containing `/` (for example `%albumartist%/%album%/%track% - %title%`, the mirror of Move into folders) switches the dialog to path mode: the last part matches the file name, the parts before it the folders above, and a Library Root row and a confidence column appear. The library root is the same one Move into folders uses, and is remembered. Rows are ticked from 50% confidence. Filename-only patterns work as before; the starting pattern is still a filename pattern when the history has both kinds.
+- **Redact gets a "Fill empty tags from the folder path" step** (on by default, runs before the online tag lookup). It fills only EMPTY tags, using a folder pattern option that starts as the most recent folder pattern in the history (else `%albumartist%/%album%/%track% - %title%`). It acts only when a library root is set and the file is under it; with no root the report notes how to set one. Matches at or above the recipe threshold (90%) are applied; weaker ones are listed under Needs review with the matched and missing parts. Files in the same folder in one run corroborate each other, which is what lifts a bare `%album%` folder over the threshold.
+- redactor_common pinned to 2026-09-30-11.
+
 ## 2026-09-30#10 -- Move into folders
 
 - **File > Rename / Export Files has a third mode, "Move into folders".** Pick a library root folder and a pattern with `/` for sub-folders (for example `%albumartist%/%album%/%track% - %title%`); the preview shows where each file will go, missing folders are created, and nothing is overwritten (a name already taken gets "(2)"). The root is remembered between runs.
