@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-30#14 -- Command palette
+
+- **New: Ctrl+K opens a command palette** (also View > Command Palette). Type part of any menu command's name to find and run it without hunting through the menus; greyed commands are listed but cannot be run. The menu layout is also now checked automatically against the family's standard skeleton (labels, letters, shortcuts).
+
 ## 2026-09-30#13 -- New menu layout (family skeleton)
 
 The menus now follow the same layout as the other Redactor tools: **File, Edit, View, Metadata, Analyze, Tools, Help**. Only the menus move in this release; every keyboard shortcut is unchanged (shortcut fixes follow in a later release, with the old keys kept for a while).

@@ -149,6 +149,7 @@ from redactor_common.gui.standard_menus import (
     standard_tools_items,
     standard_view_items,
 )
+from redactor_common.gui.command_palette import add_command_palette
 from redactor_common.gui.case_conversion_dialog import CaseConversionDialog
 from redactor_common.gui.search_replace_dialog import SearchReplaceDialog
 from redactor_common.gui.context_menu import show_table_context_menu
@@ -536,6 +537,9 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.zoom.zoom_out_action)
         toolbar.addWidget(self.zoom.label)
         toolbar.addAction(self.zoom.zoom_in_action)
+
+        # Ctrl+K: search every menu action by name (View > Command Palette).
+        add_command_palette(self, self.action_registry)
 
     # -- about/changelog ----------------------------------------------------
 
