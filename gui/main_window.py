@@ -113,6 +113,7 @@ from core.settings import (
     resolve_start_directory,
     save_settings,
 )
+from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
@@ -166,6 +167,7 @@ from redactor_common.gui.move_runner import run_planned_moves
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.core.rename_log import RenameLog
 from redactor_common.gui.rename_undo import undo_last_rename
+from redactor_common.gui.settings_bundle_dialogs import export_settings, import_settings
 from core.app_paths import base_dir
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
@@ -402,8 +404,8 @@ class MainWindow(QMainWindow):
                 rename_file=self.rename_selected_file,
                 undo_last_rename=self.undo_last_rename,
                 rename_export_move=self.open_rename_dialog,
-                # export_settings / import_settings: (planned) -- the
-                # shared settings-bundle flow isn't wired into this app yet.
+                export_settings=self.export_settings_file,
+                import_settings=self.import_settings_file,
                 remove_from_list=self.remove_selected_from_list,
                 clear_list=self.clear_list,
                 # No explicit shortcut -- Alt+F4 already closes this (or
@@ -1559,6 +1561,49 @@ class MainWindow(QMainWindow):
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             self.settings = dialog.result_settings()
             save_settings(self.settings)
+
+    # -- export / import settings (redactor_common's shared settings bundle) --
+
+    def _settings_adapter(self) -> Mp3SettingsAdapter:
+        # get_settings is a lambda because the Preferences dialog replaces
+        # self.settings with a new object.
+        return Mp3SettingsAdapter(
+            lambda: self.settings, APP_VERSION, redetect_tools=self.open_external_tools_dialog
+        )
+
+    def export_settings_file(self) -> None:
+        export_settings(self, self._settings_adapter())
+
+    def import_settings_file(self) -> None:
+        import_settings(self, self._settings_adapter(), on_applied=self._on_settings_imported)
+
+    def _on_settings_imported(self, result) -> None:
+        """Brings the live window in line with imported settings. Patterns,
+        the recipe, genre/language lists, field defaults and tool paths are
+        read from self.settings each time they're used, so only the column
+        layout (and the panel rows that follow it) needs re-applying."""
+        if "columns" in result.applied:
+            self._apply_column_settings()
+
+    def _apply_column_settings(self) -> None:
+        hidden = sanitize_hidden_fields(
+            set(self.settings.hidden_columns) if self.settings.has_column_preference
+            else set(DEFAULT_HIDDEN_COLUMNS),
+            PROTECTED_COLUMNS,
+        )
+        for key in self._column_keys:
+            self.table.setColumnHidden(self._col_index[key], key in hidden)
+        # Reorder to the imported visual order; signals blocked so moving
+        # one section at a time doesn't persist a half-moved order.
+        order = merge_column_order(self.settings.column_order, ALL_COLUMN_KEYS)
+        header = self.table.horizontalHeader()
+        blocked = header.blockSignals(True)
+        try:
+            for visual, key in enumerate(order):
+                header.moveSection(header.visualIndex(self._col_index[key]), visual)
+        finally:
+            header.blockSignals(blocked)
+        self._sync_panel_visible_fields()
 
     def open_external_tools_dialog(self) -> None:
         dialog = ExternalToolsDialog(self.settings, self)

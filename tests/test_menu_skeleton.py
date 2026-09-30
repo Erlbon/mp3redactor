@@ -80,10 +80,10 @@ def test_menu_contents_and_order(window):
 
 
 def test_every_action_is_connected_or_planned(window):
-    """No dead entries: each enabled menu action has a receiver; the only
-    greyed ones are the documented (planned) settings export/import."""
+    """No dead entries: every menu action is enabled and has a receiver
+    (settings export/import were the last planned ones; wired 2026-09-30#17)."""
     registry = window.action_registry
-    planned = {"export_settings", "import_settings"}
+    planned: set[str] = set()
     for key in registry.keys():
         act = registry[key]
         if key in planned:
