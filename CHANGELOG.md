@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30#20 -- Saving survives a briefly locked file
+
+- **Save and Redact no longer fail when Windows holds a file for a moment** (a virus scanner checking the fresh temporary copy, the search indexer). Copying the working file, opening it, writing the tags and swapping it in are retried a few times (6 attempts, 0.15 s apart) when the failure is a file-lock error. Other errors still fail at once, the original is untouched and the temporary copy removed, and if the lock never clears the message now says the file is locked by another program.
+- The same retry protects the converter's final rename and the settings file write.
+- Test-only: new tests for transient and permanent locks.
+
 ## 2026-09-30#19 -- Redact: fill missing tags from Discogs
 
 - **New Redact step "Fill missing tags (Discogs)"**, right after the MusicBrainz / AcoustID step. It finds the file's album on Discogs (by its tags, which the MusicBrainz step may just have filled, or the folder name) and fills tags that are EMPTY only: title, artist, album artist, album, track, year, genre (Discogs genres plus styles; an option turns the styles off), label, catalogue number and country. Existing values are never replaced.

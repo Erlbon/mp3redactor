@@ -74,6 +74,7 @@ from core.cover_art import find_folder_image, read_cover, sniff_mime
 from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
 from core.fields import FIELDS
 from core.keyfinder_runner import detect_key
+from core.lock_retry import lock_hint, retry_on_lock
 from core.mp3_file import (
     BASELINE_KEYS,
     MP3File,
@@ -204,10 +205,10 @@ class Mp3Ctx:
                 prefix=REDACT_SCRATCH_PREFIX, suffix=".mp3", dir=os.path.dirname(self.original)
             )
             os.close(fd)
-            shutil.copy2(self.original, self.temp)  # keeps the permissions
+            retry_on_lock(lambda: shutil.copy2(self.original, self.temp))  # keeps the permissions
         except OSError as exc:
             self._discard_temp()
-            self.skip_reason = f"couldn't make a working copy ({describe_save_error(exc)})"
+            self.skip_reason = f"couldn't make a working copy ({describe_save_error(exc)}{lock_hint(exc)})"
 
     def save(self) -> StepResult | None:
         """Writes the working copy in place, once (later calls return the
@@ -221,7 +222,7 @@ class Mp3Ctx:
 
     def restore_temp(self) -> None:
         """Back to the original's bytes (after a fix that failed midway)."""
-        shutil.copy2(self.original, self.temp)
+        retry_on_lock(lambda: shutil.copy2(self.original, self.temp))
 
     def _discard_temp(self) -> None:
         for path in (self.temp, self.temp + ".bak"):

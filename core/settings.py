@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.app_paths import base_dir
+from core.lock_retry import retry_on_lock
 from redactor_common.core.path_parser import is_path_pattern
 from redactor_common.core.pattern_history import dedupe_and_trim
 
@@ -302,7 +303,7 @@ def save_settings(settings: Settings, target_dir: Path | None = None) -> None:
         # truncated settings file (which would reset every preference).
         with open(tmp_path, "w", encoding="utf-8") as f:
             settings.to_config().write(f)
-        os.replace(tmp_path, path)
+        retry_on_lock(lambda: os.replace(tmp_path, path))
     except OSError:
         try:
             tmp_path.unlink()

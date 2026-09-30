@@ -19,6 +19,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from core.lock_retry import retry_on_lock
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 from redactor_common.core.subprocess_utils import run_tool
 from redactor_common.core.rename_pattern import unique_path
@@ -112,7 +113,7 @@ def convert_to_mp3(
         message = stderr_lines[-1] if stderr_lines else f"ffmpeg exited with code {result.returncode}"
         return STATUS_ERROR, message
     try:
-        os.replace(tmp_path, dest_path)
+        retry_on_lock(lambda: os.replace(tmp_path, dest_path))
     except OSError as e:
         _remove_quietly(tmp_path)
         return STATUS_ERROR, f"could not move the converted file into place: {e}"

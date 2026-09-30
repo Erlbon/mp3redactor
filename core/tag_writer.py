@@ -51,6 +51,7 @@ import tempfile
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
+from core.lock_retry import lock_hint, retry_on_lock
 from core.mp3_file import (
     ACOUSTID_FINGERPRINT_DESC,
     CATALOG_NUMBER_DESC,
@@ -133,18 +134,18 @@ def save_tags(mp3: MP3File) -> bool:
             prefix=".mp3redactor-", suffix=".tmp", dir=os.path.dirname(target)
         )
         os.close(fd)
-        shutil.copy2(target, tmp_path)  # keeps the permissions
+        retry_on_lock(lambda: shutil.copy2(target, tmp_path))  # keeps the permissions
     except OSError as e:
         _discard(tmp_path)
-        mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
+        mp3.save_error = f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
         return False
 
     error = apply_tags_to_file(mp3, tmp_path)
     if not error:
         try:
-            os.replace(tmp_path, target)
+            retry_on_lock(lambda: os.replace(tmp_path, target))
         except OSError as e:
-            error = f"failed to write tags: {describe_save_error(e)}"
+            error = f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
     if error:
         _discard(tmp_path)
         mp3.save_error = error
@@ -183,9 +184,9 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
     }
 
     try:
-        audio = MP3(file_path)
+        audio = retry_on_lock(lambda: MP3(file_path))  # a just-copied temp can be briefly locked
     except Exception as e:  # noqa: BLE001 -- any open/parse failure blocks writing too
-        return f"failed to open file: {describe_save_error(e)}"
+        return f"failed to open file: {describe_save_error(e)}{lock_hint(e)}"
 
     if audio.tags is None:
         try:
@@ -235,9 +236,11 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
     _write_cover_frame(tags, mp3, APIC)
 
     try:
-        audio.save(v2_version=v2_version)
+        # Re-saving is safe: the frames are already set in memory, and a lock
+        # error happens when the file is opened, before anything is written.
+        retry_on_lock(lambda: audio.save(v2_version=v2_version))
     except Exception as e:  # noqa: BLE001
-        return f"failed to write tags: {describe_save_error(e)}"
+        return f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
     return ""
 
 
