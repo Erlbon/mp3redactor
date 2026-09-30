@@ -15,11 +15,13 @@ tied to which prompt might come up) and costs nothing to also have
 here.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 from redactor_common.core.subprocess_utils import run_tool
+from redactor_common.core.rename_pattern import unique_path
 from core.tool_locator import find_tool
 
 FFMPEG_EXE_NAME = "ffmpeg.exe"
@@ -42,6 +44,27 @@ IMPORTABLE_EXTENSIONS: frozenset[str] = frozenset({
 })
 
 
+def plan_conversions(sources: list[Path]) -> tuple[list[tuple[Path, Path]], list[Path]]:
+    """(src, dest) pairs plus the dests skipped because a file already
+    sits there. dest is the source's name with .mp3 in the same folder;
+    two sources that would share one (a.flac + a.wav -> a.mp3) no longer
+    overwrite each other -- the later one becomes "a (2).mp3"."""
+    claimed: set[str] = set()
+    conversions: list[tuple[Path, Path]] = []
+    skipped: list[Path] = []
+    for src in sources:
+        dest = src.with_suffix(".mp3")
+        if dest.exists():
+            # Never clobber an existing file.
+            skipped.append(dest)
+            continue
+        if os.path.normcase(os.path.abspath(dest)) in claimed:
+            dest = Path(unique_path(str(dest.parent), dest.stem, ".mp3", claimed))
+        claimed.add(os.path.normcase(os.path.abspath(dest)))
+        conversions.append((src, dest))
+    return conversions, skipped
+
+
 def convert_to_mp3(
     src_path: Path,
     dest_path: Path,
@@ -51,8 +74,10 @@ def convert_to_mp3(
 ) -> tuple[str, str]:
     """
     Returns (status, message): STATUS_OK / STATUS_ERROR /
-    STATUS_TOOL_MISSING. Overwrites dest_path if it already exists
-    (-y) -- callers are responsible for deciding whether that's safe
+    STATUS_TOOL_MISSING. Encodes to a temporary file beside dest_path and
+    moves it into place only on success, so a failed/timed-out run
+    leaves no partial .mp3 behind. Overwrites dest_path if it already
+    exists -- callers are responsible for deciding whether that's safe
     (see gui/main_window.py's import flow, which always derives
     dest_path from src_path's own name in the same folder and refuses
     to proceed if a file already sits there, rather than silently
@@ -62,22 +87,40 @@ def convert_to_mp3(
     if exe is None:
         return STATUS_TOOL_MISSING, "ffmpeg not found (not bundled and not on PATH)"
 
+    # Hidden temp name in the same folder (same filesystem, so the final
+    # os.replace is atomic); "-f mp3" because the extension no longer says so.
+    tmp_path = dest_path.with_name(f".{dest_path.name}.converting")
     try:
         result = run_tool(
             [
                 str(exe), "-y", "-i", str(src_path),
                 "-codec:a", "libmp3lame", "-b:a", f"{bitrate_kbps}k",
-                str(dest_path),
+                "-f", "mp3", str(tmp_path),
             ],
             timeout=CONVERT_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
+        _remove_quietly(tmp_path)
         return STATUS_ERROR, f"ffmpeg timed out after {CONVERT_TIMEOUT_SECONDS}s"
     except OSError as e:
+        _remove_quietly(tmp_path)
         return STATUS_ERROR, f"failed to launch ffmpeg: {e}"
 
     if result.returncode != 0:
+        _remove_quietly(tmp_path)
         stderr_lines = result.stderr.strip().splitlines()
         message = stderr_lines[-1] if stderr_lines else f"ffmpeg exited with code {result.returncode}"
         return STATUS_ERROR, message
+    try:
+        os.replace(tmp_path, dest_path)
+    except OSError as e:
+        _remove_quietly(tmp_path)
+        return STATUS_ERROR, f"could not move the converted file into place: {e}"
     return STATUS_OK, ""
+
+
+def _remove_quietly(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass

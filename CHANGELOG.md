@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-30#03 -- Progress for scans and copies, safer imports, mp3val reload
+
+- **Progress while scanning and copying.** Load Files/Folder and Refresh List show a progress dialog while they look for MP3 files, Export by Pattern shows progress (and can be cancelled) while it copies, and loading converted files shows progress too -- on a big or networked library the window no longer looks frozen.
+- **Fixed: Import & Convert could overwrite its own output.** Two sources that map to the same name (a.flac and a.wav) now get distinct names (a.mp3, a (2).mp3) instead of the second silently replacing the first.
+- **Fixed: a failed or timed-out conversion left a partial .mp3 behind.** Conversions are encoded to a temporary file and moved into place only on success.
+- **Fixed: Fix Integrity left stale data in memory.** After mp3val rewrites a file, its tags, duration and bitrate are re-read (pending edits are kept), so a later Save no longer writes the old state back.
+
 ## 2026-09-30#02 -- Saving no longer damages tags
 
 - **Fixed: Save rewrote tags you never touched.** Editing one field collapsed multi-valued frames (an artist tag holding two names became one), several comment/lyrics frames became one, and a comment's language was reset to English. Save now rewrites only the fields you actually changed; a changed comment or lyrics text keeps its language.

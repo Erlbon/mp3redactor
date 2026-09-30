@@ -71,3 +71,34 @@ def test_detection_does_not_mark_a_load_error_file_dirty(_m):
     mp3.load_error = "failed to read tags"
     run_key_detection([mp3], max_workers=1)
     assert mp3.dirty is False
+
+
+def test_integrity_fix_reloads_what_mp3val_changed(tmp_path):
+    import shutil
+
+    from mutagen.id3 import ID3, TALB, TIT2
+
+    from core.scan_service import run_integrity_fix
+    from core.tag_reader import load_tags
+
+    path = tmp_path / "song.mp3"
+    shutil.copyfile(Path(__file__).parent / "fixtures" / "tiny.mp3", path)
+    tags = ID3(path)
+    tags.add(TIT2(encoding=3, text=["Old"]))
+    tags.save(path)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    mp3.apply_tags({"album": "Mine"})  # a pending edit
+
+    def fake_fix(p, **kwargs):
+        t = ID3(p)
+        t.add(TIT2(encoding=3, text=["Fixed"]))
+        t.add(TALB(encoding=3, text=["Disk Album"]))
+        t.save(p)
+        return STATUS_OK, ""
+
+    with patch("core.scan_service.fix_integrity", side_effect=fake_fix):
+        run_integrity_fix([mp3])
+    assert mp3.title == "Fixed"  # untouched field follows the disk
+    assert mp3.album == "Mine" and mp3.dirty  # pending edit survives
+    assert mp3.duration_seconds is not None

@@ -56,3 +56,50 @@ def test_undo_after_save_marks_the_file_dirty_and_saves_the_old_value(window, tm
     fresh = type(a)(path=a.path)
     load_tags(fresh)
     assert fresh.album == ""
+
+
+def test_scan_with_progress_returns_the_scan_result(window):
+    assert window._scan_with_progress("Scanning...", lambda: [1, 2]) == [1, 2]
+
+
+def test_load_paths_scans_under_progress(window, tmp_path, monkeypatch):
+    import shutil
+
+    from tests.test_cover_gui import FIXTURE
+
+    shutil.copyfile(FIXTURE, tmp_path / "a.mp3")
+    labels = []
+    real = window._scan_with_progress
+    monkeypatch.setattr(window, "_scan_with_progress", lambda label, scan: (labels.append(label), real(label, scan))[1])
+    window._load_paths([tmp_path])
+    assert labels == ["Scanning for MP3 files..."]
+    assert [f.filename for f in window.files] == ["a.mp3"]
+
+
+def test_export_copy_runs_under_progress_and_reports_errors(window, tmp_path, monkeypatch):
+    (a,) = _load(window, tmp_path, ["a.mp3"])
+    _select(window, a)
+    out = tmp_path / "copy.mp3"
+
+    class FakeDialog:
+        DialogCode = mw.QDialog.DialogCode
+
+        def __init__(self, *args, **kwargs):
+            self.pattern_edit = type("E", (), {"text": lambda self: "x"})()
+
+        def exec(self):
+            return self.DialogCode.Accepted
+
+        def is_export_mode(self):
+            return True
+
+        def planned_renames(self):
+            return [(a, str(a.path), str(out))]
+
+    calls = []
+    real = mw.run_with_progress
+    monkeypatch.setattr(mw, "RenamePatternDialog", FakeDialog)
+    monkeypatch.setattr(mw, "run_with_progress", lambda *args, **kw: (calls.append(args[3]), real(*args, **kw))[1])
+    window.open_rename_dialog()
+    assert calls == ["Copying files..."]
+    assert out.exists() and a.path.exists()

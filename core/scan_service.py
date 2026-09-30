@@ -26,7 +26,7 @@ from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_form
 from core.keyfinder_runner import detect_key
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_converter import DEFAULT_BITRATE_KBPS, convert_to_mp3
-from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK
+from core.mp3_file import BASELINE_KEYS, MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
 from core.tag_writer import save_tags
@@ -127,8 +127,31 @@ def run_integrity_fix(
         )
         mp3.integrity_status = status
         mp3.integrity_message = message
+        if status != STATUS_TOOL_MISSING:
+            reload_from_disk(mp3)  # mp3val -f rewrote the file
         if progress is not None:
             progress(i, total)
+
+
+def reload_from_disk(mp3: MP3File) -> None:
+    """Re-reads what's on disk after something else changed the file
+    (mp3val -f) so a later Save doesn't write stale in-memory state:
+    duration/bitrate/cover flag always; each tag field unless the user
+    has edited it (still equal to its old baseline) -- pending edits are
+    kept, and compared against the new on-disk baseline from now on."""
+    fresh = MP3File(path=mp3.path)
+    load_tags(fresh)
+    mp3.load_error = fresh.load_error
+    if fresh.load_error:
+        return
+    mp3.duration_seconds = fresh.duration_seconds
+    mp3.bitrate_kbps = fresh.bitrate_kbps
+    if not mp3.cover_change_pending:
+        mp3.has_cover = fresh.has_cover
+    for key in BASELINE_KEYS:
+        if not mp3.tag_changed(key):
+            setattr(mp3, key, getattr(fresh, key))
+    mp3.tag_baseline = fresh.tag_baseline
 
 
 def run_bpm_check(

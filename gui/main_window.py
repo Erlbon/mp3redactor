@@ -49,6 +49,7 @@ from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QSize, Qt
 from PyQt6.QtGui import QIcon, QImage
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QDialog,
     QFileDialog,
     QHeaderView,
@@ -74,7 +75,9 @@ from core.mp3_file import (
     STATUS_UNCHECKED,
     STATUS_WARNING,
 )
-from core.mp3_converter import BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS
+from core.mp3_converter import (
+    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, plan_conversions,
+)
 from core.mp3_genres import COMMON_MP3_GENRES
 from core.mp3_genres import exclude_hidden as exclude_hidden_genres
 from core.mp3_genres import merge_genres
@@ -553,8 +556,27 @@ class MainWindow(QMainWindow):
         self.settings.last_directory = directory_for(path)
         save_settings(self.settings)
 
+    def _scan_with_progress(self, label: str, scan):
+        """Runs a folder walk (find_mp3_files() and friends -- slow on a
+        big or networked library) under an indeterminate, non-cancellable
+        progress dialog, so the window doesn't look frozen. The walk
+        itself stays on this thread; the dialog is pumped between the
+        per-folder steps via the `scan` callable's own single call, so
+        this just shows it (threshold 0) and lets it paint first."""
+        reporter = ProgressReporter(self, 0, label, threshold=0, cancellable=False)
+        try:
+            dialog = reporter.dialog
+            if dialog is not None:
+                dialog.setRange(0, 0)  # busy indicator
+                QApplication.processEvents()
+            return scan()
+        finally:
+            reporter.close()
+
     def _load_paths(self, raw_paths: list[Path]) -> None:
-        mp3_paths = find_mp3_files(raw_paths)
+        mp3_paths = self._scan_with_progress(
+            "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths)
+        )
         if not mp3_paths:
             QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
             return
@@ -604,9 +626,12 @@ class MainWindow(QMainWindow):
             return
 
         existing_paths = [str(mp3.path) for mp3 in self.files]
-        new_paths = find_new_files_in_loaded_folders(
-            existing_paths,
-            lambda folder: find_mp3_files([Path(folder)], recursive=False),
+        new_paths = self._scan_with_progress(
+            "Scanning for new files...",
+            lambda: find_new_files_in_loaded_folders(
+                existing_paths,
+                lambda folder: find_mp3_files([Path(folder)], recursive=False),
+            ),
         )
         all_paths = [Path(p) for p in existing_paths + new_paths]
 
@@ -661,19 +686,7 @@ class MainWindow(QMainWindow):
             return
         bitrate_kbps = BITRATE_CHOICES_KBPS[bitrate_labels.index(chosen_label)]
 
-        conversions: list[tuple[Path, Path]] = []
-        skipped: list[Path] = []
-        for raw_path in paths:
-            src = Path(raw_path)
-            dest = src.with_suffix(".mp3")
-            if dest.exists():
-                # Refuse to silently clobber an existing file of that
-                # name -- same safety-first instinct as this app's
-                # other mutating actions (Fix Integrity's backup,
-                # discard-confirmation on Load).
-                skipped.append(dest)
-                continue
-            conversions.append((src, dest))
+        conversions, skipped = plan_conversions([Path(p) for p in paths])
 
         if skipped:
             names = "\n".join(p.name for p in skipped)
@@ -708,7 +721,11 @@ class MainWindow(QMainWindow):
         failed = [f"{src.name}: {msg}" for src, _dest, status, msg in results if status != STATUS_OK]
 
         if succeeded_dests:
-            newly_loaded = load_files(succeeded_dests)
+            newly_loaded: list[MP3File] = []
+            run_with_progress(
+                self, succeeded_dests, lambda dest, _i: newly_loaded.extend(load_files([dest])),
+                "Loading converted files...", threshold=3, cancellable=False,
+            )
             existing_by_path = {mp3.path.resolve(): i for i, mp3 in enumerate(self.files)}
             for new_mp3 in newly_loaded:
                 resolved = new_mp3.path.resolve()
@@ -807,7 +824,9 @@ class MainWindow(QMainWindow):
         # this project already draws for Save/Fix Integrity (see the
         # Undo section's own docstring above).
         renamed: list[tuple[str, str]] = []
-        for mp3, old_path, new_path in dialog.planned_renames():
+
+        def do_one(planned, _index: int) -> None:
+            mp3, old_path, new_path = planned
             try:
                 if export_mode:
                     shutil.copy2(old_path, new_path)
@@ -817,6 +836,16 @@ class MainWindow(QMainWindow):
                     renamed.append((str(old_path), str(new_path)))
             except OSError as exc:
                 errors.append(f"{Path(old_path).name}: {exc}")
+
+        # Copies can be slow (big files, network shares), so they show
+        # progress and can be cancelled between files; renames are
+        # near-instant, so they never show a dialog in practice.
+        run_with_progress(
+            self, list(dialog.planned_renames()), do_one,
+            "Copying files..." if export_mode else "Renaming files...",
+            threshold=3, cancellable=export_mode,
+            label_for=lambda planned: f"{'Copying' if export_mode else 'Renaming'}: {Path(planned[1]).name}",
+        )
         _rename_log().record("Rename by Pattern", renamed)
 
         self._rebuild_table()

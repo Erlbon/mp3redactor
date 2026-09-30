@@ -79,3 +79,46 @@ def test_convert_to_mp3_tool_missing_when_not_found(tmp_path):
         status, message = convert_to_mp3(tmp_path / "in.wav", tmp_path / "out.mp3")
     assert status == STATUS_TOOL_MISSING
     assert "ffmpeg" in message
+
+
+def _fake_ffmpeg(tmp_path, behaviour):
+    """Stands in for ffmpeg: writes partial output to the last argument,
+    then fails/times out like `behaviour` says."""
+    import subprocess
+
+    def fake(args, timeout=None, **kwargs):
+        Path(args[-1]).write_bytes(b"partial")
+        if behaviour == "timeout":
+            raise subprocess.TimeoutExpired(args, timeout)
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="boom")
+
+    return fake
+
+
+@pytest.mark.parametrize("behaviour", ["timeout", "fail"])
+def test_a_failed_conversion_leaves_no_partial_output(tmp_path, behaviour):
+    dest = tmp_path / "out.mp3"
+    with patch("core.mp3_converter.run_tool", _fake_ffmpeg(tmp_path, behaviour)):
+        status, _ = convert_to_mp3(tmp_path / "in.wav", dest, tool_path=Path("ffmpeg"))
+    assert status == STATUS_ERROR
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_plan_conversions_gives_colliding_sources_distinct_dests(tmp_path):
+    from core.mp3_converter import plan_conversions
+
+    (tmp_path / "taken.mp3").write_bytes(b"x")
+    sources = [tmp_path / n for n in ("a.flac", "a.wav", "a.ogg", "taken.wav")]
+    conversions, skipped = plan_conversions(sources)
+    dests = [d.name for _s, d in conversions]
+    assert dests == ["a.mp3", "a (2).mp3", "a (3).mp3"]
+    assert [p.name for p in skipped] == ["taken.mp3"]
+
+
+@requires_ffmpeg
+def test_successful_conversion_leaves_only_the_mp3(tmp_path):
+    src = tmp_path / "tone.wav"
+    _write_wav(src)
+    status, _ = convert_to_mp3(src, tmp_path / "tone.mp3")
+    assert status == STATUS_OK
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["tone.mp3", "tone.wav"]
