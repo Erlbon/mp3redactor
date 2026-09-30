@@ -189,3 +189,12 @@ def test_dedupe_and_trim_pattern_history_caps_length():
     result = dedupe_and_trim_pattern_history(history, "%new%")
     assert len(result) == 15
     assert result[0] == "%new%"
+
+
+def test_padding_choices_round_trip():
+    from core.settings import Settings
+
+    s = Settings(rename_zero_pad=True, rename_zero_pad_width=3, auto_number_padding=4)
+    back = Settings.from_config(s.to_config())
+    assert (back.rename_zero_pad, back.rename_zero_pad_width, back.auto_number_padding) == (True, 3, 4)
+    assert Settings().rename_zero_pad_width == 2

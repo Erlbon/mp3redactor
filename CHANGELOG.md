@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-30#01 -- Zero-padding remembered, MusicBrainz in the right-click menu
+
+- Rename / Export by Pattern remembers the zero-pad checkbox and width,
+  and Auto-Numbering remembers its "Zero-pad to" width.
+- Right-clicking a file now has **Look Up via MusicBrainz...**, same as
+  the Import menu.
+- redactor_common 2026-09-30-01 (from 2026-09-29-04): the shared dialogs
+  that make the padding memory possible.
+
 ## 2026-09-29#06 -- Shared library update
 
 - redactor_common 2026-09-29-04 (from 2026-09-29-03): a fix to the shared preview loader, which this app doesn't use -- no change in behavior here.

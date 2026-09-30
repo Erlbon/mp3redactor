@@ -740,6 +740,15 @@ class MainWindow(QMainWindow):
         self.settings.ascii_filenames = enabled
         save_settings(self.settings)
 
+    def _remember_rename_zero_pad(self, enabled: bool, width: int) -> None:
+        self.settings.rename_zero_pad = enabled
+        self.settings.rename_zero_pad_width = width
+        save_settings(self.settings)
+
+    def _remember_auto_number_padding(self, width: int) -> None:
+        self.settings.auto_number_padding = width
+        save_settings(self.settings)
+
     def _remember_pattern_used(self, pattern: str) -> None:
         self.settings.pattern_history = dedupe_and_trim_pattern_history(
             self.settings.pattern_history, pattern
@@ -783,6 +792,8 @@ class MainWindow(QMainWindow):
             zero_pad_field="track",
             ascii_only=self.settings.ascii_filenames,
             on_ascii_only_changed=self._remember_ascii_filenames,
+            zero_pad_initial=(self.settings.rename_zero_pad, self.settings.rename_zero_pad_width),
+            on_zero_pad_changed=self._remember_rename_zero_pad,
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:
@@ -900,6 +911,8 @@ class MainWindow(QMainWindow):
             get_value=lambda mp3, key: getattr(mp3, key, "") or "",
             get_display_name=lambda mp3: mp3.filename,
             item_noun="file",
+            padding=self.settings.auto_number_padding,
+            on_padding_changed=self._remember_auto_number_padding,
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:
@@ -1922,6 +1935,11 @@ class MainWindow(QMainWindow):
                 items.append(self.action_rename_file)
             items.append(MenuAction(
                 "number_tracks", "Number Tracks...", lambda: self._quick_number_tracks(files)
+            ))
+            # Every lookup from the Import menu (MusicBrainz is the only
+            # one; Fetch Lyrics below is the other online fetch).
+            items.append(MenuAction(
+                "musicbrainz_lookup", "Look Up via MusicBrainz...", self.open_musicbrainz_lookup_dialog
             ))
             items.extend([
                 Separator(),

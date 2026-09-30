@@ -141,6 +141,11 @@ class Settings:
     # Rename/Export by Pattern's "ASCII-safe filenames" checkbox
     # (redactor_common's RenamePatternDialog), remembered between runs.
     ascii_filenames: bool = False
+    # Rename/Export by Pattern's zero-pad checkbox and width, and
+    # Auto-Numbering's "Zero-pad to" width, remembered between runs.
+    rename_zero_pad: bool = False
+    rename_zero_pad_width: int = 2
+    auto_number_padding: int = 2
 
     def to_config(self) -> configparser.ConfigParser:
         # interpolation=None -- pattern_history stores literal "%field%"
@@ -166,6 +171,9 @@ class Settings:
             "hidden_default_languages": _dump_list(self.hidden_default_languages),
             "pattern_history": _dump_list(self.pattern_history),
             "ascii_filenames": str(self.ascii_filenames),
+            "rename_zero_pad": str(self.rename_zero_pad),
+            "rename_zero_pad_width": str(self.rename_zero_pad_width),
+            "auto_number_padding": str(self.auto_number_padding),
         }
         return config
 
@@ -191,6 +199,9 @@ class Settings:
             hidden_default_languages=_load_str_list(section.get("hidden_default_languages", fallback="")),
             pattern_history=_load_str_list(section.get("pattern_history", fallback="")),
             ascii_filenames=section.getboolean("ascii_filenames", fallback=False),
+            rename_zero_pad=section.getboolean("rename_zero_pad", fallback=False),
+            rename_zero_pad_width=section.getint("rename_zero_pad_width", fallback=2),
+            auto_number_padding=section.getint("auto_number_padding", fallback=2),
         )
 
 
