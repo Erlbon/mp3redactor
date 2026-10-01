@@ -446,6 +446,10 @@ class MainWindow(QMainWindow):
                     Separator(),
                     look_up_submenu([
                         MenuAction("musicbrainz_lookup", "&MusicBrainz…", self.open_musicbrainz_lookup_dialog),
+                        MenuAction(
+                            "musicbrainz_local_lookup", "Music&Brainz (Local Database)…",
+                            self.open_musicbrainz_local_lookup_dialog,
+                        ),
                         MenuAction("discogs_lookup", "&Discogs…", self.open_discogs_lookup_dialog),
                         MenuAction("fetch_lyrics", "&Lyrics", self.run_lyrics_fetch),
                     ]),
@@ -1011,8 +1015,6 @@ class MainWindow(QMainWindow):
         an existing, different value goes through the family's per-field
         overwrite review first; the result is one Undo step and is
         written on Save, like every other edit."""
-        from redactor_common.gui.overwrite_review_dialog import resolve_overwrite_conflicts
-
         from gui.musicbrainz_lookup_dialog import MusicBrainzLookupDialog, group_by_folder
 
         targets = self._require_targets("look up")
@@ -1025,6 +1027,52 @@ class MainWindow(QMainWindow):
         # lookup works from tags and folder names as before.
         fpcalc = find_tool(FPCALC_EXE_NAME, override=self.settings.fpcalc_path or None)
         dialog = MusicBrainzLookupDialog(group_by_folder(targets), self, fpcalc=fpcalc)
+        self._apply_musicbrainz_dialog(dialog, "MusicBrainz Lookup")
+
+    def open_musicbrainz_local_lookup_dialog(self) -> None:
+        """Metadata > Look Up > MusicBrainz (Local Database)...: the same review dialog
+        answered from the offline database (core/musicbrainz_local.py). Without one set up,
+        explain and offer Tools > MusicBrainz Database... rather than just failing."""
+        from core.acoustid_lookup import FPCALC_EXE_NAME
+        from core.musicbrainz_local import MusicBrainzLocalError, open_database
+        from core.tool_locator import find_tool
+        from gui.musicbrainz_local_dialog import MusicBrainzLocalLookupDialog, group_by_folder
+
+        name = "MusicBrainz (Local Database)"
+        targets = self._require_targets("look up")
+        if not targets:
+            return
+        path = self.settings.musicbrainz_database
+        if not path or not os.path.isfile(path):
+            reply = QMessageBox.question(
+                self, name,
+                "No local MusicBrainz database is set up yet. It is built from MusicBrainz's free core data "
+                "dump (about 7 GB), which you download yourself.\n\n"
+                "Open Tools > MusicBrainz Database... "
+                "to set it up?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.open_musicbrainz_settings_dialog()
+            path = self.settings.musicbrainz_database
+            if not path or not os.path.isfile(path):
+                return
+        try:
+            db = open_database(path)  # fail here, with the file's own message, not once per album
+        except MusicBrainzLocalError as exc:
+            QMessageBox.warning(self, name, f"{exc}\n\nCheck Tools > MusicBrainz Database...")
+            return
+        fpcalc = find_tool(FPCALC_EXE_NAME, override=self.settings.fpcalc_path or None)
+        dialog = MusicBrainzLocalLookupDialog(group_by_folder(targets), db, self, fpcalc=fpcalc)
+        self._apply_musicbrainz_dialog(dialog, "MusicBrainz Lookup (Local Database)")
+
+    def _apply_musicbrainz_dialog(self, dialog, undo_name: str) -> None:
+        """Runs a MusicBrainz review dialog and applies what was ticked: anything that would
+        overwrite a different value goes through the per-field overwrite review, the result is
+        one Undo step and is written on Save."""
+        from redactor_common.gui.overwrite_review_dialog import resolve_overwrite_conflicts
+
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         changes = dialog.file_changes()
@@ -1038,7 +1086,7 @@ class MainWindow(QMainWindow):
         )
         if not approved:
             return
-        self._push_undo("MusicBrainz Lookup", files)
+        self._push_undo(undo_name, files)
         for index, fields in approved.items():
             files[index].apply_tags(fields)
         self._rebuild_table()
@@ -2359,6 +2407,10 @@ class MainWindow(QMainWindow):
             items.extend([
                 look_up_submenu([
                     MenuAction("musicbrainz_lookup", "MusicBrainz…", self.open_musicbrainz_lookup_dialog),
+                    MenuAction(
+                        "musicbrainz_local_lookup", "MusicBrainz (Local Database)…",
+                        self.open_musicbrainz_local_lookup_dialog,
+                    ),
                     MenuAction("discogs_lookup", "Discogs…", self.open_discogs_lookup_dialog),
                     MenuAction("fetch_lyrics", "Lyrics", self.run_lyrics_fetch),
                 ]),

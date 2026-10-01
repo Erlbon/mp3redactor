@@ -68,6 +68,8 @@ def _summary_fields(match: ReleaseMatch) -> dict[str, str]:
         "album": release.title,
         "album artist": release.artist,
         "released": " ".join(b for b in (release.date, release.country) if b),
+        # only the local database's releases know their label (core/musicbrainz_local.py)
+        "label": " ".join(b for b in (getattr(release, "label_name", ""), getattr(release, "catno", "")) if b),
         "format": release.media_formats,
         "tracks": str(release.track_count),
         "match": match.summary(),
@@ -76,39 +78,54 @@ def _summary_fields(match: ReleaseMatch) -> dict[str, str]:
 
 
 class MusicBrainzLookupDialog(LookupDialogBase):
+    # What the offline twin (gui/musicbrainz_local_dialog.py) changes: its texts, the search form,
+    # the cover (the Cover Art Archive is online) and the field mapping.
+    window_title = "Look Up via MusicBrainz"
+    search_label = "Searching MusicBrainz…"
+    query_fields = [("artist", "Artist"), ("album", "Album")]
+
     def __init__(self, albums: list[AlbumFolder], parent=None, fetch=None, fpcalc: Path | None = None, post=None):
         self._fetch = fetch
         self._fpcalc = fpcalc  # None: identify by tags/names only
         self._post = post  # AcoustID transport (tests)
         self._matches: dict[int, ReleaseMatch] = {}  # id(album) -> the chosen match
         self._fingerprints: dict[int, list] = {}  # id(album) -> AcoustID hits per file (computed once)
-        by_sound = (
-            " Each file is also identified by its sound (AcoustID fingerprints), which finds the album "
-            "even when tags and names are missing."
-            if fpcalc else
-            " Tip: with fpcalc set up (Tools > External Tools) files are also identified "
-            "by their sound, even when tags and names are missing."
-        )
         super().__init__(
             albums,
             parent,
-            window_title="Look Up via MusicBrainz",
-            info_text=(
-                f"Finding the MusicBrainz release for {len(albums)} folder(s) -- one album per folder -- "
-                "by Artist + Album (from the tags, or an 'Artist - Album' folder name), then matching "
-                "each file to its track by number, title and length. Other editions of the album are "
-                "listed under Other Matches. Untick anything you don't trust, then Apply; changes are "
-                "written on Save. MusicBrainz is queried at most once per second, so this takes a few "
-                "seconds per album." + by_sound
-            ),
-            search_label="Searching MusicBrainz…",
+            window_title=self.window_title,
+            info_text=self._info_text(albums),
+            search_label=self.search_label,
             item_label=lambda album: f"{album.folder.name}  ({len(album.files)} file(s))",
             search_one=self._search_one,
-            query_fields=[("artist", "Artist"), ("album", "Album")],
+            query_fields=self.query_fields,
             get_local_cover=self._local_cover,
             resolve_alternative=self._resolve,
             item_noun="folder",
         )
+
+    def _info_text(self, albums: list[AlbumFolder]) -> str:
+        by_sound = (
+            " Each file is also identified by its sound (AcoustID fingerprints), which finds the album "
+            "even when tags and names are missing."
+            if self._fpcalc else
+            " Tip: with fpcalc set up (Tools > External Tools) files are also identified "
+            "by their sound, even when tags and names are missing."
+        )
+        return (
+            f"Finding the MusicBrainz release for {len(albums)} folder(s) -- one album per folder -- "
+            "by Artist + Album (from the tags, or an 'Artist - Album' folder name), then matching "
+            "each file to its track by number, title and length. Other editions of the album are "
+            "listed under Other Matches. Untick anything you don't trust, then Apply; changes are "
+            "written on Save. MusicBrainz is queried at most once per second, so this takes a few "
+            "seconds per album." + by_sound
+        )
+
+    def _cover(self, release):
+        return fetch_front_cover(release.id)
+
+    def _fields_for(self, release, track) -> dict[str, str]:
+        return fields_for(release, track)
 
     @staticmethod
     def _local_cover(album: AlbumFolder):
@@ -152,7 +169,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
         self._matches[id(album)] = best
         return LookupResult(
             fields=_summary_fields(best),
-            cover_bytes=fetch_front_cover(best.release.id),
+            cover_bytes=self._cover(best.release),
             used_query=used,
             alternatives=[
                 LookupAlternative(label=f"{m.release.label()}  -- {m.summary()}", data=m) for m in matches[1:]
@@ -172,7 +189,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
 
     def _resolve(self, album: AlbumFolder, match: ReleaseMatch) -> LookupResult:
         self._matches[id(album)] = match
-        return LookupResult(fields=_summary_fields(match), cover_bytes=fetch_front_cover(match.release.id))
+        return LookupResult(fields=_summary_fields(match), cover_bytes=self._cover(match.release))
 
     def file_changes(self) -> list[tuple[MP3File, dict[str, str]]]:
         """(file, {field: value}) for every file of every ticked album
@@ -184,5 +201,5 @@ class MusicBrainzLookupDialog(LookupDialogBase):
             if match is None:
                 continue
             for index, track in match.assignment.items():
-                changes.append((album.files[index], fields_for(match.release, track)))
+                changes.append((album.files[index], self._fields_for(match.release, track)))
         return changes

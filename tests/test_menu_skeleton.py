@@ -62,7 +62,7 @@ def test_menu_contents_and_order(window):
     ]
     assert _menu_tree(menus["Metadata"]) == [
         "Parse Filename", "---",
-        ("Look Up", ["MusicBrainz", "Discogs", "Lyrics"]), "---",
+        ("Look Up", ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]), "---",
         "Edit Lyrics", "Number Tracks", "---",
         ("Cover", [
             "Set from Image File", "Set from Folder Image", "Remove Cover", "---",
@@ -101,7 +101,7 @@ def test_old_action_keys_still_in_the_registry(window):
     for key in (
         "check_integrity", "fix_integrity", "deep_check", "check_bpm", "check_key",
         "measure_loudness", "fetch_lyrics", "edit_lyrics", "cover_set", "cover_from_folder",
-        "cover_remove", "cover_export", "parse_filename", "musicbrainz_lookup", "discogs_lookup", "api_keys", "import_convert",
+        "cover_remove", "cover_export", "parse_filename", "musicbrainz_lookup", "musicbrainz_local_lookup", "musicbrainz_settings", "discogs_lookup", "api_keys", "import_convert",
         "redact", "redact_recipe", "undo", "redo", "apply", "preferences", "external_tools",
         "columns", "genres", "languages", "refresh_list", "rename_file", "rename_export_move",
         "about", "changelog", "credits", "exit", "number_tracks", "remove_from_list", "clear_list",
@@ -169,7 +169,7 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
         "Look Up", "Organize", "Analyze", "Cover", "Edit Lyrics", "Redact", "Remove from List",
     ]
     by_name = {t[0]: t[1] for t in tree if isinstance(t, tuple)}
-    assert by_name["Look Up"] == ["MusicBrainz", "Discogs", "Lyrics"]
+    assert by_name["Look Up"] == ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]
     assert by_name["Organize"] == ["Rename / Export / Move", "Number Tracks"]
     assert by_name["Analyze"] == [
         "Check Integrity", "Fix Integrity Issues", "Deep Check Integrity", "---",

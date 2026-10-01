@@ -51,7 +51,7 @@ from typing import Callable
 from redactor_common.core.move_plan import execute_move, plan_moves, render_relative_path
 from redactor_common.core.os_utils import rename_no_clobber
 from redactor_common.core.filename_parser import normalize_field_value
-from redactor_common.core.local_db import normalize_words
+from redactor_common.core.local_db import LocalDatabaseError, normalize_words
 from redactor_common.core.path_parser import PathParseResult, folder_value_counts, parse_path_detailed
 from redactor_common.core.pipeline import (
     CommitError,
@@ -85,6 +85,15 @@ from core.mp3_file import (
     STATUS_WARNING,
 )
 from core.mp3val_runner import check_integrity, fix_integrity
+from core.musicbrainz_local import (
+    LocalMatch,
+    LocalQuery,
+    agreement as local_agreement,
+    find_album_local,
+    find_track_local,
+    local_fields_for,
+    open_database as open_musicbrainz_database,
+)
 from core.musicbrainz_lookup import (
     MusicBrainzError,
     ReleaseMatch,
@@ -138,6 +147,7 @@ class RedactEnv:
     _path_counts: dict = field(default_factory=dict)  # (pattern, root) -> folder_value_counts of the run
     _discogs: dict = field(default_factory=dict)  # "client" -> the run's client (None: no token); (folder, query) -> lookup
     _discogs_releases: dict = field(default_factory=dict)  # Discogs release id -> release, fetched once per run
+    _local: dict = field(default_factory=dict)  # "db" -> (local MusicBrainz database or None, note); (folder, fingerprint) -> lookup
 
     def begin(self, items) -> None:
         """Call before each run."""
@@ -146,6 +156,7 @@ class RedactEnv:
         self._path_counts.clear()
         self._discogs.clear()
         self._discogs_releases.clear()
+        self._local.clear()
         self.cleaned = remove_stale_scratch_files(self.items)
 
 
@@ -621,6 +632,131 @@ class PathTagsStep(Mp3Step):
         return [f"{key} = {value!r}" for key, value in result.value.fields.items()]
 
 
+# Confidence of a match made in the LOCAL MusicBrainz database (see TagLookupStep):
+LOCAL_MBID_CONFIDENCE = 0.97  # the file's own MusicBrainz Album Id names this release
+LOCAL_RECORDING_TAG_CONFIDENCE = 0.95  # the file's own recording id tag is on this release
+LOCAL_FUZZY_CAP = 0.85  # a tag-only match that isn't artist+album exact with an equal track count: review
+LOCAL_TRACK_ONLY_CAP = 0.8  # a single track found by title, no album to back it up
+# The local database also knows these; a file with all of them (and the text fields) has nothing to fill.
+_LOCAL_TRIGGER_FIELDS = _LOOKUP_TRIGGER_FIELDS + ("publisher", "catalognumber", "releasecountry")
+
+
+@dataclass
+class LocalFolderLookup:
+    """One folder's result from the local MusicBrainz database, computed once per run."""
+
+    files: list[MP3File]
+    facts: list
+    match: LocalMatch | None = None
+    error: str = ""
+    year: str = ""
+    note: str = ""  # e.g. AcoustID unreachable: fingerprints skipped, the rest still works
+
+
+@dataclass
+class LocalFill:
+    """The local lookup's suggestion for one file, before it is merged with an online one."""
+
+    fields: dict[str, str]
+    confidence: float
+    reason: str
+    note: str = ""  # an FYI for the report (AcoustID unreachable...)
+
+
+def _local_database(env: RedactEnv):
+    """(the local MusicBrainz database or None, note). None with no note when none is configured
+    (the step then behaves exactly as before); a configured but unusable one is a note, not a failure."""
+    if "db" not in env._local:
+        path = env.settings.musicbrainz_database
+        db, note = None, ""
+        if path:
+            try:
+                db = open_musicbrainz_database(path)
+            except LocalDatabaseError as exc:
+                note = f"Local MusicBrainz database not used ({exc}); using online MusicBrainz"
+        env._local["db"] = (db, note)
+    return env._local["db"]
+
+
+def _local_lookup_folder(env: RedactEnv, folder: str, use_fingerprint: bool, db) -> LocalFolderLookup:
+    """The Look Up via MusicBrainz (Local Database) search for one folder, without the review:
+    the files' own release ids first, then AcoustID recordings (online; skipped quietly when
+    unreachable), then artist + album text -- all answered offline. A failure is kept in .error so
+    the run doesn't retry it for every file of the folder."""
+    key = (folder, use_fingerprint)
+    if key in env._local:
+        return env._local[key]
+    files = sorted(
+        (m for m in env.items if not m.load_error and os.path.dirname(os.path.realpath(m.path)) == folder),
+        key=lambda m: m.filename.casefold(),
+    )
+    result = LocalFolderLookup(files=files, facts=[])
+    env._local[key] = result
+    try:
+        hits = [[] for _ in files]
+        fpcalc = find_tool(FPCALC_EXE_NAME, override=env.settings.fpcalc_path or None) if use_fingerprint else None
+        if fpcalc:
+            try:
+                hits, _problems = identify_files([m.path for m in files], fpcalc)
+            except (AcoustIdError, OSError) as exc:
+                hits = [[] for _ in files]
+                result.note = f"AcoustID unavailable ({exc}): fingerprints skipped"
+        facts = [facts_from_tags(m.title, m.track, m.discnumber, m.duration_seconds) for m in files]
+        for fact, file_hits in zip(facts, hits):
+            fact.recordings = {h.recording_id: h.score for h in file_hits}
+        result.facts = facts
+        base = album_query([m.album for m in files], [m.albumartist or m.artist for m in files], Path(folder))
+        years = [m.year[:4] for m in files if m.year]
+        result.year = max(set(years), key=years.count) if years else ""
+        query = LocalQuery(artist=base.artist, album=base.album, year=result.year)
+        matches = find_album_local(
+            db, facts, query,
+            album_ids=tuple(m.musicbrainz_albumid for m in files if m.musicbrainz_albumid),
+            recording_ids=[m.musicbrainz_trackid for m in files],
+        )
+        if matches and matches[0].matched:
+            result.match = matches[0]
+    except (LocalDatabaseError, OSError) as exc:
+        result.error = str(exc)
+    return result
+
+
+def _local_confidence(mp3: MP3File, match: LocalMatch, track, fact) -> tuple[float, str]:
+    """How sure a local match is for one file, and why:
+    - AcoustID recording hit on the track: AcoustID's score (as online);
+    - the file's own MusicBrainz Album Id is this release: 97%, scaled down only if the track pairing is weak;
+    - the file's own recording id tag is this track: 95%;
+    - otherwise title/length/track number x how far the album and artist tags agree ("Beatles, The" =
+      "The Beatles"), and never above LOCAL_FUZZY_CAP unless artist and album are exact AND the
+      release has as many tracks as the folder has files."""
+    release = match.release
+    score = fact.recordings.get(track.recording_id) if track.recording_id else None
+    if score is not None:
+        return float(score), f"AcoustID fingerprint matched the recording on '{release.title}' (score {score:.0%})"
+    single = match_release([fact], release)
+    pair = single.score if single.assignment else 0.0
+    if (mp3.musicbrainz_albumid or "").strip().lower() == release.id.lower():
+        return (
+            min(LOCAL_MBID_CONFIDENCE, LOCAL_MBID_CONFIDENCE * pair / 0.8),
+            f"the file's own MusicBrainz Album Id is '{release.title}' (track pairing {pair:.0%})",
+        )
+    if track.recording_id and (mp3.musicbrainz_trackid or "").strip().lower() == track.recording_id.lower():
+        return (
+            LOCAL_RECORDING_TAG_CONFIDENCE,
+            f"the file's own MusicBrainz recording id is track {track.position} of '{release.title}'",
+        )
+    confidence = pair * local_agreement(mp3.album, mp3.artist or mp3.albumartist, release, track)
+    exact = match.exact and match.count_equal
+    if not exact:
+        confidence = min(confidence, LOCAL_FUZZY_CAP)
+    return confidence, (
+        f"matched track {track.position} of '{release.title}' by title/length/track number ({pair:.0%}), scaled by "
+        f"how far the album and artist tags agree"
+        + ("" if exact else "; artist and album are not both exact with an equal track count, so at most "
+           f"{LOCAL_FUZZY_CAP:.0%}")
+    )
+
+
 class TagLookupStep(Mp3Step):
     key = "tags"
     label = "Fill missing tags (MusicBrainz / AcoustID)"
@@ -629,7 +765,13 @@ class TagLookupStep(Mp3Step):
         "installed) and fills tags that are EMPTY. Existing values are never replaced unless the option "
         "says so. A match made by fingerprint has AcoustID's score as its confidence; one made by tags "
         "needs the album and artist tags to agree exactly to reach 90%. Below the threshold the match is "
-        "listed under Needs review and nothing is written. Needs network access."
+        "listed under Needs review and nothing is written. Needs network access. If a local MusicBrainz "
+        "database is set up (Tools > MusicBrainz Database) it is consulted FIRST, offline, and also fills "
+        "label, catalogue number and country: the file's own MusicBrainz Album Id names its release at 97%, "
+        "a recording id tag at 95%, an AcoustID hit keeps its score, and a match by tags needs artist and "
+        "album exact and as many tracks as files to reach 90% (otherwise at most 85%). Online MusicBrainz and "
+        "AcoustID are then asked only for what is still missing, and if the network is down the local "
+        "answer is used as it is."
     )
     options = (
         OptionSpec("overwrite", "Also replace different existing values", "bool", False),
@@ -638,8 +780,80 @@ class TagLookupStep(Mp3Step):
 
     def process(self, ctx: Mp3Ctx) -> StepResult:
         work, overwrite = ctx.work, self.options_for(ctx)["overwrite"]
-        if not overwrite and all(getattr(work, k) for k in _LOOKUP_TRIGGER_FIELDS):
-            return StepResult.nothing()  # complete already: no network round trip
+        db, db_note = _local_database(ctx.env)
+        triggers = _LOCAL_TRIGGER_FIELDS if db is not None else _LOOKUP_TRIGGER_FIELDS
+        if not overwrite and all(getattr(work, k) for k in triggers):
+            return StepResult.nothing()  # complete already: no lookup at all
+        if db is None:
+            result = self._online(ctx, overwrite)
+            if db_note:  # a database is configured but unusable: say so, carry on online
+                result.note = "; ".join(b for b in (db_note, result.note) if b)
+            return result
+        # The local database first: offline, and the only thing consulted when it answers everything
+        # the network could add.
+        local = self._local_fill(ctx, db, overwrite)
+        missing = [k for k in _LOOKUP_TRIGGER_FIELDS if not getattr(work, k) and not (local and k in local.fields)]
+        if overwrite or not missing:
+            return self._suggest(local, local.fields, local.confidence, local.reason) if local else StepResult.nothing()
+        # What is still missing might be on MusicBrainz proper: ask only now.
+        online = self._online(ctx, overwrite)
+        if local is None:
+            return online
+        fields, confidence, reason, note = dict(local.fields), local.confidence, local.reason, local.note
+        if isinstance(online.value, TagFill):
+            extra = {k: v for k, v in online.value.fields.items() if k not in fields}
+            if extra:
+                fields.update(extra)
+                confidence = min(confidence, online.confidence)
+                reason += f"; online MusicBrainz added {', '.join(extra)}: {online.reason}"
+        elif online.note:
+            note = "; ".join(b for b in (note, f"online MusicBrainz skipped: {online.note}") if b)
+        return self._suggest(local, fields, confidence, reason, note)
+
+    @staticmethod
+    def _suggest(local: LocalFill, fields: dict, confidence: float, reason: str, note: str | None = None) -> StepResult:
+        result = StepResult.suggestion(TagFill(fields), min(confidence, 1.0), "local MusicBrainz database: " + reason)
+        result.note = local.note if note is None else note
+        return result
+
+    def _local_fill(self, ctx: Mp3Ctx, db, overwrite: bool) -> LocalFill | None:
+        """What the local database would fill for this file, or None when it has no answer."""
+        work = ctx.work
+        lookup = _local_lookup_folder(ctx.env, os.path.dirname(ctx.original), self.options_for(ctx)["fingerprint"], db)
+        if lookup.error:
+            return None
+        index = next((i for i, m in enumerate(lookup.files) if m is ctx.mp3), None)
+        if index is None:
+            return None
+        fact = lookup.facts[index]
+        track = lookup.match.assignment.get(index) if lookup.match is not None else None
+        if track is not None:
+            match = lookup.match
+            confidence, reason = _local_confidence(ctx.mp3, match, track, fact)
+            release = match.release
+        else:
+            # no album found for the folder (or this file isn't on it): a single track by title, if the
+            # database has the track search index
+            singles = find_track_local(db, fact, ctx.mp3.artist or ctx.mp3.albumartist, lookup.year)
+            if not singles:
+                return None
+            match = singles[0]
+            release, track = match.release, match.assignment[0]
+            confidence = min(
+                match_release([fact], release).score * local_agreement(ctx.mp3.album, ctx.mp3.artist or ctx.mp3.albumartist, release, track),
+                LOCAL_TRACK_ONLY_CAP,
+            )
+            reason = f"found as a single track ('{track.title}' on '{release.title}'), with no album to confirm it"
+        fields = {
+            key: value
+            for key, value in local_fields_for(release, track).items()
+            if not getattr(work, key, "") or (overwrite and getattr(work, key, "") != value)
+        }
+        return LocalFill(fields, confidence, reason, lookup.note) if fields else None
+
+    def _online(self, ctx: Mp3Ctx, overwrite: bool) -> StepResult:
+        """The online MusicBrainz / AcoustID lookup (what this step always did)."""
+        work = ctx.work
         folder = os.path.dirname(ctx.original)
         lookup = _lookup_folder(ctx.env, folder, self.options_for(ctx)["fingerprint"])
         if lookup.error:
