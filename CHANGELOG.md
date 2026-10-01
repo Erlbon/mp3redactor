@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-01#06 -- A failed lyrics fetch no longer wipes existing lyrics
+
+- **Fixed a data-loss bug:** when Metadata > Look Up > Lyrics found nothing (or the search failed, e.g. offline) for a file that already had lyrics, the file's lyrics were blanked in memory, and the next Save of that file deleted its lyrics tag. Now only a successful fetch replaces lyrics; "not found" and search failures leave the existing text and the file's changed-state alone (the result is still shown in the cell's tooltip). Clearing the lyrics yourself in Edit Lyrics still removes them.
+
 ## 2026-10-01#05 -- Locked-file retry now uses the shared helper
 
 - The "file briefly locked by antivirus or the indexer" retry behind Save, Redact, the converter and the settings file now comes from redactor_common instead of an app-local copy. Same 6 attempts and the same rule (only lock errors are retried, anything else fails at once with the last error unchanged), but the pauses between attempts now grow (0.15 s, 0.21 s, 0.29 s ... about 1.6 s in all) instead of staying constant, and the "locked by another program" hint text is the shared wording.

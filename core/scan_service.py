@@ -373,14 +373,15 @@ def run_lyrics_fetch(
                 lyrics, status, message = future.result()
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
                 lyrics, status, message = "", STATUS_TOOL_ERROR, _describe(e)
-            if status == STATUS_TOOL_ERROR:
-                # The search itself failed (network down...): the lyrics the
-                # file already has must survive, or the next Save would
-                # clear them.
-                mp3.lyrics_status, mp3.lyrics_message = status, message
-            else:
+            if status == STATUS_OK and lyrics:
                 mp3.lyrics, mp3.lyrics_status, mp3.lyrics_message = lyrics, status, message
-            if mp3.lyrics_status == STATUS_OK and not mp3.load_error:
+            else:
+                # Not found, or the search itself failed (network down...):
+                # only a successful fetch may replace lyrics, so what the file
+                # already has survives -- otherwise the next Save would clear
+                # the USLT frame. The status is still shown.
+                mp3.lyrics_status, mp3.lyrics_message = status, message
+            if status == STATUS_OK and lyrics and not mp3.load_error:
                 # Fetched lyrics are new tag data, same as a manually
                 # typed field -- mark dirty so it reaches disk via the
                 # normal Save flow (core.tag_writer._write_lyrics_frame()).
