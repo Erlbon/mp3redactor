@@ -74,7 +74,8 @@ def test_menu_contents_and_order(window):
         "Detect BPM", "Detect Key", "Measure Loudness",
     ]
     assert _menu_tree(menus["Tools"]) == [
-        "Preferences", "---", "API Keys", "External Tools", "---", "Columns", "Genres", "Languages",
+        "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database", "---",
+        "Columns", "Genres", "Languages",
     ]
     assert _menu_tree(menus["Help"]) == ["Changelog", "Credits", "---", f"About {mw.APP_NAME}"]
 

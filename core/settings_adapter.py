@@ -26,6 +26,7 @@ window's current Settings object (which the Preferences dialog replaces).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -72,8 +73,15 @@ SECTION_KEYS: dict[str, dict[str, str]] = {
     "folders": {
         "last_directory": "str",
         "library_root": "str",
+        # The offline MusicBrainz database and the dump it is built from: files on
+        # this computer, so an imported path only counts if the file is there.
+        "musicbrainz_database": "str",
+        "musicbrainz_dump": "str",
     },
 }
+
+# Keys whose value is a file on this computer: an import skips one that doesn't exist here.
+_EXISTING_FILE_KEYS = frozenset({"musicbrainz_database", "musicbrainz_dump"})
 
 _LABEL_PORTABLE = [
     ("recipe", "Redact recipe"),
@@ -84,7 +92,7 @@ _LABEL_PORTABLE = [
 ]
 _LABEL_MACHINE = [
     ("tools", "External tool paths (mp3val, ffmpeg, keyfinder, fpcalc)"),
-    ("folders", "Last-used folder and library root"),
+    ("folders", "Last-used folder, library root, MusicBrainz database and dump"),
 ]
 
 # Integer fields: a sane floor so an imported 0/negative can't break padding.
@@ -174,6 +182,8 @@ class Mp3SettingsAdapter(sb.SettingsAdapter):
                 coerced[name] = _coerce(kind, value)
             except ValueError:
                 continue  # wrong type: keep the current value
+            if name in _EXISTING_FILE_KEYS and not (coerced[name] and os.path.isfile(coerced[name])):
+                del coerced[name]  # empty or not on this computer: keep the current value
         for name, value in coerced.items():
             setattr(settings, name, value)
         if coerced:

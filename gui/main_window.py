@@ -476,6 +476,11 @@ class MainWindow(QMainWindow):
                 preferences=self.open_settings_dialog,
                 api_keys=self.open_api_keys_dialog,
                 external_tools=self.open_external_tools_dialog,
+                app_settings=[
+                    MenuAction(
+                        "musicbrainz_settings", "&MusicBrainz Database…", self.open_musicbrainz_settings_dialog,
+                    ),
+                ],
                 columns=self.open_column_settings_dialog,
                 genres=self.open_genre_settings_dialog,
                 languages=self.open_language_settings_dialog,
@@ -1674,6 +1679,13 @@ class MainWindow(QMainWindow):
             self.settings.ffprobe_path = ffprobe_path
             self.settings.fpcalc_path = fpcalc_path
             save_settings(self.settings)
+
+    def open_musicbrainz_settings_dialog(self) -> None:
+        """Tools > MusicBrainz Database...: where the offline MusicBrainz database
+        is and how to build it from the core dump (gui/musicbrainz_settings_dialog.py)."""
+        from gui.musicbrainz_settings_dialog import MusicBrainzSettingsDialog
+
+        MusicBrainzSettingsDialog(self.settings, self).exec()
 
     # -- redact ---------------------------------------------------------------
 

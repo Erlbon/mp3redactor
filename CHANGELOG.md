@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-01#01 -- Build an offline MusicBrainz database (Tools > MusicBrainz Database)
+
+- **New: Tools > MusicBrainz Database...** builds a compact offline database from MusicBrainz's core data dump, for the offline lookup that follows in the next release. You download `mbdump.tar.bz2` yourself from musicbrainz.org/doc/MusicBrainz_Database/Download (about 7 GB; the app never downloads it and does not need it unpacked), pick it in the dialog and click Build Database. The build streams the archive without unpacking it, shows progress, can be cancelled at any time, and replaces an existing database only once the new one is complete. It checks the dump's schema number first and says clearly if the dump is of a different layout than the app knows.
+- **What is kept** (all choosable): official releases only (on), release types (Album, EP, Single, Compilation, Soundtrack and Live on; Broadcast, Other and the spoken-word and similar types off), skip undated releases (off), track titles (on; needed to match files to tracks) and an optional track search index (off; much bigger). Releases carry the artist credit with its join phrases ("Paul McCartney & Wings"), the earliest release date and country, label, catalogue number, barcode and format ("2×Vinyl"); a prebuilt full-text index makes searching by artist and album instant.
+- **Licence:** only MusicBrainz's core data (CC0, public domain) is read. The derived data (tags and genres, ratings, annotations) is not CC0 and is never used, so there is no genre.
+- The dialog shows the free space on the database's drive and warns if it is probably too little (a default build needs roughly 12 GB while it runs). The database and dump paths are saved in the settings and, because they belong to this computer, are exported only in the "this computer only" section of Export Settings and imported only if the file exists.
+- Adopt redactor_common 2026-10-01-02 (dump readers for tar archives and PostgreSQL COPY files, the MusicBrainz table layout).
+- Not yet checked against a real dump: the table layout comes from MusicBrainz's published schema and the tests use small synthetic archives only.
+
 ## 2026-09-30#21 -- Adopt redactor_common 2026-09-30-15
 
 - Adopt redactor_common 2026-09-30-15: Redact saves retry briefly when Windows antivirus/indexer briefly locks a file (the shared rename/commit helpers now retry too).

@@ -175,6 +175,16 @@ class Settings:
     # and it is not part of Export Settings (it is about this computer).
     allow_unencrypted_fallback: bool = False
 
+    # The offline MusicBrainz database (Tools > MusicBrainz Database...,
+    # core/musicbrainz_import.py): the built SQLite file, the core dump
+    # (mbdump.tar.bz2) it is built from, and the build options as one line
+    # of JSON (musicbrainz_import.BuildOptions.to_json(); "" = defaults).
+    # Paths on THIS computer: Export Settings carries them only in the
+    # "this computer only" section.
+    musicbrainz_database: str = ""
+    musicbrainz_dump: str = ""
+    musicbrainz_options: str = ""
+
     def saved_rename_pattern(self) -> str:
         """The dedicated rename pattern; before one was ever saved, the most
         recent pattern in the shared history (a first-run default only)."""
@@ -225,6 +235,9 @@ class Settings:
             "library_root": self.library_root,
             "redact_recipe": self.redact_recipe,
             "allow_unencrypted_fallback": str(self.allow_unencrypted_fallback),
+            "musicbrainz_database": self.musicbrainz_database,
+            "musicbrainz_dump": self.musicbrainz_dump,
+            "musicbrainz_options": self.musicbrainz_options,
         }
         return config
 
@@ -258,6 +271,9 @@ class Settings:
             library_root=section.get("library_root", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
             allow_unencrypted_fallback=_get_bool(section, "allow_unencrypted_fallback", False),
+            musicbrainz_database=section.get("musicbrainz_database", fallback=""),
+            musicbrainz_dump=section.get("musicbrainz_dump", fallback=""),
+            musicbrainz_options=section.get("musicbrainz_options", fallback=""),
         )
 
 
