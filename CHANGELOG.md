@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-01#10 -- Preferences moves to the shared Preferences dialog
+
+- **Tools > Preferences now uses the family's shared Preferences dialog** (same layout and OK / Cancel / Apply / Reset to Defaults as the other Redactors). Pages: **Filenames** (ASCII-safe filenames, zero-pad numbers and width, Auto-Numbering padding -- these were previously only remembered from the Rename and Auto-Numbering dialogs and could not be edited here), **Library** (library folder), **Fixing** (delete .bak backups after a successful fix) and **Tools** (the same locate-tools rows as Tools > External Tools). Your stored settings are read and written exactly as before.
+- Requires redactor_common 2026-10-01-06 (the shared Preferences framework).
+
 ## 2026-10-01#09 -- Analyze > Find Duplicates
 
 - **New: Analyze > Find Duplicates...** (also in the Ctrl+K command palette). It compares **all loaded files**, not just the selection, and opens a review window listing groups of possible duplicates: identical audio (tags ignored), the same MusicBrainz recording, or the same artist, title and length. Each group shows how strong the match is and **why** it matched, e.g. "same track on different albums -- probably a compilation or another release". Duplicates are not errors in a music library (compilations, live and remastered versions are normal), so **nothing is selected or changed for you**.

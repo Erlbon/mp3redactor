@@ -117,7 +117,7 @@ from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
-from gui.settings_dialog import SettingsDialog
+from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
 from redactor_common.core.error_summary import summarize_errors
@@ -1803,10 +1803,8 @@ class MainWindow(QMainWindow):
     # -- checks ---------------------------------------------------------
 
     def open_settings_dialog(self) -> None:
-        dialog = SettingsDialog(self.settings, self)
-        if dialog.exec() == SettingsDialog.DialogCode.Accepted:
-            self.settings = dialog.result_settings()
-            save_settings(self.settings)
+        # Shared Preferences dialog (gui/preferences.py): edits and saves self.settings in place.
+        build_preferences_dialog(self.settings, save_settings, self).exec()
 
     # -- export / import settings (redactor_common's shared settings bundle) --
 

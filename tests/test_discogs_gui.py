@@ -254,12 +254,58 @@ def test_the_fallback_consent_round_trips_in_the_settings_and_is_not_exported():
 
 
 def test_preferences_dialog_keeps_every_other_setting():
-    from gui.settings_dialog import SettingsDialog
+    from gui.preferences import build_preferences_dialog
 
     original = Settings(redact_recipe='{"order":[]}', library_root="/music", allow_unencrypted_fallback=True, pattern_history=["%a%"])
-    result = SettingsDialog(original).result_settings()
-    assert (result.redact_recipe, result.library_root, result.allow_unencrypted_fallback, result.pattern_history) == (
+    saved = []
+    dlg = build_preferences_dialog(original, saved.append)
+    dlg.set_value("delete_backup_after_fix", True)
+    dlg.accept()
+    assert saved and saved[-1] is original
+    assert (original.redact_recipe, original.library_root, original.allow_unencrypted_fallback, original.pattern_history) == (
         '{"order":[]}', "/music", True, ["%a%"])
+    assert original.delete_backup_after_fix is True
+
+
+def test_preferences_dialog_maps_shared_keys_onto_existing_settings_fields():
+    from gui.preferences import build_preferences_dialog
+
+    settings = Settings(ascii_filenames=False, rename_zero_pad=False, rename_zero_pad_width=2, auto_number_padding=2)
+    saved = []
+    dlg = build_preferences_dialog(settings, saved.append)
+    assert dlg.page_titles() == ["Filenames", "Library", "Fixing", "Tools"]
+    dlg.set_value("ascii_filenames", True)
+    dlg.set_value("zero_pad_numbers", True)
+    dlg.set_value("zero_pad_width", 12)  # mp3 allows up to 99 digits
+    dlg.set_value("auto_number_padding", 0)
+    dlg.accept()
+    assert (settings.ascii_filenames, settings.rename_zero_pad, settings.rename_zero_pad_width, settings.auto_number_padding) == (
+        True, True, 12, 0)
+    assert len(saved) == 1  # one save for the whole write
+
+
+def test_preferences_cancel_changes_nothing():
+    from gui.preferences import build_preferences_dialog
+
+    settings = Settings()
+    saved = []
+    dlg = build_preferences_dialog(settings, saved.append)
+    dlg.set_value("ascii_filenames", True)
+    dlg.reject()
+    assert settings.ascii_filenames is False and not saved
+
+
+def test_preferences_tools_page_saves_paths_on_ok():
+    from gui.external_tools_dialog import ToolPathsWidget
+    from gui.preferences import build_preferences_dialog
+
+    settings = Settings()
+    saved = []
+    dlg = build_preferences_dialog(settings, saved.append)
+    page = dlg.findChildren(ToolPathsWidget)[0]
+    page._mp3val_row.path_edit.setText("/opt/mp3val")
+    dlg.accept()
+    assert settings.mp3val_path == "/opt/mp3val" and saved
 
 
 def test_startup_applies_the_remembered_consent(monkeypatch):

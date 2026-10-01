@@ -5,9 +5,7 @@ button to point at it directly, a Clear button to go back to
 auto-detect, and a live found/not-found indicator so the user can see
 immediately whether the path (or auto-detection) actually resolves.
 
-Distinct from SettingsDialog (the fix-backup toggle) -- this is purely
-about locating binaries, same separation of concerns the video tool
-uses.
+Also the Tools page of Preferences (ToolPathsWidget).
 """
 
 import sys
@@ -94,12 +92,12 @@ class _ToolRow:
         return self.path_edit.text().strip()
 
 
-class ExternalToolsDialog(QDialog):
+class ToolPathsWidget(QWidget):
+    """The locate-tools rows (header + one row per binary). Used by the
+    Locate External Tools dialog and as the Tools page of Preferences."""
+
     def __init__(self, settings: Settings, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Locate External Tools")
-        self.resize(560, 220)
-
         header = QLabel(
             "If mp3val, keyfinder-cli, ffmpeg, ffprobe or fpcalc (Chromaprint -- identifies songs by their "
             "sound in Look Up via MusicBrainz) aren't on your system "
@@ -118,18 +116,10 @@ class ExternalToolsDialog(QDialog):
         self._ffprobe_row = _ToolRow(grid, 3, "ffprobe:", FFPROBE_EXE_NAME, settings.ffprobe_path)
         self._fpcalc_row = _ToolRow(grid, 4, "fpcalc:", FPCALC_EXE_NAME, settings.fpcalc_path)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Done")
-        buttons.accepted.connect(self.accept)
-
         layout = QVBoxLayout(self)
         layout.addWidget(header)
         layout.addWidget(grid_widget)
         layout.addStretch()
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        button_row.addWidget(buttons)
-        layout.addLayout(button_row)
 
     def result_paths(self) -> tuple[str, str, str, str, str]:
         """Returns (mp3val_path, keyfinder_cli_path, ffmpeg_path, ffprobe_path, fpcalc_path)."""
@@ -140,3 +130,40 @@ class ExternalToolsDialog(QDialog):
             self._ffprobe_row.current_path(),
             self._fpcalc_row.current_path(),
         )
+
+    def apply_to(self, settings: Settings) -> bool:
+        """Copies the paths into `settings`; True if any of them changed."""
+        mp3val, keyfinder, ffmpeg, ffprobe, fpcalc = self.result_paths()
+        new = {
+            "mp3val_path": mp3val, "keyfinder_cli_path": keyfinder, "ffmpeg_path": ffmpeg,
+            "ffprobe_path": ffprobe, "fpcalc_path": fpcalc,
+        }
+        changed = False
+        for field, value in new.items():
+            if getattr(settings, field) != value:
+                setattr(settings, field, value)
+                changed = True
+        return changed
+
+
+class ExternalToolsDialog(QDialog):
+    def __init__(self, settings: Settings, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Locate External Tools")
+        self.resize(560, 220)
+
+        self._paths = ToolPathsWidget(settings)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Done")
+        buttons.accepted.connect(self.accept)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self._paths)
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        button_row.addWidget(buttons)
+        layout.addLayout(button_row)
+
+    def result_paths(self) -> tuple[str, str, str, str, str]:
+        return self._paths.result_paths()
