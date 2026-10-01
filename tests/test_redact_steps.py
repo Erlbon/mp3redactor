@@ -463,8 +463,12 @@ def test_move_step_is_off_by_default_and_last():
     assert "move_into_folders" not in [s.key for s, _ in Recipe.default_for(cat).resolve(cat)]
 
 
-def test_move_files_the_saved_file_under_the_library_root_and_undo_puts_it_back(tmp_path):
+def test_move_files_the_saved_file_under_the_library_root_and_undo_puts_it_back(tmp_path, monkeypatch):
     from redactor_common.core.rename_log import RenameLog
+
+    # Not the real aubio: on Linux its wheel can't open an MP3 at all (a TOOL ERROR),
+    # and this test is about the move. A genuine "no tempo found" is only a note.
+    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_ERROR, "not enough detected beats"))
 
     root = _library(tmp_path)
     log = RenameLog(str(tmp_path / "log.json"))
