@@ -15,6 +15,18 @@ def _isolated_rename_log(monkeypatch, tmp_path):
     monkeypatch.setattr(main_window, "_rename_log", lambda: log)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_duplicates_store(monkeypatch, tmp_path):
+    """Find Duplicates' "Not duplicates" file lives next to the settings;
+    tests get a temporary one (a new store object per call, like the app)."""
+    import gui.main_window as main_window
+    from redactor_common.core.duplicates import JsonDismissStore
+
+    monkeypatch.setattr(
+        main_window, "_duplicates_store", lambda: JsonDismissStore(str(tmp_path / "duplicates_dismissed.json"))
+    )
+
+
 class FakeRecycleBin:
     """Stands in for the Recycle Bin in Redact tests: moves the file to a
     folder and remembers it, so nothing real is ever trashed."""

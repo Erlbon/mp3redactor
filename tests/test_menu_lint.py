@@ -43,7 +43,7 @@ def test_command_palette_is_installed_on_ctrl_k(window):
     action = window.action_registry["command_palette"]
     assert action.shortcut() == QKeySequence("Ctrl+K")
     titles = {c.title for c in collect_commands(window, window.action_registry, exclude=action)}
-    for expected in ("Open Files", "Redact", "Check Integrity", "Detect BPM", "Preferences"):
+    for expected in ("Open Files", "Redact", "Check Integrity", "Detect BPM", "Find Duplicates", "Preferences"):
         assert expected in titles, expected
 
 
@@ -51,5 +51,6 @@ def test_command_palette_lists_commands_with_their_menu_path(window):
     action = window.action_registry["command_palette"]
     by_title = {c.title: c for c in collect_commands(window, window.action_registry, exclude=action)}
     assert by_title["Check Integrity"].path == "Analyze"
+    assert by_title["Find Duplicates"].path == "Analyze"
     assert by_title["MusicBrainz"].path == "Metadata ▸ Look Up"
     assert by_title["Redact"].path == "Edit"

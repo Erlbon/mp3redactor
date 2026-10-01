@@ -71,7 +71,7 @@ def test_menu_contents_and_order(window):
     ]
     assert _menu_tree(menus["Analyze"]) == [
         "Check Integrity", "Fix Integrity Issues", "Deep Check Integrity", "---",
-        "Detect BPM", "Detect Key", "Measure Loudness",
+        "Detect BPM", "Detect Key", "Measure Loudness", "---", "Find Duplicates",
     ]
     assert _menu_tree(menus["Tools"]) == [
         "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database", "---",

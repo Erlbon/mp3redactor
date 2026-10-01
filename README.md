@@ -56,6 +56,12 @@ Roadmap, in build order:
      Save (relative to ReplayGain 2.0's -18 LUFS reference), so any
      ReplayGain-aware player picks it up. Read back on load, same
      round-trip BPM/key get.
+   - **Find Duplicates** (Analyze menu) -- reviews ALL loaded files
+     for identical audio (tags ignored, so retagging never hides a
+     match), the same MusicBrainz recording, and the same artist +
+     title + length. A review aid, not an error check: every group says
+     why it matched (the same track on two albums is only a weak match),
+     nothing is selected for you, and "Not Duplicates" is remembered.
    - **Import & Convert to MP3** (Import menu) -- brings a non-MP3
      file (FLAC/WAV/OGG/M4A/...) into the library by converting it via
      `libmp3lame` (`core/mp3_converter.py`) at a chosen bitrate, then

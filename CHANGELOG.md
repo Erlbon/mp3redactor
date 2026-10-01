@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01#09 -- Analyze > Find Duplicates
+
+- **New: Analyze > Find Duplicates...** (also in the Ctrl+K command palette). It compares **all loaded files**, not just the selection, and opens a review window listing groups of possible duplicates: identical audio (tags ignored), the same MusicBrainz recording, or the same artist, title and length. Each group shows how strong the match is and **why** it matched, e.g. "same track on different albums -- probably a compilation or another release". Duplicates are not errors in a music library (compilations, live and remastered versions are normal), so **nothing is selected or changed for you**.
+- In the review window you can Reveal in Folder, Open, **Select These in the List** (the rows are selected in the main window), mark a group **Not Duplicates** (remembered across runs in `mp3redactor_duplicates_dismissed.json` next to the settings, even after a rename or retag; it comes back if a third copy appears), or move chosen files to the Recycle Bin after a confirmation (one file of each group must stay). A file with unsaved edits is never moved to the Recycle Bin: it is listed with a message and left alone. Files moved to the Recycle Bin leave the list.
+- The "Not Duplicates" file is not part of Export/Import Settings.
+
 ## 2026-10-01#08 -- Groundwork for Find Duplicates (audio identity and tag matching)
 
 - The matching engine behind the coming **Analyze > Find Duplicates** (no menu entry yet): it finds loaded files with identical audio (the audio is compared with all tags ignored, so retagging a file never changes it; a file whose ID3v2/ID3v1/APE tag was edited still matches its untagged twin), files carrying the same MusicBrainz recording, and files with the same artist, title and length (within 2 s). Live, remix, remaster, acoustic, demo, instrumental, edit, radio, extended and mono versions are never mixed up with the original, and "feat." guests and a leading "The" are ignored. Same track on different albums is only a weak match ("probably a compilation or another release"). Nothing is changed or deleted by it.

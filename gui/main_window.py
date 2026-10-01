@@ -169,6 +169,10 @@ from redactor_common.gui.redact_dialog import run_redact as run_redact_dialog
 from redactor_common.gui.move_runner import run_planned_moves
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.core.rename_log import RenameLog
+from redactor_common.core.duplicates import JsonDismissStore
+from redactor_common.core.trash import TrashError, move_to_trash
+from redactor_common.gui.duplicates_dialog import run_find_duplicates
+from core import mp3_duplicates
 from redactor_common.gui.rename_undo import undo_last_rename
 from redactor_common.gui.settings_bundle_dialogs import export_settings, import_settings
 from core.app_paths import base_dir
@@ -288,6 +292,13 @@ def _rename_log() -> RenameLog:
     """The persistent log behind File > Undo Last Rename (redactor_common's
     core/rename_log.py), next to this app's settings."""
     return RenameLog(os.path.join(str(base_dir()), "mp3redactor_rename_log.json"))
+
+def _duplicates_store() -> JsonDismissStore:
+    """The "Not duplicates" decisions of Analyze > Find Duplicates, next to
+    the settings. Deliberately not part of Export/Import Settings: it is
+    state about this library's files, not a preference."""
+    return JsonDismissStore(os.path.join(str(base_dir()), "mp3redactor_duplicates_dismissed.json"))
+
 
 class _ReviewItem:
     """Adapts an MP3File to the shared overwrite review, which reads
@@ -475,7 +486,8 @@ class MainWindow(QMainWindow):
                     MenuAction("check_bpm", "Detect &BPM", self.run_bpm_check),
                     MenuAction("check_key", "Detect &Key", self.run_key_detection),
                     MenuAction("measure_loudness", "Measure &Loudness", self.run_loudness_measurement),
-                    # Find Duplicates: (planned).
+                    Separator(),
+                    MenuAction("find_duplicates", labels.FIND_DUPLICATES_ALT, self.open_find_duplicates_dialog),
                 ]),
             ],
             tools=standard_tools_items(
@@ -737,6 +749,54 @@ class MainWindow(QMainWindow):
         if self._count_dirty() and not self._confirm_discard("clear the entire list"):
             return
         self.files = []
+        self._after_list_shrunk()
+
+    # -- find duplicates ---------------------------------------------------
+
+    def open_find_duplicates_dialog(self) -> None:
+        """Analyze > Find Duplicates: reviews ALL loaded files (not just the
+        selection -- a duplicate is a relation between files) for identical
+        audio, the same MusicBrainz recording and the same artist/title/
+        length, in redactor_common's shared review dialog. A review aid:
+        duplicates are not errors, nothing is selected or changed unless
+        the user picks an action. See core/mp3_duplicates.py."""
+        readable = [mp3 for mp3 in self.files if not mp3.load_error]
+        if len(readable) < 2:
+            QMessageBox.information(self, "Find Duplicates", "Load at least two readable MP3 files first.")
+            return
+        intro = f"Compared all {len(readable)} loaded files (not only the selection)."
+        if len(readable) < len(self.files):
+            intro += f" {len(self.files) - len(readable)} file(s) that could not be read were skipped."
+        run_find_duplicates(
+            self, readable, mp3_duplicates.find_duplicate_groups, mp3_duplicates.COLUMNS,
+            title="Find Duplicates", dismiss_store=_duplicates_store(),
+            on_select_in_list=self._select_files_from_duplicates,
+            on_trashed=self._remove_trashed_from_list, trash=self._trash_unless_unsaved,
+            intro_text=intro, none_found_message="No duplicates found among the loaded files.",
+        )
+
+    def _select_files_from_duplicates(self, items: list[MP3File]) -> None:
+        self._reselect_files({id(mp3) for mp3 in items})
+        self.tag_panel.set_selection(self._selected_files())
+        self._update_cover_panel()
+        current = self.table.currentIndex()
+        if current.isValid():
+            self.table.scrollTo(current)
+
+    def _trash_unless_unsaved(self, path: str) -> None:
+        """The review dialog's Recycle Bin step, except that a file whose
+        edits are not saved yet is refused (the dialog lists it with this
+        message): moving it would throw the edits away."""
+        for mp3 in self.files:
+            if str(mp3.path) == path and mp3.dirty:
+                raise TrashError("it has unsaved changes in the list -- save or discard them first")
+        move_to_trash(path)
+
+    def _remove_trashed_from_list(self, items: list[MP3File]) -> None:
+        """Files the review dialog moved to the Recycle Bin leave the list
+        (same path as Remove from List; they cannot be dirty, see above)."""
+        gone = {id(mp3) for mp3 in items}
+        self.files = [mp3 for mp3 in self.files if id(mp3) not in gone]
         self._after_list_shrunk()
 
     def _after_list_shrunk(self) -> None:
