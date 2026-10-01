@@ -154,7 +154,9 @@ from redactor_common.gui.standard_menus import (
 )
 from redactor_common.gui.command_palette import add_command_palette
 from redactor_common.gui.case_conversion_dialog import CaseConversionDialog
-from redactor_common.gui.search_replace_dialog import SearchReplaceDialog
+from redactor_common.gui.search_replace_dialog import FILENAME_FIELD_KEY, SearchReplaceDialog
+from redactor_common.core.os_utils import rename_no_clobber
+from redactor_common.core.rename_pattern import unique_path, validate_filename_stem
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
@@ -1185,16 +1187,25 @@ class MainWindow(QMainWindow):
     def open_search_replace_dialog(self) -> None:
         """Edit > Search and Replace...: the shared dialog over the selected
         files (explicit selection, same as Auto-Number). Replacements go
-        into memory like a bulk edit -- Save writes them, Undo reverts."""
+        into memory like a bulk edit -- Save writes them, Undo reverts.
+        The Filename column is different: it renames the files on disk
+        (the name without its extension) right away, see
+        _apply_filename_search_replace()."""
         targets = self._require_targets("search and replace in")
         if not targets:
             return
         labels_by_key = [(key, label) for key, label, _multiline in FIELDS]
+
+        def get_value(mp3: MP3File, key: str) -> str:
+            if key == FILENAME_FIELD_KEY:
+                return mp3.path.stem  # the extension is never part of the search
+            return getattr(mp3, key, "") or ""
+
         dialog = SearchReplaceDialog(
             targets, labels_by_key,
-            get_value=lambda mp3, key: getattr(mp3, key, "") or "",
+            get_value=get_value,
             get_display_name=lambda mp3: mp3.filename,
-            include_filename=False,
+            include_filename=True,
             is_excluded=lambda mp3: bool(mp3.load_error),
             item_noun="file",
             parent=self,
@@ -1205,11 +1216,74 @@ class MainWindow(QMainWindow):
         if not changes:
             return
         field_key = dialog.result_field_key()
+        if field_key == FILENAME_FIELD_KEY:
+            self._apply_filename_search_replace(targets, changes)
+            return
         changed = [targets[index] for index in changes]
         self._push_undo("Search and Replace", changed)
         for index, new_value in changes.items():
             targets[index].apply_tags({field_key: new_value})
         self._rebuild_table()
+
+    def _apply_filename_search_replace(self, targets: list[MP3File], changes: dict[int, str]) -> None:
+        """Renames the files on disk to the new names (stems) the Search and
+        Replace dialog accepted. A physical operation like Rename by Pattern:
+        not on the Undo stack, but recorded in the rename log, so File > Undo
+        Last Rename takes it back. A name that is taken (by a file on disk or
+        by another file of this batch) is numbered, never overwritten; a name
+        Windows would reject is reported and the file left alone. Only
+        MP3File.path changes, so a file with unsaved edits keeps them and
+        its next Save writes to the new path. Files that could not be read
+        are never offered by the dialog and are mentioned afterwards."""
+        taken: set[str] = set()
+        errors: list[str] = []
+        renamed: list[tuple[str, str]] = []
+
+        def do_one(item: tuple[int, str], _index: int) -> None:
+            index, new_stem = item
+            mp3 = targets[index]
+            old_path = str(mp3.path)
+            problem = validate_filename_stem(new_stem)
+            if problem:
+                errors.append(f"{mp3.filename}: {problem}")
+                return
+            new_path = unique_path(
+                os.path.dirname(old_path), new_stem, mp3.path.suffix, taken, own_path=old_path,
+            )
+            same_file = os.path.normcase(os.path.abspath(new_path)) == os.path.normcase(os.path.abspath(old_path))
+            taken.add(os.path.normcase(os.path.abspath(new_path)))
+            if same_file and os.path.basename(new_path) == mp3.filename:
+                return  # nothing to change
+            try:
+                if same_file:
+                    os.rename(old_path, new_path)  # only the case differs: the same file, not a clash
+                else:
+                    rename_no_clobber(old_path, new_path)
+            except OSError as exc:
+                errors.append(f"{mp3.filename}: {exc}")
+                return
+            mp3.path = Path(new_path)  # a later Save writes here
+            renamed.append((old_path, new_path))
+
+        try:
+            run_with_progress(
+                self, list(changes.items()), do_one, "Renaming files...",
+                threshold=3, cancellable=True,
+                label_for=lambda item: f"Renaming: {targets[item[0]].filename}",
+            )
+        finally:
+            # Also after a cancel: what was renamed is logged, so it can be undone.
+            _rename_log().record("Search/Replace (filename)", renamed)
+
+        self._rebuild_table()
+        unreadable = [mp3.filename for mp3 in targets if mp3.load_error]
+        notes: list[str] = []
+        if errors:
+            notes.append(summarize_errors(errors))
+        if unreadable:
+            notes.append(f"Skipped, the file could not be read: {summarize_errors(unreadable)}")
+        if notes:
+            QMessageBox.warning(self, "Some Files Not Renamed", "\n\n".join(notes))
 
     def open_case_conversion_dialog(self) -> None:
         """Edit > Change Case...: same shape as Search and Replace."""

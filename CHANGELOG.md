@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01#04 -- Search and Replace can rename files
+
+- **Edit > Search and Replace now has a Filename column**, like the other Redactor apps. Pick Filename, type what to find and what to put instead (plain text or a regular expression), and the preview lists every old and new name. The extension is never searched or changed.
+- **Applying renames the files on disk right away** (with a progress dialog you can cancel). A new name that is already taken, by a file in the folder or by another file in the same batch, gets a number ("Name (2).mp3") instead of overwriting anything; a name Windows would reject is listed and that file left alone; files that could not be read are skipped and mentioned. Like every rename it is not on the Undo stack, but **File > Undo Last Rename** takes it back.
+- A file with unsaved edits can be renamed: the edits stay, and its next Save writes to the new name.
+
 ## 2026-10-01#03 -- TOOL ERROR for BPM, key, loudness, format probe and lyrics
 
 - **A failing tool is no longer reported as a finding about the file.** Detect BPM, Detect Key, Measure Loudness (and the deep check's format probe and the lyrics fetch) now tell a tool failure (timeout, could not start, unreadable output, a crash with no result, the network being down) apart from a real verdict. A failure shows as an orange **TOOL ERROR** in the BPM, Key, Loudness or Lyrics cell, with the reason in the tooltip, exactly like the integrity columns already did. Real verdicts are unchanged: "no tempo found" and "no lyrics found" stay as they were, and silence still counts as OK with no key.
