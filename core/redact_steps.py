@@ -368,6 +368,8 @@ class BpmStep(Mp3Step):
         bpm, status, message = detect_bpm(Path(ctx.temp))
         if status == STATUS_TOOL_MISSING:
             return StepResult.nothing(note=message)
+        if status == STATUS_TOOL_ERROR:
+            return StepResult.failed(message)  # aubio itself failed: nothing is written
         if bpm is None or status != STATUS_OK:
             # Mostly "not enough beats" (ambient, spoken word): a miss, not a failure.
             return StepResult.nothing(note=f"BPM not detected: {message}")
@@ -396,7 +398,7 @@ class KeyStep(Mp3Step):
         )
         if status == STATUS_TOOL_MISSING:
             return StepResult.nothing(note=message)
-        if status != STATUS_OK:
+        if status != STATUS_OK:  # TOOL ERROR: nothing is written
             return StepResult.failed(message)
         if not key:
             return StepResult.nothing()  # silent audio: no key to write (nothing is cleared either)
@@ -417,7 +419,7 @@ class LoudnessStep(Mp3Step):
         )
         if status == STATUS_TOOL_MISSING:
             return StepResult.nothing(note=message)
-        if status != STATUS_OK:
+        if status != STATUS_OK:  # TOOL ERROR: nothing is written
             return StepResult.failed(message)
         if gain is None:
             return StepResult.nothing()  # silent audio

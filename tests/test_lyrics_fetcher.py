@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core.lyrics_fetcher import build_query, fetch_lyrics
-from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 
 
 def test_build_query_combines_artist_and_title():
@@ -87,7 +87,7 @@ def test_fetch_lyrics_reports_error_when_search_raises(mock_search):
     lyrics, status, message = fetch_lyrics("Artist Title")
 
     assert lyrics == ""
-    assert status == STATUS_ERROR
+    assert status == STATUS_TOOL_ERROR
     assert "network unreachable" in message
 
 
@@ -100,7 +100,7 @@ def test_fetch_lyrics_reports_error_when_the_matched_result_fetch_fails(mock_sea
     lyrics, status, message = fetch_lyrics("Artist Title")
 
     assert lyrics == ""
-    assert status == STATUS_ERROR
+    assert status == STATUS_TOOL_ERROR
     assert "bad response" in message
 
 

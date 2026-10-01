@@ -1,11 +1,11 @@
 """One file's check raising (anything, e.g. UnicodeDecodeError from a
-tool's output) becomes that file's STATUS_ERROR; the rest of the batch
+tool's output) becomes that file's STATUS_TOOL_ERROR; the rest of the batch
 still runs. Load-error files never get marked dirty by a detection."""
 
 from pathlib import Path
 from unittest.mock import patch
 
-from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR
+from core.mp3_file import MP3File, STATUS_OK, STATUS_TOOL_ERROR
 from core.scan_service import (
     run_bpm_check, run_deep_check, run_key_detection, run_loudness_measurement,
     run_lyrics_fetch,
@@ -28,7 +28,7 @@ def _files():
 def test_key_detection_isolates_a_raising_file(_m):
     bad, good = _files()
     run_key_detection([bad, good], max_workers=2)
-    assert bad.key_status == STATUS_ERROR and "UnicodeDecodeError" in bad.key_message
+    assert bad.key_status == STATUS_TOOL_ERROR and "UnicodeDecodeError" in bad.key_message
     assert good.key_status == STATUS_OK and good.key_value == "C"
 
 
@@ -36,7 +36,7 @@ def test_key_detection_isolates_a_raising_file(_m):
 def test_bpm_check_isolates_a_raising_file(_m):
     bad, good = _files()
     run_bpm_check([bad, good], max_workers=2)
-    assert bad.bpm_status == STATUS_ERROR and bad.bpm is None
+    assert bad.bpm_status == STATUS_TOOL_ERROR and bad.bpm is None and not bad.dirty
     assert good.bpm == 120.0 and good.dirty
 
 
@@ -44,7 +44,7 @@ def test_bpm_check_isolates_a_raising_file(_m):
 def test_lyrics_fetch_isolates_a_raising_file(_m):
     bad, good = _files()
     run_lyrics_fetch([bad, good], max_workers=2)
-    assert bad.lyrics_status == STATUS_ERROR
+    assert bad.lyrics_status == STATUS_TOOL_ERROR
     assert good.lyrics == "la"
 
 
@@ -52,7 +52,7 @@ def test_lyrics_fetch_isolates_a_raising_file(_m):
 def test_loudness_isolates_a_raising_file(_m):
     bad, good = _files()
     run_loudness_measurement([bad, good], max_workers=2)
-    assert bad.loudness_status == STATUS_ERROR
+    assert bad.loudness_status == STATUS_TOOL_ERROR
     assert good.loudness_status == STATUS_OK
 
 

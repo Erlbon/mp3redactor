@@ -19,7 +19,7 @@ installed.
 
 from pathlib import Path
 
-from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 
 WIN_S = 1024  # FFT window size
 HOP_S = WIN_S // 2  # hop size (50% overlap)
@@ -30,7 +30,10 @@ def detect_bpm(path: Path) -> tuple[float | None, str, str]:
     Returns (bpm, status, message).
 
     bpm is None unless status is STATUS_OK. status is one of
-    STATUS_OK / STATUS_ERROR / STATUS_TOOL_MISSING.
+    STATUS_OK / STATUS_ERROR / STATUS_TOOL_ERROR / STATUS_TOOL_MISSING.
+    STATUS_ERROR is only the "no tempo found" verdict (too few beats);
+    aubio failing to open or decode the file is STATUS_TOOL_ERROR, which
+    is never written to a tag.
     """
     try:
         import aubio
@@ -70,4 +73,4 @@ def detect_bpm(path: Path) -> tuple[float | None, str, str]:
         return round(bpm, 1), STATUS_OK, ""
 
     except Exception as e:  # noqa: BLE001 -- any aubio/decoder failure is a per-file result, not a crash
-        return None, STATUS_ERROR, f"BPM detection failed: {e}"
+        return None, STATUS_TOOL_ERROR, f"BPM detection failed: {e}"

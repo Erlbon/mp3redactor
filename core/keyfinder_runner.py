@@ -3,8 +3,9 @@ Runs keyfinder-cli against a file and returns the detected musical key.
 
 Much simpler output to parse than mp3val's: keyfinder-cli prints just
 the key to stdout on success (nothing at all if the file is silent --
-genuinely has no key, not a failure) and exits 0. Any non-zero exit, or
-an OSError launching it, is treated as STATUS_ERROR. See
+genuinely has no key, not a failure) and exits 0. Any non-zero exit, a
+timeout, or an OSError launching it is the tool failing, reported as
+STATUS_TOOL_ERROR (never written to a tag). See
 https://github.com/Erlbon/keyfinder-cli-windows for how the Windows
 binary is built (no prebuilt one exists upstream).
 
@@ -15,7 +16,7 @@ core.subprocess_utils): no console window, stdin=DEVNULL, UTF-8 output.
 import subprocess
 from pathlib import Path
 
-from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 from core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
 
@@ -31,8 +32,9 @@ def detect_key(
 ) -> tuple[str, str, str]:
     """
     Returns (key, status, message). status is one of STATUS_OK /
-    STATUS_ERROR / STATUS_TOOL_MISSING -- keyfinder-cli has no
-    WARNING-equivalent. key is the detected key (e.g. "A", standard
+    STATUS_TOOL_ERROR / STATUS_TOOL_MISSING -- keyfinder-cli has no
+    WARNING-equivalent and no file verdict besides "no key". key is the
+    detected key (e.g. "A", standard
     notation, keyfinder-cli's default) or "" both on any error and for
     a genuinely silent file (still STATUS_OK in that case -- silence
     having no key isn't a failure).
@@ -53,13 +55,15 @@ def detect_key(
         # could raise UnicodeDecodeError on non-ASCII output).
         result = run_tool([str(exe), str(path)], timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        return "", STATUS_ERROR, f"keyfinder-cli timed out after {TIMEOUT_SECONDS}s"
-    except OSError as e:
-        return "", STATUS_ERROR, f"failed to launch keyfinder-cli: {e}"
+        return "", STATUS_TOOL_ERROR, f"keyfinder-cli timed out after {TIMEOUT_SECONDS}s"
+    except (OSError, UnicodeDecodeError) as e:
+        return "", STATUS_TOOL_ERROR, f"failed to run keyfinder-cli: {e}"
 
     if result.returncode != 0:
+        # keyfinder-cli has no verdict-by-exit-code: it exits 0 even for
+        # silence, so a non-zero exit is the tool failing.
         message = result.stderr.strip() or f"keyfinder-cli exited with code {result.returncode}"
-        return "", STATUS_ERROR, message
+        return "", STATUS_TOOL_ERROR, message
 
     key = result.stdout.strip()
     # A message even on the "empty but OK" case -- otherwise a genuinely

@@ -27,7 +27,7 @@ from core.keyfinder_runner import detect_key
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_converter import DEFAULT_BITRATE_KBPS, convert_to_mp3
 from core.mp3_file import (
-    BASELINE_KEYS, MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING,
+    BASELINE_KEYS, MP3File, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING,
 )
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
@@ -207,10 +207,17 @@ def run_bpm_check(
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             try:
-                mp3.bpm, mp3.bpm_status, mp3.bpm_message = future.result()
+                bpm, status, message = future.result()
             except Exception as e:  # noqa: BLE001 -- one file's failure must not abort the batch
-                mp3.bpm, mp3.bpm_status, mp3.bpm_message = None, STATUS_ERROR, _describe(e)
-            if mp3.bpm is not None and not mp3.load_error:
+                bpm, status, message = None, STATUS_TOOL_ERROR, _describe(e)
+            if status == STATUS_TOOL_ERROR:
+                # The detector failed: shown, but nothing was learned, so
+                # the value the file already had stays and nothing is
+                # marked dirty (the writer skips a TOOL ERROR BPM too).
+                mp3.bpm_status, mp3.bpm_message = status, message
+            else:
+                mp3.bpm, mp3.bpm_status, mp3.bpm_message = bpm, status, message
+            if status != STATUS_TOOL_ERROR and mp3.bpm is not None and not mp3.load_error:
                 # A detected BPM is new tag data, same as a manually
                 # typed field -- mark dirty so it actually reaches disk
                 # via the normal Save flow (core.tag_writer writes it to
@@ -299,9 +306,13 @@ def run_key_detection(
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             try:
-                mp3.key_value, mp3.key_status, mp3.key_message = future.result()
+                key, status, message = future.result()
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
-                mp3.key_value, mp3.key_status, mp3.key_message = "", STATUS_ERROR, _describe(e)
+                key, status, message = "", STATUS_TOOL_ERROR, _describe(e)
+            if status == STATUS_TOOL_ERROR:
+                mp3.key_status, mp3.key_message = status, message  # keeps the existing key, see run_bpm_check()
+            else:
+                mp3.key_value, mp3.key_status, mp3.key_message = key, status, message
             if mp3.key_status == STATUS_OK and not mp3.load_error:
                 # Unlike BPM (mp3.bpm stays None for both "never
                 # detected" and "detection failed"), a genuinely silent
@@ -359,9 +370,16 @@ def run_lyrics_fetch(
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             try:
-                mp3.lyrics, mp3.lyrics_status, mp3.lyrics_message = future.result()
+                lyrics, status, message = future.result()
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
-                mp3.lyrics, mp3.lyrics_status, mp3.lyrics_message = "", STATUS_ERROR, _describe(e)
+                lyrics, status, message = "", STATUS_TOOL_ERROR, _describe(e)
+            if status == STATUS_TOOL_ERROR:
+                # The search itself failed (network down...): the lyrics the
+                # file already has must survive, or the next Save would
+                # clear them.
+                mp3.lyrics_status, mp3.lyrics_message = status, message
+            else:
+                mp3.lyrics, mp3.lyrics_status, mp3.lyrics_message = lyrics, status, message
             if mp3.lyrics_status == STATUS_OK and not mp3.load_error:
                 # Fetched lyrics are new tag data, same as a manually
                 # typed field -- mark dirty so it reaches disk via the
@@ -429,7 +447,7 @@ def run_deep_check(
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
                 # Shown as TOOL ERROR, not stamped: the check didn't complete.
                 mp3.deep_check_status, mp3.deep_check_message = STATUS_TOOL_ERROR, _describe(e)
-                encoder, sample_rate, channels, probe_status = "", None, None, STATUS_ERROR
+                encoder, sample_rate, channels, probe_status = "", None, None, STATUS_TOOL_ERROR
             # Probe info is kept independent of the deep-check result --
             # a file can fail to fully decode and still have perfectly
             # readable container metadata, or vice versa, same "one
@@ -474,13 +492,14 @@ def run_loudness_measurement(
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             try:
-                (
-                    mp3.loudness_lufs, mp3.loudness_gain_db,
-                    mp3.loudness_status, mp3.loudness_message,
-                ) = future.result()
+                lufs, gain_db, status, message = future.result()
             except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
-                mp3.loudness_lufs, mp3.loudness_gain_db = None, None
-                mp3.loudness_status, mp3.loudness_message = STATUS_ERROR, _describe(e)
+                lufs, gain_db, status, message = None, None, STATUS_TOOL_ERROR, _describe(e)
+            if status == STATUS_TOOL_ERROR:
+                mp3.loudness_status, mp3.loudness_message = status, message  # keeps the existing value
+            else:
+                mp3.loudness_lufs, mp3.loudness_gain_db = lufs, gain_db
+                mp3.loudness_status, mp3.loudness_message = status, message
             if (
                 mp3.loudness_status == STATUS_OK and mp3.loudness_gain_db is not None
                 and not mp3.load_error

@@ -25,7 +25,7 @@ would just be embedded as noise in the USLT frame and the Lyrics dialog
 import re
 import unicodedata
 
-from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 
 
 def build_query(mp3: MP3File) -> str:
@@ -74,9 +74,10 @@ def fetch_lyrics(query: str, artist: str = "", title: str = "") -> tuple[str, st
     is "no lyrics found" rather than another song's lyrics.
 
     Returns (lyrics, status, message). lyrics is "" unless status is
-    STATUS_OK. status is one of STATUS_OK / STATUS_ERROR /
-    STATUS_TOOL_MISSING -- lyricy has no WARNING-equivalent, same
-    vocabulary as core.keyfinder_runner.detect_key().
+    STATUS_OK. status is one of STATUS_OK / STATUS_ERROR (nothing found:
+    a verdict) / STATUS_TOOL_ERROR (the search or fetch itself failed,
+    e.g. the network is down) / STATUS_TOOL_MISSING -- lyricy has no
+    WARNING-equivalent, same vocabulary as core.keyfinder_runner.detect_key().
     """
     try:
         from lyricy import Lyricy
@@ -90,7 +91,7 @@ def fetch_lyrics(query: str, artist: str = "", title: str = "") -> tuple[str, st
     try:
         results = Lyricy.search(query)
     except Exception as e:  # noqa: BLE001 -- any network/parse failure is a per-file result, not a crash
-        return "", STATUS_ERROR, f"lyrics search failed: {e}"
+        return "", STATUS_TOOL_ERROR, f"lyrics search failed: {e}"
 
     # lyricy's own "nothing found" sentinel is a result with an empty
     # link (e.g. title="No result found"), not an exception or an empty
@@ -113,7 +114,7 @@ def fetch_lyrics(query: str, artist: str = "", title: str = "") -> tuple[str, st
     try:
         match.fetch()
     except Exception as e:  # noqa: BLE001
-        return "", STATUS_ERROR, f"lyrics fetch failed: {e}"
+        return "", STATUS_TOOL_ERROR, f"lyrics fetch failed: {e}"
 
     lyrics = (match.lyrics_without_lrc_tags or "").strip()
     if not lyrics:

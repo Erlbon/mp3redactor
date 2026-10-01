@@ -107,7 +107,9 @@ def measure_loudness(
     ReplayGain-style track gain relative to REPLAYGAIN_REFERENCE_LUFS
     -- what actually gets written to TXXX:REPLAYGAIN_TRACK_GAIN, see
     core/tag_writer.py's _write_loudness_frame(). Both are None unless
-    status is STATUS_OK.
+    status is STATUS_OK. status is STATUS_OK / STATUS_TOOL_ERROR (timeout,
+    launch failure, no measurement in ffmpeg's output) / STATUS_TOOL_MISSING;
+    there is no file verdict here, silence included.
 
     A genuinely silent file measures "-inf" LUFS -- not a failure (the
     same "silence isn't an error" call BPM/key detection makes), but
@@ -126,14 +128,16 @@ def measure_loudness(
             timeout=LOUDNESS_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        return None, None, STATUS_ERROR, f"ffmpeg timed out after {LOUDNESS_TIMEOUT_SECONDS}s"
-    except OSError as e:
-        return None, None, STATUS_ERROR, f"failed to launch ffmpeg: {e}"
+        return None, None, STATUS_TOOL_ERROR, f"ffmpeg timed out after {LOUDNESS_TIMEOUT_SECONDS}s"
+    except (OSError, UnicodeDecodeError) as e:
+        return None, None, STATUS_TOOL_ERROR, f"failed to run ffmpeg: {e}"
 
     lufs = _parse_loudnorm_input_i(result.stderr)
     if lufs is None:
+        # No measurement came out: ffmpeg failed or printed something
+        # unreadable. That says nothing about the audio itself.
         message = result.stderr.strip() or f"ffmpeg exited with code {result.returncode}"
-        return None, None, STATUS_ERROR, message
+        return None, None, STATUS_TOOL_ERROR, message
 
     if not math.isfinite(lufs):
         # Genuinely silent audio -- a real result, not a failure, but
@@ -172,6 +176,10 @@ def probe_format(
     rate/channel count. Note the encoder tag lives at the *format*
     level (container metadata), not the stream level -- ffprobe reports
     those as two separate objects, easy to look in the wrong one.
+
+    status is STATUS_OK / STATUS_ERROR (ffprobe answered but found no
+    audio stream) / STATUS_TOOL_ERROR (timeout, launch failure, no JSON
+    out) / STATUS_TOOL_MISSING.
     """
     exe = tool_path if tool_path is not None else find_tool(FFPROBE_EXE_NAME, override=override_path)
     if exe is None:
@@ -186,16 +194,21 @@ def probe_format(
             timeout=PROBE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        return "", None, None, STATUS_ERROR, f"ffprobe timed out after {PROBE_TIMEOUT_SECONDS}s"
-    except OSError as e:
-        return "", None, None, STATUS_ERROR, f"failed to launch ffprobe: {e}"
+        return "", None, None, STATUS_TOOL_ERROR, f"ffprobe timed out after {PROBE_TIMEOUT_SECONDS}s"
+    except (OSError, UnicodeDecodeError) as e:
+        return "", None, None, STATUS_TOOL_ERROR, f"failed to run ffprobe: {e}"
 
     try:
         data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        # No JSON at all: ffprobe failed (or printed garbage).
+        message = result.stderr.strip() or f"ffprobe exited with code {result.returncode}"
+        return "", None, None, STATUS_TOOL_ERROR, message
+    try:
         stream = data["streams"][0]
-    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-        message = result.stderr.strip() or "ffprobe returned no audio stream info"
-        return "", None, None, STATUS_ERROR, message
+    except (KeyError, IndexError, TypeError):
+        # Valid output that lists no audio stream: a verdict on the file.
+        return "", None, None, STATUS_ERROR, "ffprobe returned no audio stream info"
 
     encoder = str(data.get("format", {}).get("tags", {}).get("encoder", "") or "")
     sample_rate = int(stream["sample_rate"]) if stream.get("sample_rate") else None

@@ -63,6 +63,7 @@ from core.mp3_file import (
     MP3File,
     RELEASE_COUNTRY_DESC,
     STATUS_OK,
+    STATUS_TOOL_ERROR,
 )
 
 # attribute_key -> ID3 frame id for the FIELDS entries backed by a
@@ -352,8 +353,11 @@ def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:
     session AND one that already carries a TBPM tag from other software.
     Leaving that pre-existing frame alone in the None case avoids
     silently deleting a tag this app never actually looked at.
+
+    A STATUS_TOOL_ERROR bpm_status (the detector itself failed) writes
+    nothing, even if mp3.bpm still holds an older value.
     """
-    if mp3.bpm is not None:
+    if mp3.bpm is not None and mp3.bpm_status != STATUS_TOOL_ERROR:
         tags.setall("TBPM", [tbpm_cls(encoding=3, text=str(round(mp3.bpm)))])
 
 
@@ -370,7 +374,7 @@ def _write_key_frame(tags, mp3: MP3File, tkey_cls) -> None:
     "no key" result still clears/skips the frame the same way blanking
     a text field does (a stale TKEY from other software genuinely
     should go, once this app has actually re-measured "there isn't
-    one"). STATUS_ERROR/STATUS_TOOL_MISSING (key_status still its
+    one"). STATUS_TOOL_ERROR/STATUS_TOOL_MISSING (key_status still its
     default STATUS_UNCHECKED, or a failed run) leaves any existing
     TKEY frame alone -- same "we don't know, so don't touch it" reasons
     as _write_bpm_frame()."""

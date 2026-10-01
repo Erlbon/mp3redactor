@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-01#03 -- TOOL ERROR for BPM, key, loudness, format probe and lyrics
+
+- **A failing tool is no longer reported as a finding about the file.** Detect BPM, Detect Key, Measure Loudness (and the deep check's format probe and the lyrics fetch) now tell a tool failure (timeout, could not start, unreadable output, a crash with no result, the network being down) apart from a real verdict. A failure shows as an orange **TOOL ERROR** in the BPM, Key, Loudness or Lyrics cell, with the reason in the tooltip, exactly like the integrity columns already did. Real verdicts are unchanged: "no tempo found" and "no lyrics found" stay as they were, and silence still counts as OK with no key.
+- **A TOOL ERROR never touches the file.** It is never written to a tag and never marks the file as changed; the value the file already had stays in memory, so a later Save keeps the existing BPM, key, loudness and lyrics tags as they were.
+- **Redact:** the BPM, key and loudness steps report a TOOL ERROR as a failed step for that file and write nothing; a genuine "BPM not detected" is still just a note.
+
 ## 2026-10-01#02 -- Look up albums in the offline MusicBrainz database; Redact uses it first
 
 - **New: Metadata > Look Up > MusicBrainz (Local Database)...** (also in the right-click Look Up menu). The same review dialog as Look Up via MusicBrainz -- one album per folder, Other Matches for other editions, a Search Query form -- answered instantly from the database you built in Tools > MusicBrainz Database, with no network and no one-request-a-second wait. Without a database it offers to open that dialog.

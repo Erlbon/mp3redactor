@@ -2248,13 +2248,17 @@ class MainWindow(QMainWindow):
         bpm_item.setData(Qt.ItemDataRole.UserRole, mp3)
         if mp3.bpm_message:
             bpm_item.setToolTip(mp3.bpm_message)
+        # A TOOL ERROR cell keeps its orange text even on a dirty row (the
+        # dirty tint would hide it); the row's other cells show the tint.
+        if mp3.bpm_status == STATUS_TOOL_ERROR:
+            bpm_item.setForeground(STATUS_COLORS[STATUS_TOOL_ERROR])
         # A detected/loaded BPM that hasn't been saved yet is exactly
         # as "dirty" as a manually typed field -- the amber tint below
         # was previously only applied to the FIELDS loop above, so a
         # BPM/key-only change (no text field touched) showed no visual
         # cue at all that Save had anything to do, easy to mistake for
         # "this was already saved" -- see mp3.dirty's docstring.
-        if mp3.dirty:
+        elif mp3.dirty:
             bpm_item.setBackground(DIRTY_COLOR)
             bpm_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["bpm"], bpm_item)
@@ -2266,7 +2270,7 @@ class MainWindow(QMainWindow):
             key_item.setForeground(key_color)
         if mp3.key_message:
             key_item.setToolTip(mp3.key_message)
-        if mp3.dirty:
+        if mp3.dirty and mp3.key_status != STATUS_TOOL_ERROR:
             key_item.setBackground(DIRTY_COLOR)
             key_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["key"], key_item)
@@ -2284,13 +2288,16 @@ class MainWindow(QMainWindow):
         # show the file as unsaved.
         self.table.setItem(row, self._col_index["deep_check"], deep_check_item)
 
-        loudness_item = NumericTableWidgetItem(mp3.display_loudness(), sort_value=mp3.loudness_lufs)
+        loudness_item = NumericTableWidgetItem(self._loudness_display(mp3), sort_value=mp3.loudness_lufs)
         loudness_item.setData(Qt.ItemDataRole.UserRole, mp3)
-        if mp3.loudness_gain_db is not None:
+        if mp3.loudness_status == STATUS_TOOL_ERROR:
+            loudness_item.setToolTip(mp3.loudness_message)
+            loudness_item.setForeground(STATUS_COLORS[STATUS_TOOL_ERROR])
+        elif mp3.loudness_gain_db is not None:
             loudness_item.setToolTip(f"Track gain: {mp3.loudness_gain_db:+.2f} dB (ref. -18 LUFS)")
         elif mp3.loudness_message:
             loudness_item.setToolTip(mp3.loudness_message)
-        if mp3.dirty:
+        if mp3.dirty and mp3.loudness_status != STATUS_TOOL_ERROR:
             loudness_item.setBackground(DIRTY_COLOR)
             loudness_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["loudness"], loudness_item)
@@ -2298,7 +2305,7 @@ class MainWindow(QMainWindow):
         lyrics_item = QTableWidgetItem(self._lyrics_display(mp3))
         lyrics_item.setData(Qt.ItemDataRole.UserRole, mp3)
         lyrics_color = STATUS_COLORS.get(mp3.lyrics_status)
-        if lyrics_color is not None and not mp3.lyrics:
+        if lyrics_color is not None and (not mp3.lyrics or mp3.lyrics_status == STATUS_TOOL_ERROR):
             # Unlike bpm/key/integrity, STATUS_OK here just means
             # "there's text in the cell" -- already obvious from the
             # cell itself, so the green tint would be redundant. Only
@@ -2311,7 +2318,7 @@ class MainWindow(QMainWindow):
             lyrics_item.setToolTip(mp3.lyrics_message)
         elif mp3.lyrics:
             lyrics_item.setToolTip("Double-click to view/edit")
-        if mp3.dirty:
+        if mp3.dirty and mp3.lyrics_status != STATUS_TOOL_ERROR:
             lyrics_item.setBackground(DIRTY_COLOR)
             lyrics_item.setForeground(HIGHLIGHT_TEXT_COLOR)
         self.table.setItem(row, self._col_index["lyrics"], lyrics_item)
@@ -2351,15 +2358,21 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _bpm_display(mp3: MP3File) -> str:
-        if mp3.bpm_status == STATUS_TOOL_MISSING:
-            return "TOOL MISSING"
+        if mp3.bpm_status in (STATUS_TOOL_MISSING, STATUS_TOOL_ERROR):
+            return mp3.bpm_status
         return mp3.display_bpm()
 
     @staticmethod
     def _key_display(mp3: MP3File) -> str:
-        if mp3.key_status == STATUS_TOOL_MISSING:
-            return "TOOL MISSING"
+        if mp3.key_status in (STATUS_TOOL_MISSING, STATUS_TOOL_ERROR):
+            return mp3.key_status
         return mp3.key_value
+
+    @staticmethod
+    def _loudness_display(mp3: MP3File) -> str:
+        if mp3.loudness_status == STATUS_TOOL_ERROR:
+            return mp3.loudness_status
+        return mp3.display_loudness()
 
     @staticmethod
     def _cover_display(mp3: MP3File) -> str:
@@ -2369,8 +2382,8 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _lyrics_display(mp3: MP3File) -> str:
-        if mp3.lyrics_status == STATUS_TOOL_MISSING:
-            return "TOOL MISSING"
+        if mp3.lyrics_status in (STATUS_TOOL_MISSING, STATUS_TOOL_ERROR):
+            return mp3.lyrics_status
         if mp3.lyrics:
             line_count = mp3.lyrics.count("\n") + 1
             return f"Yes ({line_count} lines)"

@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core.keyfinder_runner import detect_key
-from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.mp3_file import STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 
 
 @patch("core.keyfinder_runner.find_tool", return_value=None)
@@ -42,11 +42,11 @@ def test_detect_key_silent_file_is_ok_with_no_key(mock_run):
 
 
 @patch("core.keyfinder_runner.subprocess.run")
-def test_detect_key_nonzero_exit_is_error(mock_run):
+def test_detect_key_nonzero_exit_is_tool_error(mock_run):
     mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="could not decode file")
     key, status, message = detect_key(Path("song.mp3"), tool_path=Path("keyfinder-cli.exe"))
     assert key == ""
-    assert status == STATUS_ERROR
+    assert status == STATUS_TOOL_ERROR
     assert "could not decode file" in message
 
 
@@ -55,7 +55,7 @@ def test_detect_key_handles_launch_failure(mock_run):
     mock_run.side_effect = OSError("permission denied")
     key, status, message = detect_key(Path("song.mp3"), tool_path=Path("keyfinder-cli.exe"))
     assert key == ""
-    assert status == STATUS_ERROR
+    assert status == STATUS_TOOL_ERROR
     assert "permission denied" in message
 
 
