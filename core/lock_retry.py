@@ -3,15 +3,15 @@ core/lock_retry.py
 
 Retry a file operation that fails because another program briefly holds the
 file (Windows: a virus scanner looking at the freshly written temp copy, the
-search indexer, a thumbnailer). Such a lock raises PermissionError (winerror
-5 access denied, 32 sharing violation, 33 lock violation) and is gone a
-moment later, so Save and Redact retry a few times instead of reporting a
-failed save. Only lock errors are retried; anything else (disk full, path too
-long, a real permission problem) fails at once, and the last error is
-re-raised unchanged once the attempts run out.
+search indexer, a thumbnailer). Save and Redact retry a few times instead of
+reporting a failed save. Only lock errors are retried; anything else (disk
+full, path too long, a real permission problem) fails at once, and the last
+error is re-raised unchanged once the attempts run out.
 
-An app-local copy of what redactor_common's core/os_utils will offer; switch
-to that once this app pins it.
+A thin adapter over redactor_common's core/os_utils (retry_on_lock,
+is_lock_error, LOCK_HINT): the callers in tag_writer, mp3_converter, settings
+and the Redact steps keep passing a no-argument callable, and the retry
+count, pause and the pause function stay patchable here.
 """
 
 from __future__ import annotations
@@ -19,12 +19,17 @@ from __future__ import annotations
 import time
 from typing import Callable, TypeVar
 
+from redactor_common.core.os_utils import LOCK_HINT as _SHARED_LOCK_HINT
+from redactor_common.core.os_utils import is_lock_error
+from redactor_common.core.os_utils import retry_on_lock as _retry_on_lock
+
 ATTEMPTS = 6
-DELAY = 0.15  # seconds between attempts
-LOCK_WINERRORS = (5, 32, 33)
-LOCK_HINT = " (the file is locked by another program, such as a virus scanner or indexer -- try again in a moment)"
+DELAY = 0.15  # seconds before the second attempt; each further pause is 1.4x longer
+LOCK_HINT = f" ({_SHARED_LOCK_HINT} -- try again in a moment)"
 
 T = TypeVar("T")
+
+__all__ = ["ATTEMPTS", "DELAY", "LOCK_HINT", "is_lock_error", "lock_hint", "retry_on_lock", "sleep"]
 
 
 def sleep(seconds: float) -> None:
@@ -32,23 +37,15 @@ def sleep(seconds: float) -> None:
     time.sleep(seconds)
 
 
-def is_lock_error(exc: BaseException) -> bool:
-    return isinstance(exc, PermissionError) or (
-        isinstance(exc, OSError) and getattr(exc, "winerror", None) in LOCK_WINERRORS
-    )
-
-
-def retry_on_lock(operation: Callable[[], T], attempts: int = ATTEMPTS, delay: float = DELAY) -> T:
+def retry_on_lock(operation: Callable[[], T], attempts: int | None = None, delay: float | None = None) -> T:
     """operation(), retried while it raises a lock error; the last error is
     re-raised. `operation` must be safe to run again."""
-    for attempt in range(attempts):
-        try:
-            return operation()
-        except Exception as exc:  # noqa: BLE001 -- anything but a lock error is re-raised at once
-            if not is_lock_error(exc) or attempt == attempts - 1:
-                raise
-            sleep(delay)
-    raise AssertionError("unreachable")  # attempts < 1
+    return _retry_on_lock(
+        operation,
+        attempts=ATTEMPTS if attempts is None else attempts,
+        delay=DELAY if delay is None else delay,
+        sleep=lambda seconds: sleep(seconds),  # looked up per call, so a patched sleep() is used
+    )
 
 
 def lock_hint(exc: BaseException) -> str:

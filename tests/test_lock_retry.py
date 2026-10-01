@@ -106,7 +106,49 @@ def test_pauses_are_between_attempts_only(tmp_path, monkeypatch, no_sleep):
     mp3 = _file(tmp_path)
     monkeypatch.setattr(tw.os, "replace", flaky(os.replace, 2))
     assert_saved(mp3)
-    assert no_sleep == [lock_retry.DELAY, lock_retry.DELAY]
+    # One pause per failed attempt, none after the success. The pauses grow
+    # (the shared helper backs off), starting at DELAY.
+    assert len(no_sleep) == 2
+    assert no_sleep[0] == lock_retry.DELAY and no_sleep[1] >= no_sleep[0]
+
+
+def test_it_is_the_shared_helper_with_six_attempts():
+    from redactor_common.core import os_utils
+
+    assert lock_retry.ATTEMPTS == 6
+    assert lock_retry.is_lock_error is os_utils.is_lock_error
+
+
+def test_lock_hint_only_for_lock_errors():
+    assert "locked by another program" in lock_retry.lock_hint(PermissionError(13, "denied"))
+    assert lock_retry.lock_hint(OSError(28, "No space left on device")) == ""
+    assert lock_retry.lock_hint(FileNotFoundError(2, "gone")) == ""
+
+
+def test_attempts_and_delay_can_be_overridden(no_sleep):
+    calls = []
+
+    def op():
+        calls.append(1)
+        raise PermissionError(13, "denied")
+
+    with pytest.raises(PermissionError):
+        lock_retry.retry_on_lock(op, attempts=3, delay=0.5)
+    assert len(calls) == 3 and no_sleep[0] == 0.5 and len(no_sleep) == 2
+
+
+def test_file_exists_and_not_found_are_never_retried(no_sleep):
+    for exc in (FileExistsError(17, "exists"), FileNotFoundError(2, "gone"), OSError(28, "full"), ValueError("x")):
+        calls = []
+
+        def op(exc=exc):
+            calls.append(1)
+            raise exc
+
+        with pytest.raises(type(exc)):
+            lock_retry.retry_on_lock(op)
+        assert len(calls) == 1
+    assert no_sleep == []
 
 
 @pytest.mark.parametrize("where", ["replace", "copy", "open"])

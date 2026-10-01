@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-01#05 -- Locked-file retry now uses the shared helper
+
+- The "file briefly locked by antivirus or the indexer" retry behind Save, Redact, the converter and the settings file now comes from redactor_common instead of an app-local copy. Same 6 attempts and the same rule (only lock errors are retried, anything else fails at once with the last error unchanged), but the pauses between attempts now grow (0.15 s, 0.21 s, 0.29 s ... about 1.6 s in all) instead of staying constant, and the "locked by another program" hint text is the shared wording.
+- Test-only: the lock-retry tests assert the behaviour (which errors are retried, how many attempts, the hint) rather than the old constant pauses.
+
 ## 2026-10-01#04 -- Search and Replace can rename files
 
 - **Edit > Search and Replace now has a Filename column**, like the other Redactor apps. Pick Filename, type what to find and what to put instead (plain text or a regular expression), and the preview lists every old and new name. The extension is never searched or changed.
