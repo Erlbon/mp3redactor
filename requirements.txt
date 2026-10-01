@@ -21,7 +21,7 @@ lyricy
 # see that repo's README ("Releasing a new version") for how to bump
 # this pin deliberately when it changes, rather than floating and
 # having one bad push there break this project's next install.
-redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-10-01-02
+redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-10-01-05
 
 # Secure storage of API keys/tokens (the Discogs token): redactor_common's
 # core/secret_store.py uses it (Windows Credential Manager, macOS Keychain,

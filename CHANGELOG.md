@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-01#08 -- Groundwork for Find Duplicates (audio identity and tag matching)
+
+- The matching engine behind the coming **Analyze > Find Duplicates** (no menu entry yet): it finds loaded files with identical audio (the audio is compared with all tags ignored, so retagging a file never changes it; a file whose ID3v2/ID3v1/APE tag was edited still matches its untagged twin), files carrying the same MusicBrainz recording, and files with the same artist, title and length (within 2 s). Live, remix, remaster, acoustic, demo, instrumental, edit, radio, extended and mono versions are never mixed up with the original, and "feat." guests and a leading "The" are ignored. Same track on different albums is only a weak match ("probably a compilation or another release"). Nothing is changed or deleted by it.
+- Requires redactor_common 2026-10-01-05 (the shared Find Duplicates review dialog).
+
 ## 2026-10-01#07 -- Detect BPM decodes MP3 through ffmpeg when aubio can't
 
 - **Detect BPM now works on Linux.** aubio's Linux build can't open MP3 files ("could not find RIFF header"), so BPM detection failed for every MP3 there. When aubio can't open or read a file directly, the app now has ffmpeg decode it once to a temporary mono WAV (at most the first 10 minutes, in the system temp folder, always removed afterwards) and runs aubio on that. aubio still reads the file directly first, so Windows behaviour and speed are unchanged. Without ffmpeg, or if ffmpeg fails, the result is a TOOL ERROR saying "BPM needs ffmpeg to decode this file". "Not enough beats" is still a normal result and is not retried.
