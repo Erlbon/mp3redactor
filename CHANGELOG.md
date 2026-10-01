@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-01#07 -- Detect BPM decodes MP3 through ffmpeg when aubio can't
+
+- **Detect BPM now works on Linux.** aubio's Linux build can't open MP3 files ("could not find RIFF header"), so BPM detection failed for every MP3 there. When aubio can't open or read a file directly, the app now has ffmpeg decode it once to a temporary mono WAV (at most the first 10 minutes, in the system temp folder, always removed afterwards) and runs aubio on that. aubio still reads the file directly first, so Windows behaviour and speed are unchanged. Without ffmpeg, or if ffmpeg fails, the result is a TOOL ERROR saying "BPM needs ffmpeg to decode this file". "Not enough beats" is still a normal result and is not retried.
+
 ## 2026-10-01#06 -- A failed lyrics fetch no longer wipes existing lyrics
 
 - **Fixed a data-loss bug:** when Metadata > Look Up > Lyrics found nothing (or the search failed, e.g. offline) for a file that already had lyrics, the file's lyrics were blanked in memory, and the next Save of that file deleted its lyrics tag. Now only a successful fetch replaces lyrics; "not found" and search failures leave the existing text and the file's changed-state alone (the result is still shown in the cell's tooltip). Clearing the lyrics yourself in Edit Lyrics still removes them.

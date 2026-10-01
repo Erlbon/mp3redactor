@@ -142,7 +142,8 @@ def test_bpm_aubio_failure_is_tool_error(monkeypatch):
     fake = MagicMock()
     fake.source.side_effect = RuntimeError("could not open file")
     monkeypatch.setitem(sys.modules, "aubio", fake)
-    bpm, status, message = detect_bpm(Path("song.mp3"))
+    with patch("core.bpm_detector.find_tool", return_value=None):  # no ffmpeg fallback either
+        bpm, status, message = detect_bpm(Path("song.mp3"))
     assert bpm is None and status == STATUS_TOOL_ERROR and "could not open" in message
 
 
