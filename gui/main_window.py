@@ -680,9 +680,8 @@ class MainWindow(QMainWindow):
         brand-new subfolder you haven't loaded anything from yet (only
         folders already represented in your current list get scanned,
         non-recursively) -- use Load Folder for that. A file that's
-        disappeared from disk isn't silently dropped either; it shows
-        up as a load error on its row, same as any other unreadable
-        file, rather than vanishing without a trace.
+        disappeared from disk is dropped from the list (only files
+        still present are shown).
 
         Discards unsaved in-memory edits (with confirmation first) and
         clears the undo stack, since its entries would reference
@@ -705,7 +704,9 @@ class MainWindow(QMainWindow):
                 lambda folder: find_mp3_files([Path(folder)], recursive=False),
             ),
         )
-        all_paths = [Path(p) for p in existing_paths + new_paths]
+        present_paths = [p for p in existing_paths if os.path.exists(p)]
+        removed_count = len(existing_paths) - len(present_paths)
+        all_paths = [Path(p) for p in present_paths + new_paths]
 
         loaded: list[MP3File] = []
 
@@ -719,12 +720,15 @@ class MainWindow(QMainWindow):
         self._update_redo_action()
         self._rebuild_table()
 
+        gone = f" {removed_count} file(s) no longer on disk were removed from the list." if removed_count else ""
         if new_paths:
             QMessageBox.information(
-                self, "Refreshed", f"Found {len(new_paths)} new file(s) and reloaded everything else."
+                self, "Refreshed", f"Found {len(new_paths)} new file(s) and reloaded everything else.{gone}"
             )
         else:
-            QMessageBox.information(self, "Refreshed", "No new files found. Reloaded everything from disk.")
+            QMessageBox.information(
+                self, "Refreshed", f"No new files found. Reloaded everything from disk.{gone}"
+            )
 
     def remove_selected_from_list(self) -> None:
         """File > Remove from List (Delete): drops the selected files from

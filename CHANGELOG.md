@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-04#01 -- Refresh drops files that are gone
+
+- Refresh List (F5) now shows only the files that are still on disk: a file that was deleted or moved since it was loaded is removed from the list instead of staying as an error row. New files in the loaded folders are still picked up.
+
 ## 2026-10-01#10 -- Preferences moves to the shared Preferences dialog
 
 - **Tools > Preferences now uses the family's shared Preferences dialog** (same layout and OK / Cancel / Apply / Reset to Defaults as the other Redactors). Pages: **Filenames** (ASCII-safe filenames, zero-pad numbers and width, Auto-Numbering padding -- these were previously only remembered from the Rename and Auto-Numbering dialogs and could not be edited here), **Library** (library folder), **Fixing** (delete .bak backups after a successful fix) and **Tools** (the same locate-tools rows as Tools > External Tools). Your stored settings are read and written exactly as before.
