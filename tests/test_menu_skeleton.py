@@ -44,7 +44,7 @@ def test_headings_in_skeleton_order(window):
 def test_menu_contents_and_order(window):
     menus = _top_menus(window)
     assert _menu_tree(menus["File"]) == [
-        "Open Files", "Open Folder", "Import and Convert", "---",
+        "Open Files", "Open Folder", "Import and Convert", "Create M4B Audiobook", "---",
         "Save All", "---",
         "Rename File", "Undo Last Rename", "Rename / Export / Move", "---",
         "Export Settings", "Import Settings", "---",

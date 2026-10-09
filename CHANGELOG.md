@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-09#02 -- Create M4B Audiobook
+
+- New **File > Create M4B Audiobook...**: the selected MP3 files (all loaded files when none is selected) become one chaptered .m4b, one chapter per file, in disc / track / file-name order. The dialog sets the title, author, narrator, year and genre (filled from the first file), the cover (the first file's picture, a cover or folder image beside it, or any image), the quality (32-128 kbps AAC, 64 by default, remembered) and where to save it, and lists the chapters with editable titles and Move Up / Move Down.
+- The MP3s are re-encoded to AAC (the format audiobook players expect), several at a time, to one sample rate so they can be joined; chapter marks come from the real length of each encoded piece. The result replaces the destination only when it is complete; a failure or Cancel leaves nothing behind, and the original MP3s are never touched.
+- Uses the ffmpeg and ffprobe already used for the other analysis tools.
+
 ## 2026-10-09#01 -- Shared library update
 
 - Updates the shared redactor_common library to 2026-10-08-02: the Recycle Bin move now accepts extended-length and mixed-slash paths (it failed with "[Errno 3] path not found" although the file existed), and error messages can be wrapped to fit a dialog.

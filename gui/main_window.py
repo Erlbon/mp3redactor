@@ -73,6 +73,7 @@ from core.mp3_file import (
     scan_display,
     scan_tooltip,
 )
+from core.m4b_builder import build_m4b
 from core.mp3_converter import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, plan_conversions,
 )
@@ -117,6 +118,7 @@ from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
+from gui.m4b_dialog import M4bDialog
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
@@ -411,6 +413,7 @@ class MainWindow(QMainWindow):
                 open_files=self.load_files_dialog,
                 open_folder=self.load_folder_dialog,
                 import_and_convert=self.import_and_convert_dialog,
+                extra_open=[MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog)],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
                 # dropped below; Ctrl+S stays as an alias of Save All.
@@ -904,6 +907,40 @@ class MainWindow(QMainWindow):
         elif succeeded_dests:
             QMessageBox.information(
                 self, "Import Complete", f"Converted and loaded {len(succeeded_dests)} file(s)."
+            )
+
+    def create_m4b_dialog(self) -> None:
+        """File > Create M4B Audiobook...: the selected files (all loaded files when none is
+        selected), one chapter each, joined into one chaptered .m4b beside them. See
+        gui/m4b_dialog.py and core/m4b_builder.py. Nothing in the list changes: the .m4b is a new
+        file, not loaded here."""
+        files = [mp3 for mp3 in (self._selected_files() or self.files) if not mp3.load_error]
+        if not files:
+            QMessageBox.information(self, "Create M4B Audiobook", "Load some MP3 files first.")
+            return
+        dialog = M4bDialog(files, bitrate_kbps=self.settings.m4b_bitrate_kbps, parent=self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        spec = dialog.spec()
+        self.settings.m4b_bitrate_kbps = spec.bitrate_kbps
+        self._remember_last_directory(str(spec.output))  # saves the settings, the quality choice included
+        with ProgressReporter(self, len(spec.chapters) + 1, "Creating audiobook...", threshold=1) as reporter:
+            result = build_m4b(
+                spec,
+                ffmpeg_path=self.settings.ffmpeg_path or None,
+                ffprobe_path=self.settings.ffprobe_path or None,
+                progress=reporter.on_progress,
+                should_cancel=reporter.should_cancel,
+            )
+        if result.cancelled:
+            self.statusBar().showMessage("Audiobook cancelled; nothing was written.", 6000)
+        elif result.status != STATUS_OK:
+            QMessageBox.warning(self, "Could Not Create the Audiobook", result.message)
+        else:
+            minutes = int(result.duration_seconds // 60)
+            QMessageBox.information(
+                self, "Audiobook Created",
+                f"{result.output.name}: {result.chapter_count} chapters, about {minutes} minutes.\n\n{result.output}",
             )
 
     # -- rename/export by pattern, and the reverse: parse filename --------
