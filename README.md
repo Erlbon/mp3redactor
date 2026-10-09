@@ -144,6 +144,279 @@ Roadmap, in build order:
     identify the app, not a user). Without fpcalc the lookup works as
     stage 1.
 
+## Command line
+
+The one exe (`mp3redactor.exe`, or `python main.py` from source) is also the command line. When its first
+argument is a command name, it runs that command and the window never opens; with no command, or with a file
+or folder to open, the window starts as usual. `mp3redactor --help` lists the commands and
+`mp3redactor COMMAND --help` lists the options of one.
+
+```
+mp3redactor info     PATH...  [--fields LIST | --all]
+mp3redactor set      PATH...  -s FIELD=VALUE ... [--clear FIELD ...] [-n]
+mp3redactor rename   PATH...  [-p PATTERN] [--zero-pad N] [--ascii] [-n]
+mp3redactor move     PATH...  -p PATTERN [--root FOLDER] [--copy] [--zero-pad N] [--ascii] [-n]
+mp3redactor convert  PATH...  [--bitrate KBPS] [--trash-original] [-n]
+mp3redactor redact   [PATH...] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N]
+                               [--trash-dir FOLDER] [--list-steps]
+mp3redactor analyze  PATH...  [--integrity] [--deep] [--bpm] [--key] [--loudness] [--save]
+mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [--bitrate KBPS] [--sidecar]
+                               [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
+                               [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
+                               [--lookup] [--region STORE] [--min-score N] [-n]
+```
+
+The command line uses the same code as the window, so the results are the same. It reads the same settings file
+(`mp3redactor_settings.ini` next to the exe: the saved Redact recipe, the library root, the tool paths, the
+M4B quality) and the same secret store for the API keys. Not every window function is available from the
+command line; the commands above are what is.
+
+### Options every command has
+
+| Option | Meaning |
+| --- | --- |
+| `PATH...` | One or more MP3 files, folders or wildcards (`D:\Music\Queen*.mp3`). A folder is searched recursively for `.mp3` files (`convert` looks for the other audio formats). A file you name is always used. A path that matches nothing is reported, and if nothing at all matches the command stops with exit code 2. |
+| `-R`, `--no-recurse` | For a folder, look only at the files directly in it. |
+| `--json` | Print one JSON document on stdout instead of text (see "JSON output"). Nothing else goes to stdout. |
+| `-q`, `--quiet` | No progress lines and no warnings on stderr (errors are still shown). |
+| `-o FILE`, `--output FILE` | Write the result (the text, or with `--json` the JSON document) to FILE instead of stdout. The file is complete when the program exits. This is the reliable way for a script to read a result. |
+| `-n`, `--dry-run` | On the commands that change files (`set`, `rename`, `move`, `convert`, `m4b`): show what would happen and change nothing. |
+| `-h`, `--help` | Help for the program or for one command. |
+| `--version` | The version (top level only). |
+
+Progress lines (`[3/20] name.mp3`) go to stderr when more than one file is processed.
+
+### info
+
+`mp3redactor info PATH... [--fields LIST | --all]`
+
+Shows each file's length, bitrate, whether it has a cover, and its tags.
+
+| Option | Meaning |
+| --- | --- |
+| `--fields LIST` | Comma-separated tag fields to show, e.g. `--fields artist,album,year`. Default: `title, artist, album, track, year`. |
+| `--all` | Show every tag field that has a value. |
+
+Only fields with a value are listed. Exit code 1 if a file could not be read.
+
+### set
+
+`mp3redactor set PATH... -s FIELD=VALUE [-s ...] [--clear FIELD ...] [-n]`
+
+Sets or empties ID3 tag fields and saves each file in place (an empty value removes the tag). Fields and values
+are checked before any file is touched; a bad one stops the command with exit code 2.
+
+| Option | Meaning |
+| --- | --- |
+| `-s FIELD=VALUE`, `--set FIELD=VALUE` | Set a field (repeat for several). |
+| `--clear FIELD` | Empty a field (repeat for several). |
+| `-n`, `--dry-run` | Show the old and new value of each field, save nothing. |
+
+Field names are case-insensitive and accept the plain, spaced or underscored spelling (`albumartist`, `Album
+Artist`, `album_artist`). The fields are: title, artist, albumartist, album, track, discnumber, year, genre,
+composer, comment, language, albumsort, artistsort, albumartistsort, acoustid_fingerprint, itunesadvisory,
+musicbrainz_albumid, musicbrainz_trackid, publisher, catalognumber, releasecountry.
+
+Checks: `track` and `discnumber` are a number or number/total (`3`, `3/12`); `year` is `YYYY`, `YYYY-MM` or
+`YYYY-MM-DD`; `language` is a three-letter code (`eng`, `nor`, `deu`).
+
+Each file's result is `changed`, `unchanged` (nothing differed), `planned` (dry run) or `failed`.
+
+### rename
+
+`mp3redactor rename PATH... [-p PATTERN] [--zero-pad N] [--ascii] [-n]`
+
+Renames each MP3 from its tags, in its own folder, like Rename / Export / Move > Rename files in place. Never
+overwrites: a name that is taken gets `(2)`, `(3)`, ...
+
+| Option | Meaning |
+| --- | --- |
+| `-p PATTERN`, `--pattern PATTERN` | The new name (without `.mp3`), with `%field%` tokens, e.g. `"%track% - %artist% - %title%"` (the default). Quote it so the shell leaves the `%` signs alone. |
+| `--zero-pad N` | Pad the track number to N digits (`--zero-pad 2` gives `03`). |
+| `--ascii` | ASCII-safe names (é becomes e, æ becomes ae, other symbols are dropped). |
+| `-n`, `--dry-run` | Show the new names, rename nothing. |
+
+Tokens are the tag field names above (`%artist%`, `%album%`, `%title%`, `%track%`, `%year%`, ...). A file the
+pattern gives no name for (all its fields are empty) is `skipped`, not renamed to "untitled". A file that
+already has the name is `unchanged`. The rename is recorded, so File > Undo Last Rename in the app undoes it.
+
+### move
+
+`mp3redactor move PATH... -p PATTERN [--root FOLDER] [--copy] [--zero-pad N] [--ascii] [-n]`
+
+Moves (or copies) each MP3 into a folder tree under a library folder, like Rename / Export / Move > Move into
+folders. The pattern may contain `/` to make sub-folders: `"%albumartist%/%album%/%track% - %title%"`. Missing
+folders are created; nothing is overwritten (a taken name gets `(2)`); a destination outside the library folder
+or too long is refused.
+
+| Option | Meaning |
+| --- | --- |
+| `-p PATTERN`, `--pattern PATTERN` | Required. The path under the library folder, with `%field%` tokens. |
+| `--root FOLDER` | The library folder. Default: the one saved in the app (Rename / Export / Move window). The folder must exist. |
+| `--copy` | Copy instead of move, leaving the originals (nothing is logged for undo). |
+| `--zero-pad N`, `--ascii` | As for `rename`. |
+| `-n`, `--dry-run` | Show where each file would go, change nothing. |
+
+Across volumes a move is a verified copy followed by sending the original to the Recycle Bin. A file the
+pattern has no name for is `skipped`. Moves are recorded for File > Undo Last Rename.
+
+### convert
+
+`mp3redactor convert PATH... [--bitrate KBPS] [--trash-original] [-n]`
+
+Converts FLAC, WAV, OGG, M4A and the other audio formats the app can import to MP3 with ffmpeg, beside the
+original (same name, `.mp3`). Never overwrites: if the `.mp3` already exists the file is `skipped`; an MP3 is
+`skipped` too.
+
+| Option | Meaning |
+| --- | --- |
+| `--bitrate KBPS` | MP3 bitrate: 128, 192, 256 or 320 (default 192). |
+| `--trash-original` | After the `.mp3` is made, send the original to the Recycle Bin (never deleted for good; if the Recycle Bin refuses, the original is kept and a warning says so). |
+| `-n`, `--dry-run` | Show what would be converted, change nothing. |
+
+Results: `converted`, `skipped`, `planned`, `failed`. The new path is in `new_path`. A file ffmpeg cannot read is
+`failed` and leaves nothing behind.
+
+### redact
+
+`mp3redactor redact [PATH...] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N] [--trash-dir FOLDER] [--list-steps]`
+
+Runs the Redact recipe on the files, the same steps as Edit > Redact: integrity check, BPM, key, loudness, deep
+check, tags from the folder path, lookups on MusicBrainz and Discogs, cover art, rename, move into folders. Each
+file is saved in place and its original goes to the Recycle Bin (or `--trash-dir`). Guesses below the
+confidence threshold are listed under "needs review" and not applied. There is no `--dry-run`: use `info`
+first, and `--disable` for the steps you do not want.
+
+| Option | Meaning |
+| --- | --- |
+| `--recipe FILE` | Use this recipe (a JSON file in the format the app stores) instead of the one saved in the app. |
+| `--enable STEP` | Turn a step on for this run (repeatable). |
+| `--disable STEP` | Turn a step off for this run (repeatable). |
+| `--threshold N` | Confidence needed to apply a guess, `0`-`1` or a percentage (`0.9` or `90`). |
+| `--trash-dir FOLDER` | Move originals into this folder (created if needed) instead of the Recycle Bin, for a machine or a task that has none. |
+| `--list-steps` | Show the steps and whether the recipe has each on, then stop (no `PATH` needed). |
+
+Steps: `integrity`, `bpm`, `key`, `loudness`, `deep_check`, `path_tags`, `tags`, `discogs`, `cover`, `rename`,
+`move_into_folders`. Without `--recipe` the recipe saved in the app is used (the defaults if none was saved).
+The Discogs token comes from the `DISCOGS_TOKEN` environment variable if it is set, else from the app's saved
+token; the library root and tool paths come from the app's settings. Exit code 1 if any file failed; files that
+need review are not failures.
+
+### analyze
+
+`mp3redactor analyze PATH... [--integrity] [--deep] [--bpm] [--key] [--loudness] [--save]`
+
+Runs the Analyze menu's checks. With none of the check options the integrity check runs. Results are shown;
+nothing is written to the files unless `--save`.
+
+| Option | Meaning |
+| --- | --- |
+| `--integrity` | The mp3val integrity check (the default check). |
+| `--deep` | A full ffmpeg decode, plus the encoder, sample rate and channel count. |
+| `--bpm` | Detect the tempo. |
+| `--key` | Detect the musical key (keyfinder-cli). |
+| `--loudness` | Measure the integrated loudness (LUFS) and the gain to the target. |
+| `--save` | Write the results into the files' tags: BPM, key and the scan stamps. |
+
+Exit code 1 when a check found a problem (WARNING or ERROR) or could not run (a tool is missing or failing), so a
+script can act on it. A file's `problem` is `true` in the JSON in those cases.
+
+### m4b
+
+`mp3redactor m4b PATH... [--into FOLDER | --library FOLDER | --file FILE] [--bitrate KBPS] [--sidecar] [--replace] [book options] [--lookup] [-n]`
+
+Makes one chaptered `.m4b` audiobook per folder of MP3 files, the same as File > Create M4B Audiobook: a chapter
+per file in disc / track / file-name order, the files re-encoded to AAC (the originals are never touched). A
+book that already exists is skipped unless `--replace`.
+
+| Option | Meaning |
+| --- | --- |
+| `--into FOLDER` | Put every audiobook in this folder, named `<Title>.m4b`. Default: beside the MP3 files. |
+| `--library FOLDER` | Library folder in Audiobookshelf's layout: `<FOLDER>/<Author>/[<Series>/]<Title>/<Title>.m4b`. |
+| `--file FILE` | The exact `.m4b` to write (one book only; `.m4b` is added if missing). |
+| `--bitrate KBPS` | AAC bitrate: 32, 48, 64, 96 or 128. Default: the one saved in the app (64). |
+| `--sidecar` | Also write `metadata.opf` and a cover image beside each audiobook (Audiobookshelf, Calibre). Default: the app's saved choice. |
+| `--replace` | Replace an audiobook that already exists. |
+| `--title`, `--author`, `--narrator`, `--series`, `--series-number`, `--year`, `--publisher`, `--language`, `--description` | Set that detail for the book(s). Without them the details come from the first file's tags (album, album artist, year, publisher). They apply to every book, so use them with one book. |
+| `--cover IMAGE` | A JPEG or PNG cover instead of the files' own. |
+| `--lookup` | Look the book up on Audible (then Open Library) and fill in narrator, series and number, publisher, year, language, description and cover. What you gave explicitly wins. |
+| `--region STORE` | The Audible store for `--lookup`: com, co.uk, de, fr, it, es, ca, com.au, in or co.jp. Default: the one saved in the app (com). |
+| `--min-score N` | How good a `--lookup` match must be to be used, 0 to 4 (title counts most, then author, then how close the running time is). Default 2.8; below it the lookup is ignored with a warning. |
+| `-n`, `--dry-run` | Show the audiobooks that would be made, make nothing. |
+
+Results per book: `created`, `skipped`, `planned`, `failed`; the JSON also has the output path, the number of
+chapters, the length in minutes and, with `--lookup`, the match that was used.
+
+### JSON output
+
+`--json` prints one document: `{"results": [...], <summary fields>, "warnings": [...]}`.
+
+| Command | Each entry in `results` | Summary fields |
+| --- | --- | --- |
+| `info` | `path`, `status`, `duration_seconds`, `bitrate_kbps`, `has_cover`, `fields` (name to value) | `files`, `failed` |
+| `set` | `path`, `status`, `changes` (field to `{old, new}`), `message` | `files`, `failed`, `dry_run` |
+| `rename`, `move` | `path`, `status`, `new_path`, `message` | `files`, `failed`, `dry_run`, and `pattern` or `root` |
+| `convert` | `path`, `status`, `new_path`, `message` | `files`, `failed`, `dry_run`, `bitrate_kbps` |
+| `redact` | `file`, `path`, `status`, `applied`, `needs_review` (step, value, confidence, reason), `failures`, `notes`, `skipped`, `not_saved` | `files`, `failed`, `needs_review`, `cancelled`, `confidence_threshold`, `run_notes` |
+| `redact --list-steps` | `step`, `label`, `enabled` | `confidence_threshold` |
+| `analyze` | `path`, `status`, `problem`, `checks` (per check: `status`, `message` and its values), `save_error` | `files`, `problems`, `checks`, `saved` |
+| `m4b` | `folder`, `title`, `output`, `status`, `message`, `chapters`, `minutes`, `match`, `notes` | `books`, `failed`, `dry_run`, `bitrate_kbps` |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Done (files that were skipped or unchanged are not failures). |
+| 1 | The command ran but some files failed (for `analyze`: some files have problems). |
+| 2 | Bad arguments, an unknown field or step, or no files found. The reason is on stderr. |
+| 70 | An internal error (a bug); the traceback is on stderr. |
+| 130 | Interrupted with Ctrl+C. |
+
+### Using it from scripts and scheduled tasks (Windows)
+
+`mp3redactor.exe` is a windowed program, and Windows shells treat those differently from console programs:
+typed by hand in a terminal its output appears there and `>` / `|` redirection works, but an interactive shell
+does not wait for it (the prompt can come back before the output), and a script cannot read a windowed
+program's output unless it is redirected. So for automation: ask for the result in a file with `--output`, wait
+for the process, and read the exit code.
+
+```
+:: batch file (cmd waits for the program in a batch file; %errorlevel% is the exit code)
+mp3redactor.exe analyze "D:\Music" --deep --json --output "%TEMP%\check.json"
+if errorlevel 1 echo some files have problems
+
+:: interactive cmd: start /wait waits and keeps the exit code
+start /wait mp3redactor.exe redact "D:\Incoming" --quiet --trash-dir "D:\Trash"
+
+# PowerShell: wait with Start-Process, read .ExitCode
+$p = Start-Process mp3redactor.exe -ArgumentList 'analyze','D:\Music','--json','-o','C:\Temp\check.json' -Wait -PassThru
+$p.ExitCode
+(Get-Content C:\Temp\check.json -Raw | ConvertFrom-Json).results | Where-Object problem
+
+# PowerShell: piping to Out-Null also waits
+mp3redactor.exe convert "D:\Incoming" --trash-original | Out-Null; $LASTEXITCODE
+```
+
+Task Scheduler waits for the program and records its exit code as it is. On Linux and macOS there is no such
+distinction: the output goes to the terminal and pipes as usual.
+
+### Examples
+
+```
+mp3redactor info "D:\Music\Queen" --all                                   what is in a folder
+mp3redactor set "D:\Music\Queen" -s AlbumArtist=Queen -n                   preview a bulk edit, then run it without -n
+mp3redactor rename "D:\Music\Queen" -p "%track% - %title%" --zero-pad 2 -n
+mp3redactor move "D:\Incoming" -p "%albumartist%/%album%/%track% - %title%" --root "D:\Library"
+mp3redactor convert "D:\Rips" --bitrate 256 --trash-original              FLAC to MP3, recycle the FLACs
+mp3redactor analyze "D:\Music" --deep --bpm --save --json -o report.json  check, tag the tempo, report
+mp3redactor redact "D:\Incoming" --disable discogs --trash-dir "D:\Trash"
+mp3redactor m4b "D:\Audiobooks" --library "D:\Library" --lookup --sidecar one audiobook per folder, tagged from Audible
+mp3redactor m4b "D:\Books\Dune" --title "Dune" --author "Frank Herbert" --cover cover.jpg
+```
+
+What the commands will not do: overwrite a file, delete anything for good, or ask a question. Everything that
+could be a prompt in the window is a flag here or a skipped file in the report.
+
 ## Tooling decisions
 
 - **mutagen only** for all tag reading/writing -- no eyeD3, to keep a

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-09#05 -- Command line
+
+- The one exe is now also a command line: `mp3redactor info`, `set`, `rename`, `move`, `convert`, `redact`, `analyze` and `m4b` run the command and never open the window; with no command, or a file to open, the window starts as before. The same code as the window, the same settings and saved Redact recipe; `--dry-run` previews the commands that change files, `--json` prints one JSON document, `--output FILE` writes the result to a file for scripts, and the exit code says whether files failed (see the README's Command line section, which documents every option).
+- `analyze` runs the Analyze menu's checks (integrity, deep decode, BPM, key, loudness) and exits 1 when a file has a problem; `--save` writes the results into the tags. `m4b` makes one audiobook per folder, with the library layout, the Audiobookshelf sidecar and an Audible lookup (`--lookup`) that is only used for a confident match.
+- Nothing is overwritten and nothing is deleted for good: names that are taken get numbers, an existing `.mp3` or `.m4b` is skipped, originals go to the Recycle Bin (or `--trash-dir`), and renames and moves are recorded for File > Undo Last Rename. A file the pattern has no name for is skipped instead of being called "untitled".
+- Requires redactor_common 2026-10-09-05.
+
 ## 2026-10-09#04 -- Create M4B Audiobook: Look Up
 
 - New **Look Up...** button in the audiobook dialogs (**Look Up Selected...** in the several-folders list). It searches Audible's public catalog by title and author (no page scraping; the same search Audiobookshelf uses), and Open Library as well when Audible finds little. Results are ranked by title, author and how close the running time is to your files, so the right edition (not the abridged one) comes first. Picking one fills in the title, author, **narrator**, **series and its number**, publisher, year, language, **description** and, if ticked, the **cover**; a field the result has nothing for keeps what you had.
