@@ -155,8 +155,8 @@ def test_the_batch_dialog_lists_a_book_per_folder_and_builds_specs(window, tmp_p
     assert beside[0].output.parent == tmp_path / "A" and [c.path.name for c in beside[0].chapters] == ["1.mp3", "2.mp3"]
     assert beside[0].bitrate_kbps == 96 and beside[0].write_sidecar is False
 
-    dialog.table.item(0, 3).setText("Saga")
-    dialog.table.item(0, 4).setText("3")
+    dialog.table.item(0, 4).setText("Saga")
+    dialog.table.item(0, 5).setText("3")
     dialog.library_radio.setChecked(True)
     dialog.sidecar_check.setChecked(True)
     lib = dialog.specs()

@@ -25,9 +25,11 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
+    QVBoxLayout,
 )
 
+from core.audiobook_lookup import DEFAULT_REGION, BookMatch
 from core.cover_art import sniff_mime
 from core.m4b_builder import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, DEFAULT_GENRE, BookChapter, BookSpec, chapter_title, defaults_for,
@@ -57,7 +59,8 @@ def _format_length(seconds: float | None) -> str:
 
 class M4bDialog(QDialog):
     def __init__(
-        self, files: list[MP3File], bitrate_kbps: int = DEFAULT_BITRATE_KBPS, sidecar: bool = False, parent=None
+        self, files: list[MP3File], bitrate_kbps: int = DEFAULT_BITRATE_KBPS, sidecar: bool = False,
+        region: str = DEFAULT_REGION, lookup_fetch=None, parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Create M4B Audiobook")
@@ -66,6 +69,8 @@ class M4bDialog(QDialog):
         self._by_path: dict[str, MP3File] = {str(f.path): f for f in self._files}
         self._cover: bytes | None = None
         self._cover_mime = ""
+        self._region = region
+        self._lookup_fetch = lookup_fetch
         first = self._files[0]
         defaults = defaults_for(self._files)
 
@@ -96,7 +101,16 @@ class M4bDialog(QDialog):
         index = self.bitrate_combo.findData(bitrate_kbps)
         self.bitrate_combo.setCurrentIndex(index if index >= 0 else self.bitrate_combo.findData(DEFAULT_BITRATE_KBPS))
         self.bitrate_combo.setToolTip("64 kbps is the usual choice for spoken audio; music-like audio may want 96-128.")
-        form.addRow("Title:", self.title_edit)
+        title_row = QHBoxLayout()
+        title_row.addWidget(self.title_edit, 1)
+        self.lookup_btn = QPushButton("Look Up…")
+        self.lookup_btn.setToolTip(
+            "Search Audible (then Open Library) for this book and fill in the narrator, series, publisher, "
+            "year, description and cover."
+        )
+        self.lookup_btn.clicked.connect(self._look_up)
+        title_row.addWidget(self.lookup_btn)
+        form.addRow("Title:", title_row)
         form.addRow("Author:", self.author_edit)
         form.addRow("Narrator:", self.narrator_edit)
         form.addRow("Series:", self.series_edit)
@@ -104,6 +118,10 @@ class M4bDialog(QDialog):
         form.addRow("Publisher:", self.publisher_edit)
         form.addRow("Year:", self.year_edit)
         form.addRow("Genre:", self.genre_edit)
+        self.description_edit = QPlainTextEdit()
+        self.description_edit.setFixedHeight(54)
+        self.description_edit.setPlaceholderText("optional")
+        form.addRow("Description:", self.description_edit)
         form.addRow("Quality:", self.bitrate_combo)
         top.addLayout(form, 1)
 
@@ -172,6 +190,40 @@ class M4bDialog(QDialog):
         root.addWidget(buttons)
 
         self._set_cover(defaults.cover, defaults.cover_mime)
+
+    # -- look up ----------------------------------------------------------------
+
+    def region(self) -> str:
+        return self._region
+
+    def _look_up(self) -> None:
+        from gui.m4b_lookup_dialog import M4bLookupDialog
+
+        minutes = sum(f.duration_seconds or 0 for f in self._files) / 60 or None
+        dialog = M4bLookupDialog(
+            self.title_edit.text(), self.author_edit.text(), minutes, self._region, fetch=self._lookup_fetch, parent=self
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self._region = dialog.region()
+        self.apply_match(dialog.selected_match(), dialog.chosen_cover())
+
+    def apply_match(self, match: BookMatch, cover: tuple[bytes, str] | None) -> None:
+        """Fills the fields from a looked-up book; a field the result has nothing for keeps what it had."""
+        for edit, value in (
+            (self.title_edit, match.title), (self.author_edit, match.author_text),
+            (self.narrator_edit, match.narrator_text), (self.series_edit, match.series),
+            (self.series_number_edit, match.series_index), (self.publisher_edit, match.publisher),
+            (self.year_edit, match.year),
+        ):
+            if value:
+                edit.setText(value)
+        if match.language:
+            self._language = match.language
+        if match.description:
+            self.description_edit.setPlainText(match.description)
+        if cover is not None:
+            self._set_cover(*cover)
 
     # -- chapters -------------------------------------------------------------
 
@@ -315,4 +367,5 @@ class M4bDialog(QDialog):
             series_index=self.series_number_edit.text().strip(),
             publisher=self.publisher_edit.text().strip(),
             language=self._language,
+            description=self.description_edit.toPlainText().strip(),
         )

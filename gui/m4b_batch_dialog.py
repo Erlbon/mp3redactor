@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout,
 )
 
+from core.audiobook_lookup import DEFAULT_REGION, BookMatch
 from core.m4b_builder import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, DEFAULT_GENRE, BookChapter, BookSpec, chapter_title, defaults_for,
     library_output,
@@ -37,8 +38,8 @@ from redactor_common.core.rename_pattern import sanitize_filename
 
 LAYOUT_BESIDE = "beside"
 LAYOUT_LIBRARY = "library"
-COL_INCLUDE, COL_TITLE, COL_AUTHOR, COL_SERIES, COL_NUMBER, COL_CHAPTERS, COL_FOLDER = range(7)
-HEADERS = ["Make", "Title", "Author", "Series", "#", "Chapters", "Folder"]
+COL_INCLUDE, COL_TITLE, COL_AUTHOR, COL_NARRATOR, COL_SERIES, COL_NUMBER, COL_CHAPTERS, COL_FOLDER = range(8)
+HEADERS = ["Make", "Title", "Author", "Narrator", "Series", "#", "Chapters", "Folder"]
 
 
 class M4bBatchDialog(QDialog):
@@ -49,6 +50,8 @@ class M4bBatchDialog(QDialog):
         sidecar: bool = False,
         layout: str = LAYOUT_BESIDE,
         library_root: str = "",
+        region: str = DEFAULT_REGION,
+        lookup_fetch=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -57,6 +60,10 @@ class M4bBatchDialog(QDialog):
         self._books = books
         self._defaults = [defaults_for(book) for book in books]
         self._library_root = library_root
+        self._region = region
+        self._lookup_fetch = lookup_fetch
+        # what a look-up found beyond the visible cells, per row: publisher, year, language, description, cover
+        self._extras: dict[int, dict] = {}
 
         root = QVBoxLayout(self)
         intro = QLabel(
@@ -74,7 +81,8 @@ class M4bBatchDialog(QDialog):
         header = self.table.horizontalHeader()
         for column, mode in (
             (COL_INCLUDE, QHeaderView.ResizeMode.ResizeToContents), (COL_TITLE, QHeaderView.ResizeMode.Stretch),
-            (COL_AUTHOR, QHeaderView.ResizeMode.Stretch), (COL_SERIES, QHeaderView.ResizeMode.Stretch),
+            (COL_AUTHOR, QHeaderView.ResizeMode.Stretch), (COL_NARRATOR, QHeaderView.ResizeMode.Stretch),
+            (COL_SERIES, QHeaderView.ResizeMode.Stretch),
             (COL_NUMBER, QHeaderView.ResizeMode.ResizeToContents), (COL_CHAPTERS, QHeaderView.ResizeMode.ResizeToContents),
             (COL_FOLDER, QHeaderView.ResizeMode.Stretch),
         ):
@@ -86,6 +94,7 @@ class M4bBatchDialog(QDialog):
             self.table.setItem(row, COL_INCLUDE, include)
             self.table.setItem(row, COL_TITLE, QTableWidgetItem(defaults.title))
             self.table.setItem(row, COL_AUTHOR, QTableWidgetItem(defaults.author))
+            self.table.setItem(row, COL_NARRATOR, QTableWidgetItem(""))
             self.table.setItem(row, COL_SERIES, QTableWidgetItem(""))
             self.table.setItem(row, COL_NUMBER, QTableWidgetItem(""))
             for column, text in ((COL_CHAPTERS, str(len(book))), (COL_FOLDER, str(Path(book[0].path).parent))):
@@ -93,6 +102,16 @@ class M4bBatchDialog(QDialog):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row, column, item)
         root.addWidget(self.table, 1)
+        lookup_row = QHBoxLayout()
+        self.lookup_btn = QPushButton("Look Up Selected…")
+        self.lookup_btn.setToolTip(
+            "Search Audible (then Open Library) for the selected book and fill in its narrator, series, "
+            "publisher, year, description and cover."
+        )
+        self.lookup_btn.clicked.connect(self._look_up)
+        lookup_row.addWidget(self.lookup_btn)
+        lookup_row.addStretch(1)
+        root.addLayout(lookup_row)
 
         options = QFormLayout()
         self.bitrate_combo = QComboBox()
@@ -131,6 +150,47 @@ class M4bBatchDialog(QDialog):
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    # -- look up ----------------------------------------------------------------
+
+    def region(self) -> str:
+        return self._region
+
+    def _look_up(self) -> None:
+        from gui.m4b_lookup_dialog import M4bLookupDialog
+
+        rows = self.table.selectionModel().selectedRows()
+        if not rows:
+            QMessageBox.information(self, "Look Up Audiobook", "Select a book in the list first.")
+            return
+        row = rows[0].row()
+        minutes = sum(f.duration_seconds or 0 for f in self._books[row]) / 60 or None
+        dialog = M4bLookupDialog(
+            self.table.item(row, COL_TITLE).text(), self.table.item(row, COL_AUTHOR).text(), minutes, self._region,
+            fetch=self._lookup_fetch, parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self._region = dialog.region()
+        self.apply_match(row, dialog.selected_match(), dialog.chosen_cover())
+
+    def apply_match(self, row: int, match: BookMatch, cover: tuple[bytes, str] | None) -> None:
+        """Fills the row from a looked-up book; a field the result has nothing for keeps what it had."""
+        for column, value in (
+            (COL_TITLE, match.title), (COL_AUTHOR, match.author_text), (COL_NARRATOR, match.narrator_text),
+            (COL_SERIES, match.series), (COL_NUMBER, match.series_index),
+        ):
+            if value:
+                self.table.item(row, column).setText(value)
+        extras = self._extras.setdefault(row, {})
+        for key, value in (
+            ("publisher", match.publisher), ("year", match.year), ("language", match.language),
+            ("description", match.description),
+        ):
+            if value:
+                extras[key] = value
+        if cover is not None:
+            extras["cover"], extras["cover_mime"] = cover
 
     # -- options ---------------------------------------------------------------
 
@@ -181,7 +241,7 @@ class M4bBatchDialog(QDialog):
         """One BookSpec per ticked book, in the list's order."""
         specs = []
         for row in self._included_rows():
-            book, defaults = self._books[row], self._defaults[row]
+            book, defaults, extras = self._books[row], self._defaults[row], self._extras.get(row, {})
             title = self.table.item(row, COL_TITLE).text().strip()
             author = self.table.item(row, COL_AUTHOR).text().strip()
             series = self.table.item(row, COL_SERIES).text().strip()
@@ -194,14 +254,16 @@ class M4bBatchDialog(QDialog):
                 output=output,
                 title=title,
                 author=author,
-                year=defaults.year,
+                narrator=self.table.item(row, COL_NARRATOR).text().strip(),
+                year=extras.get("year", defaults.year),
                 genre=DEFAULT_GENRE,
                 series=series,
                 series_index=self.table.item(row, COL_NUMBER).text().strip(),
-                publisher=defaults.publisher,
-                language=defaults.language,
-                cover=defaults.cover,
-                cover_mime=defaults.cover_mime,
+                publisher=extras.get("publisher", defaults.publisher),
+                language=extras.get("language", defaults.language),
+                description=extras.get("description", ""),
+                cover=extras.get("cover", defaults.cover),
+                cover_mime=extras.get("cover_mime", defaults.cover_mime),
                 bitrate_kbps=self.bitrate_kbps(),
                 write_sidecar=self.sidecar(),
             ))

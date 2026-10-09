@@ -241,3 +241,15 @@ def test_the_sidecar_files_are_written_beside_the_audiobook_only_when_asked(tmp_
     assert sorted(p.name for p in (tmp_path / "plain").iterdir()) == ["Book.m4b"]
     assert sorted(p.name for p in (tmp_path / "with").iterdir()) == ["Book.m4b", "cover.png", "metadata.opf"]
     assert "<dc:title>Book</dc:title>" in (tmp_path / "with" / "metadata.opf").read_text(encoding="utf-8")
+
+
+@requires_ffmpeg
+def test_a_multi_line_description_reaches_the_tags_and_the_opf(tmp_path):
+    chapters = [mb.BookChapter(_tone_mp3(tmp_path / "01.mp3", 1.0), "One")]
+    out = tmp_path / "Book.m4b"
+    text = "First paragraph; with = and # marks.\n\nSecond paragraph."
+    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book", description=text, write_sidecar=True))
+    assert result.status == STATUS_OK, result.message
+    tags = {k.lower(): v for k, v in _probe(out)["format"]["tags"].items()}
+    assert tags["description"] == text
+    assert "<dc:description>First paragraph; with = and # marks." in (tmp_path / "metadata.opf").read_text(encoding="utf-8")

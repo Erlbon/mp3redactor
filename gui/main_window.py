@@ -924,7 +924,8 @@ class MainWindow(QMainWindow):
         if len(books) > 1:
             dialog = M4bBatchDialog(
                 books, bitrate_kbps=self.settings.m4b_bitrate_kbps, sidecar=self.settings.m4b_sidecar,
-                layout=self.settings.m4b_batch_layout, library_root=self.settings.library_root, parent=self,
+                layout=self.settings.m4b_batch_layout, library_root=self.settings.library_root,
+                region=self.settings.m4b_audible_region, parent=self,
             )
             if dialog.exec() != dialog.DialogCode.Accepted:
                 return
@@ -934,12 +935,14 @@ class MainWindow(QMainWindow):
                 self.settings.library_root = dialog.library_root()
         else:
             dialog = M4bDialog(
-                files, bitrate_kbps=self.settings.m4b_bitrate_kbps, sidecar=self.settings.m4b_sidecar, parent=self,
+                files, bitrate_kbps=self.settings.m4b_bitrate_kbps, sidecar=self.settings.m4b_sidecar,
+                region=self.settings.m4b_audible_region, parent=self,
             )
             if dialog.exec() != dialog.DialogCode.Accepted:
                 return
             specs = [dialog.spec()]
         self.settings.m4b_bitrate_kbps = dialog.bitrate_kbps()
+        self.settings.m4b_audible_region = dialog.region()
         self.settings.m4b_sidecar = specs[0].write_sidecar if specs else self.settings.m4b_sidecar
         self._remember_last_directory(str(specs[0].output))  # saves the settings, the choices above included
         self._build_audiobooks(specs, skip_existing=len(books) > 1)

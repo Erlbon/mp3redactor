@@ -82,6 +82,7 @@ class BookSpec:
     series_index: str = ""
     publisher: str = ""
     language: str = ""
+    description: str = ""
     cover: bytes | None = None
     cover_mime: str = ""
     bitrate_kbps: int = DEFAULT_BITRATE_KBPS
@@ -209,6 +210,7 @@ def opf_text(spec: BookSpec) -> str:
             lines.append(f"    <dc:{tag}{attribute}>{xml_escape(text.strip())}</dc:{tag}>")
 
     add("title", spec.title)
+    add("description", spec.description)
     add("creator", spec.author, "aut")
     add("creator", spec.narrator, "nrt")
     add("publisher", spec.publisher)
@@ -253,7 +255,7 @@ def write_sidecars(spec: BookSpec) -> list[str]:
     notes: list[str] = []
     try:
         text = '<?xml version="1.0" encoding="utf-8"?>\n' + opf_text(spec) + "\n"
-        (folder / OPF_NAME).write_text(text, encoding="utf-8")
+        (folder / OPF_NAME).write_text(text, encoding="utf-8", newline="\n")
     except OSError as exc:
         notes.append(f"could not write {OPF_NAME}: {exc}")
     if spec.cover:
@@ -267,13 +269,20 @@ def write_sidecars(spec: BookSpec) -> list[str]:
 # --- ffmetadata ------------------------------------------------------------------
 
 
-def escape_ffmetadata(text: str) -> str:
-    """ffmpeg's ffmetadata escaping: a backslash before = ; # and the backslash itself;
-    line breaks become spaces (a title is one line)."""
-    text = " ".join(str(text).splitlines()) if any(c in str(text) for c in "\r\n") else str(text)
+def escape_ffmetadata(text: str, keep_newlines: bool = False) -> str:
+    """ffmpeg's ffmetadata escaping: a backslash before = ; # and the backslash itself. Line breaks
+    become spaces (a title is one line), or with `keep_newlines` (a description) stay as breaks,
+    written as a backslash followed by the newline."""
+    text = str(text)
+    if keep_newlines:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+    elif any(c in text for c in "\r\n"):
+        text = " ".join(text.splitlines())
     out = []
     for char in text:
         if char in ("=", ";", "#", _BACKSLASH):
+            out.append(_BACKSLASH)
+        elif char == "\n":
             out.append(_BACKSLASH)
         out.append(char)
     return "".join(out)
@@ -290,10 +299,11 @@ def ffmetadata_text(spec: BookSpec, durations_seconds: list[float]) -> str:
         "composer": spec.narrator,
         "genre": spec.genre,
         "date": spec.year,
+        "description": spec.description,
     }
     for key, value in tags.items():
         if value and value.strip():
-            lines.append(f"{key}={escape_ffmetadata(value.strip())}")
+            lines.append(f"{key}={escape_ffmetadata(value.strip(), keep_newlines=key == 'description')}")
     start_ms = 0
     for chapter, seconds in zip(spec.chapters, durations_seconds):
         end_ms = start_ms + max(1, round(seconds * 1000))
@@ -419,7 +429,8 @@ def build_m4b(
         list_file = work / "pieces.txt"
         list_file.write_text("".join(f"file '{piece.name}'\n" for piece in pieces), encoding="utf-8")
         meta_file = work / "book.ffmetadata"
-        meta_file.write_text(ffmetadata_text(spec, durations), encoding="utf-8")
+        # LF line ends on every platform: an escaped newline in a description must stay one "\n".
+        meta_file.write_text(ffmetadata_text(spec, durations), encoding="utf-8", newline="\n")
         command = [
             str(ffmpeg), "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-i", str(meta_file),
         ]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-09#04 -- Create M4B Audiobook: Look Up
+
+- New **Look Up...** button in the audiobook dialogs (**Look Up Selected...** in the several-folders list). It searches Audible's public catalog by title and author (no page scraping; the same search Audiobookshelf uses), and Open Library as well when Audible finds little. Results are ranked by title, author and how close the running time is to your files, so the right edition (not the abridged one) comes first. Picking one fills in the title, author, **narrator**, **series and its number**, publisher, year, language, **description** and, if ticked, the **cover**; a field the result has nothing for keeps what you had.
+- The description now goes into the audiobook's tags and the metadata.opf. The Audible store (.com, .co.uk, .de, ...) is a choice in the lookup window and remembered.
+
 ## 2026-10-09#03 -- Audiobooks: one per folder, Audiobookshelf conventions
 
 - **Create M4B Audiobook** with files from several folders now makes one audiobook per folder (a folder of chapter files is one book). A new list shows each book's title, author, series and number, filled from the folder's tags, to check or correct, plus the quality, where the audiobooks go and the sidecar option. An audiobook that already exists is skipped, never replaced.
