@@ -253,3 +253,140 @@ def test_a_multi_line_description_reaches_the_tags_and_the_opf(tmp_path):
     tags = {k.lower(): v for k, v in _probe(out)["format"]["tags"].items()}
     assert tags["description"] == text
     assert "<dc:description>First paragraph; with = and # marks." in (tmp_path / "metadata.opf").read_text(encoding="utf-8")
+
+
+# --- second review --------------------------------------------------------------------------------------------
+
+
+@requires_ffmpeg
+def test_the_chapter_marks_follow_the_real_length_of_every_piece(tmp_path):
+    """The stream copy keeps every AAC frame, so each piece is about 35 ms longer than the container's own
+    duration says; marks laid out from that duration drifted by that much per chapter."""
+    chapters = [mb.BookChapter(_tone_mp3(tmp_path / f"{i}.mp3", 3.3, 300 + 100 * i), f"C{i}") for i in range(6)]
+    out = tmp_path / "Book.m4b"
+    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book"))
+    assert result.status == STATUS_OK, result.message
+    info = _probe(out)
+    assert abs(float(info["chapters"][-1]["end_time"]) - float(info["format"]["duration"])) < 0.01
+    assert abs(result.duration_seconds - float(info["format"]["duration"])) < 0.01
+
+
+def test_a_cancel_stops_the_running_ffmpeg_at_once():
+    import sys
+    import time
+
+    running = mb._Running()
+    started = time.monotonic()
+    result = running.run([sys.executable, "-c", "import time; time.sleep(60)"], 120, cancelled=lambda: True)
+    assert time.monotonic() - started < 15 and result.returncode != 0
+
+
+def test_a_timeout_kills_the_process_and_raises():
+    import subprocess
+    import sys
+
+    running = mb._Running()
+    with pytest.raises(subprocess.TimeoutExpired):
+        running.run([sys.executable, "-c", "import time; time.sleep(60)"], 0.5)
+
+
+@requires_ffmpeg
+def test_a_failed_build_leaves_no_empty_library_folders(tmp_path):
+    bad = tmp_path / "bad.mp3"
+    bad.write_bytes(b"this is not audio")
+    out = tmp_path / "lib" / "Author" / "Series" / "Book" / "Book.m4b"
+    result = mb.build_m4b(mb.BookSpec([mb.BookChapter(bad, "Bad")], out, "Book"))
+    assert result.status == STATUS_ERROR
+    assert not (tmp_path / "lib").exists()
+
+
+def test_an_output_folder_that_cannot_be_made_is_an_error_not_a_crash(tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_bytes(b"x")
+    src = tmp_path / "a.mp3"
+    src.write_bytes(b"x")
+    result = mb.build_m4b(mb.BookSpec([mb.BookChapter(src, "A")], blocker / "sub" / "Book.m4b", "Book"))
+    assert result.status in (STATUS_ERROR, STATUS_TOOL_MISSING)  # no ffmpeg at all is also an answer, never an exception
+
+
+def test_old_build_folders_are_swept_but_a_fresh_one_is_left(tmp_path):
+    import os
+    import time
+
+    old, fresh = tmp_path / ".m4b-build-old", tmp_path / ".m4b-build-new"
+    for folder in (old, fresh):
+        folder.mkdir()
+        (folder / "00000.m4a").write_bytes(b"x")
+    stale = time.time() - mb.STALE_BUILD_SECONDS - 60
+    os.utime(old, (stale, stale))
+    leftover = tmp_path / ".Book.building.m4b"
+    leftover.write_bytes(b"x")
+    os.utime(leftover, (stale, stale))
+    mb._sweep_stale_builds(tmp_path)
+    assert not old.exists() and not leftover.exists() and fresh.exists()
+
+
+@requires_ffmpeg
+def test_a_cover_an_m4b_cannot_carry_is_left_out_with_a_note(tmp_path):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), (1, 2, 3)).save(buf, format="GIF")
+    chapters = [mb.BookChapter(_tone_mp3(tmp_path / "01.mp3", 1.0), "One")]
+    out = tmp_path / "Book.m4b"
+    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book", cover=buf.getvalue(), cover_mime="image/gif"))
+    assert result.status == STATUS_OK, result.message
+    assert any("not a JPEG or PNG" in n for n in result.notes)
+    assert not [s for s in _probe(out)["streams"] if s["codec_type"] == "video"]
+
+
+def test_usable_cover_judges_the_bytes_not_the_claim():
+    assert mb.usable_cover(b"\xff\xd8\xff\xe0rest") == (b"\xff\xd8\xff\xe0rest", "image/jpeg")
+    assert mb.usable_cover(b"GIF89a....") == (None, "")
+    assert mb.usable_cover(None) == (None, "")
+
+
+def test_series_tags_never_leave_a_damaged_file_behind(tmp_path, monkeypatch):
+    mutagen_mp4 = pytest.importorskip("mutagen.mp4")
+    path = tmp_path / "Book.m4b"
+    path.write_bytes(b"original bytes")  # not a real m4b: MP4() fails, as a save that dies half way would
+    spec = mb.BookSpec([], tmp_path / "Book.m4b", "Book", series="S", series_index="1")
+    message = mb.add_series_tags(path, spec)
+    assert "could not add" in message and path.read_bytes() == b"original bytes"
+    assert [p.name for p in tmp_path.iterdir()] == ["Book.m4b"]
+
+
+@requires_ffmpeg
+def test_replacing_an_audiobook_sends_the_old_one_to_the_trash_and_the_sidecars_too(tmp_path):
+    trashed = []
+
+    def trash(path):
+        trashed.append(Path(path).name)
+        Path(path).unlink()
+
+    src = _tone_mp3(tmp_path / "01.mp3", 1.0)
+    out = tmp_path / "lib" / "Book.m4b"
+    first = mb.build_m4b(mb.BookSpec([mb.BookChapter(src, "One")], out, "Book", author="A", write_sidecar=True))
+    assert first.status == STATUS_OK, first.message
+    assert trashed == []  # nothing was replaced yet
+    again = mb.build_m4b(mb.BookSpec([mb.BookChapter(src, "One")], out, "Book", author="A", write_sidecar=True, trash=trash))
+    assert again.status == STATUS_OK, again.message
+    assert sorted(trashed) == [".Book.replaced.m4b", "metadata.opf"]
+    assert sorted(p.name for p in out.parent.iterdir()) == ["Book.m4b", "metadata.opf"]
+
+
+@requires_ffmpeg
+def test_when_the_old_audiobook_cannot_be_trashed_it_is_kept_beside_the_new_one(tmp_path):
+    from redactor_common.core.trash import TrashError
+
+    def refuse(path):
+        raise TrashError("no bin")
+
+    src = _tone_mp3(tmp_path / "01.mp3", 1.0)
+    out = tmp_path / "Book.m4b"
+    assert mb.build_m4b(mb.BookSpec([mb.BookChapter(src, "One")], out, "Book")).status == STATUS_OK
+    result = mb.build_m4b(mb.BookSpec([mb.BookChapter(src, "One")], out, "Book", trash=refuse))
+    assert result.status == STATUS_OK and any("kept as Book (previous).m4b" in n for n in result.notes)
+    assert sorted(p.name for p in tmp_path.iterdir() if p.suffix == ".m4b") == ["Book (previous).m4b", "Book.m4b"]

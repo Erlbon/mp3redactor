@@ -108,3 +108,54 @@ def test_covers_must_be_real_images():
         al.download_cover("https://img/a", fetch=lambda url: b"<html>not an image</html>")
     with pytest.raises(al.AudiobookLookupError):
         al.download_cover("", fetch=lambda url: b"")
+
+
+# --- second review: a service's answer never has to have the documented shape -----------------------------------
+
+
+ODD_AUDIBLE = {
+    "products": [
+        {
+            "title": "Odd Book", "authors": None, "narrators": [None, {"name": None}, {"name": "N. Reader"}, "x"],
+            "series": {"title": "Not A List"}, "product_images": ["a list, not a dict"], "runtime_length_min": "2046",
+            "publisher_summary": None, "language": 42, "release_date": ["2020"],
+        },
+        "not even a product",
+        {"title": "Second", "series": [None], "product_images": {"500": None, "1000": "https://img/1000.jpg"},
+         "runtime_length_min": {"x": 1}},
+    ]
+}
+
+
+def test_odd_audible_shapes_give_matches_not_a_crash():
+    found = al.search_audible("Odd Book", fetch=canned(audible=ODD_AUDIBLE))
+    assert [m.title for m in found] == ["Odd Book", "Second"]
+    odd, second = found
+    assert odd.authors == [] and odd.narrators == ["N. Reader"] and odd.series == "" and odd.cover_url == ""
+    assert odd.runtime_minutes == 2046 and odd.description == "" and odd.language == "" and odd.year == ""
+    assert second.cover_url == "https://img/1000.jpg" and second.runtime_minutes is None
+
+
+def test_odd_open_library_shapes_give_matches_not_a_crash():
+    answer = {"docs": [{"title": "T", "author_name": "Just A String", "publisher": None, "cover_i": "42", "first_publish_year": None}, 7]}
+    found = al.search_open_library("T", fetch=canned(library=answer))
+    assert len(found) == 1 and found[0].authors == [] and found[0].publisher == "" and found[0].cover_url == ""
+    assert al.search_open_library("T", fetch=canned(library={"docs": "nope"})) == []
+
+
+def test_an_answer_cut_short_is_a_lookup_error_not_an_http_exception(monkeypatch):
+    import http.client
+
+    class Cut:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            raise http.client.IncompleteRead(b"par")
+
+    monkeypatch.setattr(al.urllib.request, "urlopen", lambda *a, **k: Cut())
+    with pytest.raises(al.AudiobookLookupError, match="could not reach"):
+        al.default_fetch("https://api.audible.com/x")

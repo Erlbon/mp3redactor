@@ -219,3 +219,25 @@ def test_an_existing_audiobook_is_skipped_in_a_batch_not_replaced(window, tmp_pa
     assert existing.read_bytes() == b"precious"
     assert (tmp_path / "two" / "Book Two.m4b").exists()
     assert warnings and "1 of 2" in warnings[0] and "already exists" in warnings[0]
+
+
+@requires_ffmpeg
+def test_two_books_for_the_same_library_file_are_not_both_built(window, tmp_path, monkeypatch):
+    from gui.m4b_batch_dialog import M4bBatchDialog
+
+    _books_in_folders(window, tmp_path, {"one": ("Same Book", "Ann"), "two": ("Same Book", "Ann")})
+    monkeypatch.setattr(mw, "save_settings", lambda *a, **k: None)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a[2])))
+
+    class Auto(M4bBatchDialog):
+        def exec(self):
+            self.library_radio.setChecked(True)
+            self.library_edit.setText(str(tmp_path / "library"))
+            return self.DialogCode.Accepted
+
+    monkeypatch.setattr(mw, "M4bBatchDialog", Auto)
+    window.create_m4b_dialog()
+
+    assert sorted(p.name for p in (tmp_path / "library" / "Ann" / "Same Book").iterdir()) == ["Same Book.m4b"]
+    assert warnings and "1 of 2" in warnings[0] and "left out" in warnings[0]

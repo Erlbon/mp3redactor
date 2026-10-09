@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import difflib
 import html
+import http.client
 import json
 import re
 import unicodedata
@@ -92,8 +93,37 @@ def default_fetch(url: str) -> bytes:
             return response.read()
     except urllib.error.HTTPError as exc:
         raise AudiobookLookupError(f"{exc.code} {exc.reason} from {urllib.parse.urlparse(url).netloc}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:  # IncompleteRead is one
         raise AudiobookLookupError(f"could not reach {urllib.parse.urlparse(url).netloc}: {exc}") from exc
+
+
+# A service's answer is never trusted to have the shape its documentation promises: these read a field as the
+# type it should be, and as nothing otherwise, so one odd product cannot break a whole search.
+
+
+def _dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _text(value) -> str:
+    return value.strip() if isinstance(value, str) else (str(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else "")
+
+
+def _names(value) -> list[str]:
+    """The "name" of each entry of a list of {"name": ...} objects (anything else is skipped)."""
+    return [name for entry in _list(value) if (name := _text(_dict(entry).get("name")))]
+
+
+def _minutes(value) -> int | None:
+    try:
+        minutes = int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return minutes if minutes > 0 else None
 
 
 def _get_json(url: str, fetch: Fetch) -> dict:
@@ -148,25 +178,26 @@ def search_audible(
     url = f"https://api.audible.{region}/1.0/catalog/products?" + urllib.parse.urlencode(params)
     data = _get_json(url, fetch or default_fetch)
     matches = []
-    for product in data.get("products") or []:
-        series = (product.get("series") or [{}])[0] or {}
-        images = product.get("product_images") or {}
-        cover = images.get("500") or next(iter(images.values()), "")
+    for entry in _list(data.get("products")):
+        product = _dict(entry)
+        series = _dict(next(iter(_list(product.get("series"))), None))
+        images = _dict(product.get("product_images"))
+        cover = _text(images.get("500")) or next((u for u in map(_text, images.values()) if u), "")
         matches.append(BookMatch(
             source=SOURCE_AUDIBLE,
-            title=(product.get("title") or "").strip(),
-            subtitle=(product.get("subtitle") or "").strip(),
-            authors=[a.get("name", "") for a in product.get("authors") or [] if a.get("name")],
-            narrators=[n.get("name", "") for n in product.get("narrators") or [] if n.get("name")],
-            publisher=(product.get("publisher_name") or "").strip(),
-            year=_year(product.get("release_date") or product.get("issue_date") or ""),
-            language=language_code(product.get("language") or ""),
-            series=(series.get("title") or "").strip(),
-            series_index=str(series.get("sequence") or "").strip(),
-            description=html_to_text(product.get("publisher_summary") or ""),
+            title=_text(product.get("title")),
+            subtitle=_text(product.get("subtitle")),
+            authors=_names(product.get("authors")),
+            narrators=_names(product.get("narrators")),
+            publisher=_text(product.get("publisher_name")),
+            year=_year(_text(product.get("release_date")) or _text(product.get("issue_date"))),
+            language=language_code(_text(product.get("language"))),
+            series=_text(series.get("title")),
+            series_index=_text(series.get("sequence")),
+            description=html_to_text(_text(product.get("publisher_summary"))),
             cover_url=cover,
-            runtime_minutes=product.get("runtime_length_min") or None,
-            asin=product.get("asin") or "",
+            runtime_minutes=_minutes(product.get("runtime_length_min")),
+            asin=_text(product.get("asin")),
         ))
     return [m for m in matches if m.title]
 
@@ -185,15 +216,17 @@ def search_open_library(
         params["author"] = author
     data = _get_json("https://openlibrary.org/search.json?" + urllib.parse.urlencode(params), fetch or default_fetch)
     matches = []
-    for doc in data.get("docs") or []:
+    for entry in _list(data.get("docs")):
+        doc = _dict(entry)
         cover_id = doc.get("cover_i")
+        cover_id = cover_id if isinstance(cover_id, int) and not isinstance(cover_id, bool) and cover_id > 0 else None
         matches.append(BookMatch(
             source=SOURCE_OPEN_LIBRARY,
-            title=(doc.get("title") or "").strip(),
-            subtitle=(doc.get("subtitle") or "").strip(),
-            authors=list(doc.get("author_name") or [])[:3],
-            publisher=((doc.get("publisher") or [""])[0] or "").strip(),
-            year=str(doc.get("first_publish_year") or ""),
+            title=_text(doc.get("title")),
+            subtitle=_text(doc.get("subtitle")),
+            authors=[name for name in map(_text, _list(doc.get("author_name"))) if name][:3],
+            publisher=next((name for name in map(_text, _list(doc.get("publisher"))) if name), ""),
+            year=_text(doc.get("first_publish_year")),
             cover_url=f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg" if cover_id else "",
         ))
     return [m for m in matches if m.title]

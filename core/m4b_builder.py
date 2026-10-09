@@ -10,9 +10,12 @@ How it works (our own implementation, nothing copied from other tools):
     (ffmpeg processes on a small thread pool), all to the same sample
     rate and channel count so the pieces can be joined. A re-encode is
     unavoidable: M4B players expect AAC, so the result is not bit-exact.
- 2. The real length of each encoded piece is measured with ffprobe, and
-    the chapter marks are laid out from those lengths (not from the MP3
-    tags, which can be a little off).
+ 2. The real length of each encoded piece is measured (its AAC frames
+    counted with ffprobe: the stream copy keeps every frame, including the
+    encoder's priming and padding, which the container's own duration
+    leaves out, so using that would make the chapter marks drift by
+    about 35-45 ms per chapter), and the chapter marks are laid out from
+    those lengths (not from the MP3 tags, which can also be a little off).
  3. The pieces are joined with ffmpeg's concat demuxer (stream copy)
     together with an ffmetadata file (book tags + chapters) and the cover
     image, into a hidden temp .m4b that replaces the destination only on
@@ -30,6 +33,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,7 +48,7 @@ from core.lock_retry import retry_on_lock
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 from core.tool_locator import find_tool
 from redactor_common.core.rename_pattern import sanitize_filename
-from redactor_common.core.subprocess_utils import run_tool
+from redactor_common.core.subprocess_utils import decode_output, popen_tool, run_tool
 
 FFMPEG_EXE_NAME = "ffmpeg.exe"
 
@@ -58,6 +63,8 @@ PROBE_TIMEOUT_SECONDS = 60
 MAX_PARALLEL_ENCODES = 4
 FALLBACK_SAMPLE_RATE = 44100
 MAX_CHANNELS = 2
+AAC_FRAME_SAMPLES = 1024  # an AAC-LC frame
+STALE_BUILD_SECONDS = 6 * 3600  # a build folder this old was left by a crash or a kill
 
 _BACKSLASH = chr(92)
 _NATURAL_SPLIT = re.compile(r"(\d+)")
@@ -87,6 +94,9 @@ class BookSpec:
     cover_mime: str = ""
     bitrate_kbps: int = DEFAULT_BITRATE_KBPS
     write_sidecar: bool = False  # metadata.opf + cover beside the audiobook (Audiobookshelf and similar)
+    # What takes a file this build would replace (an older .m4b, metadata.opf, cover.jpg): the Recycle Bin or a
+    # --trash-dir. None: such a file is overwritten in place, as before.
+    trash: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -151,6 +161,13 @@ class BookDefaults:
     language: str = ""
 
 
+def usable_cover(data: bytes | None) -> tuple[bytes | None, str]:
+    """(data, MIME type) when the picture is a JPEG or PNG -- the two kinds an M4B can carry -- judged by its bytes,
+    not by what a tag claims; (None, "") for anything else (a GIF or WebP would make the join fail)."""
+    mime = sniff_mime(data)
+    return (data, mime) if data and mime else (None, "")
+
+
 def defaults_for(files: list) -> BookDefaults:
     """What to start a book's tags and cover from: the first file's album / album artist / year, its
     folder name when it has no album, and its cover (embedded picture, else an image beside it)."""
@@ -158,13 +175,12 @@ def defaults_for(files: list) -> BookDefaults:
     cover, mime = None, ""
     found = read_cover(first.path)
     if found is not None:
-        cover, mime = found
-    else:
+        cover, mime = usable_cover(found[0])
+    if cover is None:  # no embedded picture, or one an M4B cannot carry: try an image beside the files
         folder_image = find_folder_image(first.path)
         if folder_image is not None:
             try:
-                cover = Path(folder_image).read_bytes()
-                mime = sniff_mime(cover) or "image/jpeg"
+                cover, mime = usable_cover(Path(folder_image).read_bytes())
             except OSError:
                 cover, mime = None, ""
     return BookDefaults(
@@ -228,7 +244,9 @@ def opf_text(spec: BookSpec) -> str:
 def add_series_tags(path: Path, spec: BookSpec) -> str:
     """Adds the tags Audiobookshelf reads by name (series, series-part, publisher, language) as
     freeform atoms. ffmpeg's mp4 writer can only keep them without the cover (its custom-tag mode
-    drops the picture), so they go in afterwards with mutagen. Returns "" or a problem message."""
+    drops the picture), so they go in afterwards with mutagen -- into a COPY that replaces the audiobook only
+    when it reads back with the tags, so a failed save can never leave a damaged file. Returns "" or a problem
+    message."""
     wanted = {
         "series": spec.series, "series-part": spec.series_index if spec.series else "",
         "publisher": spec.publisher, "language": spec.language,
@@ -236,31 +254,63 @@ def add_series_tags(path: Path, spec: BookSpec) -> str:
     wanted = {name: value.strip() for name, value in wanted.items() if value and value.strip()}
     if not wanted:
         return ""
+    copy = path.with_name(f".{path.stem}.tagging.m4b")
     try:
         from mutagen.mp4 import MP4, MP4FreeForm
 
-        audio = MP4(str(path))
+        shutil.copyfile(path, copy)
+        audio = MP4(str(copy))
         for name, value in wanted.items():
             audio[f"----:com.apple.iTunes:{name}"] = [MP4FreeForm(value.encode("utf-8"))]
         audio.save()
+        again = MP4(str(copy))  # the copy must read back, tags and all
+        if not all(f"----:com.apple.iTunes:{name}" in again for name in wanted):
+            raise ValueError("the tags did not read back")
+        os.replace(copy, path)
     except Exception as exc:  # noqa: BLE001 -- the audiobook is fine without them
+        try:
+            copy.unlink()
+        except OSError:
+            pass
         return f"could not add the series / publisher / language tags: {exc}"
     return ""
 
 
+def _trash_existing(path: Path, spec: BookSpec) -> str:
+    """Sends an existing file that is about to be replaced to the Recycle Bin / --trash-dir (when the build has
+    one). "" or what went wrong; the new file is then NOT written over it."""
+    if spec.trash is None or not path.exists():
+        return ""
+    try:
+        spec.trash(str(path))
+    except Exception as exc:  # noqa: BLE001 -- TrashError or OSError: keep the old file
+        return f"{path.name} was kept, the old one could not be sent to the Recycle Bin ({exc})"
+    return ""
+
+
 def write_sidecars(spec: BookSpec) -> list[str]:
-    """Writes metadata.opf and cover.jpg/.png beside the audiobook (replacing earlier ones). Returns
-    problems as messages; never raises."""
+    """Writes metadata.opf and cover.jpg/.png beside the audiobook. An earlier one goes to the Recycle Bin
+    (or --trash-dir) first when the build has a trash; otherwise it is replaced. Returns problems as messages;
+    never raises."""
     folder = spec.output.parent
     notes: list[str] = []
     try:
-        text = '<?xml version="1.0" encoding="utf-8"?>\n' + opf_text(spec) + "\n"
-        (folder / OPF_NAME).write_text(text, encoding="utf-8", newline="\n")
+        problem = _trash_existing(folder / OPF_NAME, spec)
+        if problem:
+            notes.append(problem)
+        else:
+            text = '<?xml version="1.0" encoding="utf-8"?>\n' + opf_text(spec) + "\n"
+            (folder / OPF_NAME).write_text(text, encoding="utf-8", newline="\n")
     except OSError as exc:
         notes.append(f"could not write {OPF_NAME}: {exc}")
     if spec.cover:
         try:
-            (folder / ("cover" + extension_for(spec.cover_mime))).write_bytes(spec.cover)
+            cover_path = folder / ("cover" + extension_for(spec.cover_mime))
+            problem = _trash_existing(cover_path, spec)
+            if problem:
+                notes.append(problem)
+            else:
+                cover_path.write_bytes(spec.cover)
         except OSError as exc:
             notes.append(f"could not write the cover image: {exc}")
     return notes
@@ -323,18 +373,66 @@ def _last_line(stderr: str, fallback: str) -> str:
     return lines[-1] if lines else fallback
 
 
+class _Running:
+    """The ffmpeg processes of one build. A Cancel stops them at once instead of waiting for a long encode or
+    join to finish; the workers poll `stopped`, the calling thread may also pass its own should_cancel."""
+
+    def __init__(self) -> None:
+        self.stopped = threading.Event()
+        self._lock = threading.Lock()
+        self._processes: set[subprocess.Popen] = set()
+
+    def stop(self) -> None:
+        self.stopped.set()
+        with self._lock:
+            processes = list(self._processes)
+        for process in processes:
+            try:
+                process.kill()
+            except OSError:
+                pass
+
+    def run(self, command: list, timeout: float, cancelled: Callable[[], bool] | None = None) -> subprocess.CompletedProcess:
+        """run_tool() that can be stopped: the same flags (no window, stdin closed, UTF-8 output), polled every
+        quarter second. Raises subprocess.TimeoutExpired like run_tool; a stopped process returns a non-zero code."""
+        process = popen_tool([str(a) for a in command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with self._lock:
+            self._processes.add(process)
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                try:
+                    out, err = process.communicate(timeout=0.25)
+                    break
+                except subprocess.TimeoutExpired:
+                    if self.stopped.is_set() or (cancelled is not None and cancelled()):
+                        self.stop()
+                        out, err = process.communicate()
+                        break
+                    if time.monotonic() > deadline:
+                        process.kill()
+                        process.communicate()
+                        raise subprocess.TimeoutExpired(command, timeout) from None
+        finally:
+            with self._lock:
+                self._processes.discard(process)
+        return subprocess.CompletedProcess(command, process.returncode, decode_output(out), decode_output(err))
+
+
 def _encode_piece(
-    ffmpeg: Path, source: Path, dest: Path, bitrate_kbps: int, sample_rate: int, channels: int
+    ffmpeg: Path, source: Path, dest: Path, bitrate_kbps: int, sample_rate: int, channels: int,
+    running: _Running | None = None,
 ) -> str:
     """Encodes one MP3 to AAC; returns "" on success, else the error message."""
+    run = running.run if running is not None else (lambda command, timeout: run_tool(command, timeout=timeout))
     try:
-        result = run_tool(
+        result = run(
             [
                 str(ffmpeg), "-y", "-i", str(source), "-map", "0:a:0", "-vn", "-map_metadata", "-1",
                 "-c:a", "aac", "-b:a", f"{bitrate_kbps}k", "-ar", str(sample_rate), "-ac", str(channels),
                 str(dest),
             ],
-            timeout=ENCODE_TIMEOUT_SECONDS,
+            ENCODE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
         return f"{source.name}: ffmpeg timed out after {ENCODE_TIMEOUT_SECONDS}s"
@@ -355,6 +453,99 @@ def probe_duration(path: Path, ffprobe: Path) -> float | None:
         return float(result.stdout.strip())
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return None
+
+
+def probe_audio_length(path: Path, ffprobe: Path, sample_rate: int) -> float | None:
+    """The length in seconds of an encoded AAC piece as the stream copy will lay it out: its frames counted
+    (ffprobe reads the packets, it does not decode) times 1024 samples. This is longer than the container's
+    own duration, which leaves out the encoder's priming and padding. None if it can't be told."""
+    try:
+        result = run_tool(
+            [str(ffprobe), "-v", "quiet", "-select_streams", "a:0", "-count_packets",
+             "-show_entries", "stream=nb_read_packets", "-of", "default=nw=1:nk=1", str(path)],
+            timeout=PROBE_TIMEOUT_SECONDS,
+        )
+        frames = int(result.stdout.strip())
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    return frames * AAC_FRAME_SAMPLES / sample_rate if frames > 0 and sample_rate > 0 else None
+
+
+def _sweep_stale_builds(folder: Path) -> None:
+    """Removes .m4b-build-* folders (and *.building.m4b / *.replaced.m4b / *.tagging.m4b leftovers) an earlier,
+    crashed or killed run left behind -- only old ones, so a build running at the same time is not touched."""
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return
+    now = time.time()
+    for entry in entries:
+        name = entry.name
+        if not (name.startswith(".m4b-build-") or (name.startswith(".") and name.endswith((".building.m4b", ".tagging.m4b")))):
+            continue
+        try:
+            if now - entry.stat().st_mtime < STALE_BUILD_SECONDS:
+                continue
+            shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink()
+        except OSError:
+            pass
+
+
+def _make_work_folder(output: Path) -> tuple[Path | None, list[Path], str]:
+    """(the temp work folder, the folders this call had to create for the output, "" or an error message)."""
+    created: list[Path] = []
+    folder = output.parent
+    missing = []
+    while not folder.exists() and folder != folder.parent:
+        missing.append(folder)
+        folder = folder.parent
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        created = missing
+        _sweep_stale_builds(output.parent)
+        return Path(tempfile.mkdtemp(prefix=".m4b-build-", dir=str(output.parent))), created, ""
+    except OSError as exc:
+        _remove_empty(missing)
+        return None, [], f"could not prepare {output.parent}: {exc}"
+
+
+def _remove_empty(folders: list[Path]) -> None:
+    """Removes the folders a failed build created (deepest first), but only the ones that are empty."""
+    for folder in sorted(folders, key=lambda f: len(f.parts), reverse=True):
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+
+
+def _install(final_tmp: Path, output: Path, spec: BookSpec) -> str:
+    """Puts the finished file at `output`. An older audiobook there is first renamed aside, and goes to the
+    Recycle Bin / --trash-dir only after the new one is in place; if the new one cannot be, the old one is
+    put back. Returns "" or a message (what went wrong)."""
+    if spec.trash is None or not output.exists():
+        retry_on_lock(lambda: os.replace(final_tmp, output))
+        return ""
+    aside = output.with_name(f".{output.stem}.replaced.m4b")
+    retry_on_lock(lambda: os.replace(output, aside))
+    try:
+        retry_on_lock(lambda: os.replace(final_tmp, output))
+    except OSError:
+        os.replace(aside, output)  # put the old one back
+        raise
+    try:
+        spec.trash(str(aside))
+    except Exception as exc:  # noqa: BLE001 -- TrashError or OSError
+        kept = output.with_name(f"{output.stem} (previous).m4b")
+        n = 2
+        while kept.exists():
+            kept = output.with_name(f"{output.stem} (previous {n}).m4b")
+            n += 1
+        try:
+            os.replace(aside, kept)
+        except OSError:
+            kept = aside
+        return f"the old audiobook could not be sent to the Recycle Bin ({exc}); it is kept as {kept.name}"
+    return ""
 
 
 def build_m4b(
@@ -386,10 +577,19 @@ def build_m4b(
     sample_rate = rate if status == STATUS_OK and rate else FALLBACK_SAMPLE_RATE
     channel_count = min(channels, MAX_CHANNELS) if status == STATUS_OK and channels else MAX_CHANNELS
 
-    spec.output.parent.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix=".m4b-build-", dir=str(spec.output.parent)))
+    work, created, problem = _make_work_folder(spec.output)
+    if work is None:
+        return BuildResult(STATUS_ERROR, problem)
     final_tmp = spec.output.with_name(f".{spec.output.stem}.building.m4b")
+    running = _Running()
+    succeeded = False
+    notes: list[str] = []
     try:
+        if spec.cover and sniff_mime(spec.cover) is None:
+            notes.append("the cover image is not a JPEG or PNG, so it was left out of the audiobook")
+            spec.cover, spec.cover_mime = None, ""
+        elif spec.cover:
+            spec.cover_mime = sniff_mime(spec.cover) or spec.cover_mime
         pieces = [work / f"{index:05d}.m4a" for index in range(len(spec.chapters))]
         errors: list[str] = []
         done = 0
@@ -397,7 +597,7 @@ def build_m4b(
         with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_ENCODES, len(spec.chapters))) as pool:
             pending = {
                 pool.submit(
-                    _encode_piece, ffmpeg, chapter.path, piece, spec.bitrate_kbps, sample_rate, channel_count
+                    _encode_piece, ffmpeg, chapter.path, piece, spec.bitrate_kbps, sample_rate, channel_count, running
                 ): chapter
                 for chapter, piece in zip(spec.chapters, pieces)
             }
@@ -411,17 +611,20 @@ def build_m4b(
                 pending = {f: pending[f] for f in still}
                 report(done, total)
                 if errors or cancelled():
+                    running.stop()  # the running encodes are killed, the queued ones never start
                     for future in pending:
-                        future.cancel()  # not yet started; the running ones finish their file
+                        future.cancel()
                     break
-        if cancelled() and not errors:
+        if cancelled():
             return BuildResult(STATUS_ERROR, "Cancelled.", cancelled=True)
         if errors:
             return BuildResult(STATUS_ERROR, errors[0] + (f" (and {len(errors) - 1} more)" if len(errors) > 1 else ""))
 
         durations: list[float] = []
         for chapter, piece in zip(spec.chapters, pieces):
-            seconds = probe_duration(piece, ffprobe)
+            seconds = probe_audio_length(piece, ffprobe, sample_rate)
+            if seconds is None:
+                seconds = probe_duration(piece, ffprobe)  # an ffprobe that cannot count packets: the container's value
             if seconds is None or seconds <= 0:
                 return BuildResult(STATUS_ERROR, f"{chapter.path.name}: could not measure the encoded length")
             durations.append(seconds)
@@ -443,28 +646,35 @@ def build_m4b(
             command += ["-map", "2:v", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
         command += ["-c:a", "copy", "-f", "ipod", str(final_tmp)]
         try:
-            result = run_tool(command, timeout=JOIN_TIMEOUT_SECONDS)
+            result = running.run(command, JOIN_TIMEOUT_SECONDS, cancelled)
         except subprocess.TimeoutExpired:
             return BuildResult(STATUS_ERROR, f"ffmpeg timed out joining the chapters after {JOIN_TIMEOUT_SECONDS}s")
         except OSError as exc:
             return BuildResult(STATUS_ERROR, f"failed to launch ffmpeg: {exc}")
-        if result.returncode != 0:
-            return BuildResult(STATUS_ERROR, _last_line(result.stderr, f"ffmpeg exited with code {result.returncode}"))
         if cancelled():
             return BuildResult(STATUS_ERROR, "Cancelled.", cancelled=True)
-        notes = [problem] if (problem := add_series_tags(final_tmp, spec)) else []
+        if result.returncode != 0:
+            return BuildResult(STATUS_ERROR, _last_line(result.stderr, f"ffmpeg exited with code {result.returncode}"))
+        if problem := add_series_tags(final_tmp, spec):
+            notes.append(problem)
         try:
-            retry_on_lock(lambda: os.replace(final_tmp, spec.output))
+            kept_note = _install(final_tmp, spec.output, spec)
         except OSError as exc:
             return BuildResult(STATUS_ERROR, f"could not move the finished file into place: {exc}")
+        if kept_note:
+            notes.append(kept_note)
+        succeeded = True
         report(total, total)
         return BuildResult(
             STATUS_OK, output=spec.output, chapter_count=len(spec.chapters), duration_seconds=sum(durations),
             notes=notes + (write_sidecars(spec) if spec.write_sidecar else []),
         )
     finally:
+        running.stop()
         shutil.rmtree(work, ignore_errors=True)
         try:
             final_tmp.unlink()
         except OSError:
             pass
+        if not succeeded:
+            _remove_empty(created)  # a failed or cancelled build leaves no empty author/series folders behind

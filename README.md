@@ -217,8 +217,11 @@ Artist`, `album_artist`). The fields are: title, artist, albumartist, album, tra
 composer, comment, language, albumsort, artistsort, albumartistsort, acoustid_fingerprint, itunesadvisory,
 musicbrainz_albumid, musicbrainz_trackid, publisher, catalognumber, releasecountry.
 
-Checks: `track` and `discnumber` are a number or number/total (`3`, `3/12`); `year` is `YYYY`, `YYYY-MM` or
-`YYYY-MM-DD`; `language` is a three-letter code (`eng`, `nor`, `deu`).
+Checks: `track` and `discnumber` are a number or number/total (`3`, `3/12`, written with the digits 0-9); `year` is
+`YYYY`, `YYYY-MM` or `YYYY-MM-DD`; `language` is a three-letter code (`eng`, `nor`, `deu`; it is stored in lower
+case); `itunesadvisory` is `0` (none), `1` (explicit) or `2` (clean). A value with a control character in it is
+refused, and so is a line break or tab in any field except `comment`, since an ID3 tag cannot hold them sensibly.
+If a field is given both `-s` and `--clear`, `--clear` wins whatever the order.
 
 Each file's result is `changed`, `unchanged` (nothing differed), `planned` (dry run) or `failed`.
 
@@ -232,13 +235,18 @@ overwrites: a name that is taken gets `(2)`, `(3)`, ... A change of letter case 
 | Option | Meaning |
 | --- | --- |
 | `-p PATTERN`, `--pattern PATTERN` | The new name (without `.mp3`), with `%field%` tokens, e.g. `"%track% - %artist% - %title%"` (the default). Quote it so the shell leaves the `%` signs alone. |
-| `--zero-pad N` | Pad the track number to N digits (`--zero-pad 2` gives `03`). |
-| `--ascii` | ASCII-safe names (é becomes e, æ becomes ae, other symbols are dropped). |
+| `--zero-pad N` | Pad the track number to N digits (`--zero-pad 2` gives `03`). Default: the choice saved in the app's Rename window (on, with its width, or off); `--zero-pad 0` turns it off. |
+| `--ascii` | ASCII-safe names (é becomes e, æ becomes ae, other symbols are dropped). Also on when the app's Rename window has it saved. |
 | `-n`, `--dry-run` | Show the new names, rename nothing. |
 
-Tokens are the tag field names above (`%artist%`, `%album%`, `%title%`, `%track%`, `%year%`, ...). A file the
-pattern gives no name for (all its fields are empty) is `skipped`, not renamed to "untitled". A file that
-already has the name is `unchanged`. There is no undo for the command line: preview with `--dry-run`.
+Tokens are the tag field names above (`%artist%`, `%album%`, `%title%`, `%track%`, `%year%`, ...). A token that is
+not a field name (a typo such as `%tittle%`) is refused with exit code 2 instead of silently rendering as nothing,
+and a rename pattern cannot contain `/` or `\` (`move` makes folders). A file the pattern gives no name for (all its
+fields are empty) is `skipped`, not renamed to "untitled". A file that already has the name is `unchanged`. There is
+no undo for the command line: preview with `--dry-run`.
+
+In a batch file write `%%` for each `%` (`-p "%%track%% - %%title%%"`): cmd expands a single `%name%` itself, and a
+pattern that then reads nothing makes the file `skipped`.
 
 ### move
 
@@ -271,7 +279,7 @@ original (same name, `.mp3`). Never overwrites: if the `.mp3` already exists the
 | Option | Meaning |
 | --- | --- |
 | `--bitrate KBPS` | MP3 bitrate: 128, 192, 256 or 320 (default 192). |
-| `--trash-original` | After the `.mp3` is made, send the original to the Recycle Bin (never deleted for good; if the Recycle Bin refuses, the original is kept and a warning says so). |
+| `--trash-original` | After the `.mp3` is made, send the original to the Recycle Bin (never deleted for good; a move a virus scanner blocks for a moment is retried, and if the Recycle Bin still refuses, the original is kept and a warning says so). |
 | `-n`, `--dry-run` | Show what would be converted, change nothing. |
 
 Results: `converted`, `skipped`, `planned`, `failed`. The new path is in `new_path`. A file ffmpeg cannot read is
@@ -292,14 +300,15 @@ first, and `--disable` for the steps you do not want.
 | `--recipe FILE` | Use this recipe (a JSON file in the format the app stores) instead of the one saved in the app. |
 | `--enable STEP` | Turn a step on for this run (repeatable). |
 | `--disable STEP` | Turn a step off for this run (repeatable). |
-| `--threshold N` | Confidence needed to apply a guess, `0`-`1` or a percentage (`0.9`, `90` or `90%`); a plain number from 1 to 5 such as `1.5` is refused as ambiguous. |
+| `--threshold N` | Confidence needed to apply a guess: a fraction `0`-`1` (`0.9`, also `1`), or a percentage with at least two digits (`90`, `90%`, `100`); a number above 1 and below 5 such as `1.5` is refused as ambiguous. |
 | `--trash-dir FOLDER` | Move originals into this folder (created if needed) instead of the Recycle Bin, for a machine or a task that has none. |
 | `--list-steps` | Show the steps and whether the recipe has each on, then stop (no `PATH` needed). |
 
 Steps: `integrity`, `bpm`, `key`, `loudness`, `deep_check`, `path_tags`, `tags`, `discogs`, `cover`, `rename`,
 `move_into_folders`. Without `--recipe` the recipe saved in the app is used (the defaults if none was saved).
 The Discogs token comes from the `DISCOGS_TOKEN` environment variable if it is set, else from the app's saved
-token; the library root and tool paths come from the app's settings. Exit code 1 if any file failed; files that
+token; the library root and tool paths come from the app's settings. A `--recipe` file that is not valid JSON or not a
+recipe is refused (exit code 2) rather than replaced by the default recipe. Exit code 1 if any file failed; files that
 need review are not failures.
 
 ### analyze
@@ -316,7 +325,7 @@ nothing is written to the files unless `--save`.
 | `--bpm` | Detect the tempo. |
 | `--key` | Detect the musical key (keyfinder-cli). |
 | `--loudness` | Measure the integrated loudness (LUFS) and the gain to the target. |
-| `--save` | Write the results into the files' tags: BPM, key and the scan stamps. |
+| `--save` | Write the results into the files' tags: BPM, key, the loudness (as ReplayGain, with `--loudness`) and the scan stamps. |
 
 Exit code 1 when a check found a problem (WARNING or ERROR) or could not run (a tool is missing or failing), so a
 script can act on it. A file's `problem` is `true` in the JSON in those cases.
@@ -327,7 +336,12 @@ script can act on it. A file's `problem` is `true` in the JSON in those cases.
 
 Makes one chaptered `.m4b` audiobook per folder of MP3 files, the same as File > Create M4B Audiobook: a chapter
 per file in disc / track / file-name order, the files re-encoded to AAC (the originals are never touched). A
-book that already exists is skipped unless `--replace`.
+book that already exists is skipped unless `--replace`. Nothing is overwritten for good: an audiobook, `metadata.opf` or
+cover image that a run replaces goes to the Recycle Bin (or `--trash-dir`) first. If it cannot be sent there, the old
+audiobook is kept beside the new one as `<Title> (previous).m4b`, and a note says so. Two folders that would be
+written to the same file make one book and a `skipped` for the other (`--dry-run` says the same). A failed or
+cancelled run leaves nothing behind: no half-written file, no empty library folders, and an old build folder an
+earlier crash left is cleaned up. The chapter marks follow the real length of every chapter's audio.
 
 | Option | Meaning |
 | --- | --- |
@@ -335,17 +349,19 @@ book that already exists is skipped unless `--replace`.
 | `--library FOLDER` | Library folder in Audiobookshelf's layout: `<FOLDER>/<Author>/[<Series>/]<Title>/<Title>.m4b`. |
 | `--file FILE` | The exact `.m4b` to write (one book only; `.m4b` is added if missing). |
 | `--bitrate KBPS` | AAC bitrate: 32, 48, 64, 96 or 128. Default: the one saved in the app (64). |
-| `--sidecar` | Also write `metadata.opf` and a cover image beside each audiobook (Audiobookshelf, Calibre). Default: the app's saved choice. |
-| `--replace` | Replace an audiobook that already exists. |
-| `--title`, `--author`, `--narrator`, `--series`, `--series-number`, `--year`, `--publisher`, `--language`, `--description` | Set that detail for the book(s). Without them the details come from the first file's tags (album, album artist, year, publisher). They apply to every book, so use them with one book. |
-| `--cover IMAGE` | A JPEG or PNG cover instead of the files' own. |
-| `--lookup` | Look the book up on Audible (then Open Library) and fill in narrator, series and number, publisher, year, language, description and cover. What you gave explicitly wins. |
+| `--sidecar` | Also write `metadata.opf` and a cover image beside each audiobook (Audiobookshelf, Calibre). Default: the app's saved choice. Refused with `--into` for several books (they would share one `metadata.opf`). |
+| `--replace` | Replace an audiobook that already exists; the old one goes to the Recycle Bin or `--trash-dir`. |
+| `--trash-dir FOLDER` | Where an audiobook, `metadata.opf` or cover that is replaced goes, instead of the Recycle Bin (created if needed). |
+| `--title`, `--author`, `--narrator`, `--series`, `--series-number`, `--year`, `--publisher`, `--language`, `--description` | Set that detail for the book(s). Without them the details come from the first file's tags (album, album artist, year, publisher, language) and its cover. They apply to every book, so use them with one book. |
+| `--cover IMAGE` | A JPEG or PNG cover instead of the files' own. A cover in the files that is not a JPEG or PNG (a GIF, a WebP) is left out, with a note. |
+| `--lookup` | Look the book up on Audible (then Open Library) and fill in only what is still empty: narrator, series and its number (together), publisher, year, language, description, the author if the files have none, and a cover only if the files have none. It never replaces the files' own title, author, cover or other details, and what you gave explicitly wins. Whatever it has to say (a source that was down, nothing found, a match below `--min-score`) is in the row's `notes`. |
 | `--region STORE` | The Audible store for `--lookup`: com, co.uk, de, fr, it, es, ca, com.au, in or co.jp. Default: the one saved in the app (com). |
-| `--min-score N` | How good a `--lookup` match must be to be used, 0 to 4 (title counts most, then author, then how close the running time is). Default 2.8; below it the lookup is ignored with a warning. |
+| `--min-score N` | How good a `--lookup` match must be to be used, 0 to 4 (title counts most, then author, then how close the running time is). Default 2.8; below it the lookup is ignored with a note. A value outside 0-4 is refused (exit code 2). |
 | `-n`, `--dry-run` | Show the audiobooks that would be made, make nothing. |
 
 Results per book: `created`, `skipped`, `planned`, `failed`; the JSON also has the output path, the number of
-chapters, the length in minutes and, with `--lookup`, the match that was used.
+chapters, the length in minutes, `notes` (things worth knowing that did not stop the audiobook) and, with `--lookup`,
+the match that was used and `filled`, the names of what it filled in.
 
 ### JSON output
 

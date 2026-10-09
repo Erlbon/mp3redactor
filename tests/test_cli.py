@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.audiobook_lookup import BookMatch, LookupOutcome
+from core.m4b_builder import BookDefaults
 from core.mp3_file import STATUS_ERROR, STATUS_OK, MP3File
 from core.settings import Settings
 from core.tag_reader import load_tags
@@ -80,7 +81,7 @@ def test_info_reports_an_unreadable_file_and_exits_1(tmp_path, capsys):
     bad = tmp_path / "bad.mp3"
     bad.write_bytes(b"this is not an mp3 file at all" * 20)
     code, document = run_json(capsys, "info", str(bad))
-    assert code in (0, 1) and document["files"] == 1  # a garbage file may load as "no tags" or as an error, never crash
+    assert code == 1 and document["failed"] == 1 and document["results"][0]["status"] != "ok"
 
 
 def test_info_with_nothing_found_is_a_usage_error(tmp_path, capsys):
@@ -379,37 +380,76 @@ def _canned(score_title="Book One", **overrides):
     return LookupOutcome([match])
 
 
-def test_m4b_lookup_fills_in_a_confident_match_and_explicit_options_win(tmp_path, capsys, monkeypatch):
-    _books_paths = []
-    (tmp_path / "one").mkdir()
-    shutil.copyfile(FIXTURE, tmp_path / "one" / "1.mp3")
-    m = read_tags(tmp_path / "one" / "1.mp3")
-    m.apply_tags({"album": "Book One", "artist": "Ann", "title": "Part 1", "track": "1"})
+def _tagged_book(tmp_path, name="one", **tags):
+    """A one-file book folder tagged like Book One by Ann, plus any extra tags."""
+    folder = tmp_path / name
+    folder.mkdir()
+    shutil.copyfile(FIXTURE, folder / "1.mp3")
+    m = read_tags(folder / "1.mp3")
+    m.apply_tags({"album": "Book One", "artist": "Ann", "title": "Part 1", "track": "1", **tags})
     from core.tag_writer import save_tags
 
     save_tags(m)
-    monkeypatch.setattr(cmd_m4b, "search", lambda *a, **k: _canned())
-    monkeypatch.setattr(cmd_m4b, "download_cover", lambda url, fetch=None: (b"\xff\xd8\xff\xe0jpeg", "image/jpeg"))
-    code, document = run_json(capsys, "m4b", str(tmp_path / "one"), "--lookup", "--dry-run", "--series", "My Series")
-    row = document["results"][0]
-    assert row["match"]["source"] == "Audible" and row["match"]["asin"] == "B0TEST"
-    # the dry run shows the plan; build the spec the same way to check what the lookup filled in:
+    return folder
+
+
+def _capture_spec(monkeypatch):
     captured = {}
     monkeypatch.setattr(cmd_m4b, "build_m4b", lambda spec, **k: captured.setdefault("spec", spec) and SimpleNamespace(
         status=STATUS_OK, notes=[], message="", duration_seconds=60.0))
-    run(capsys, "m4b", str(tmp_path / "one"), "--lookup", "--series", "My Series", "--replace")
+    return captured
+
+
+def test_m4b_lookup_fills_in_only_what_is_missing_and_explicit_options_win(tmp_path, capsys, monkeypatch):
+    folder = _tagged_book(tmp_path, publisher="Own Pub")
+    monkeypatch.setattr(cmd_m4b, "search", lambda *a, **k: _canned(authors=["Someone Else"]))
+    monkeypatch.setattr(cmd_m4b, "download_cover", lambda url, fetch=None: (b"\xff\xd8\xff\xe0jpeg", "image/jpeg"))
+    code, document = run_json(capsys, "m4b", str(folder), "--lookup", "--min-score", "1", "--dry-run", "--series", "My Series")
+    row = document["results"][0]
+    assert row["match"]["source"] == "Audible" and row["match"]["asin"] == "B0TEST"
+    assert set(row["match"]["filled"]) >= {"narrator", "year", "description", "cover"}
+    captured = _capture_spec(monkeypatch)
+    run(capsys, "m4b", str(folder), "--lookup", "--min-score", "1", "--series", "My Series", "--replace")
     spec = captured["spec"]
-    assert spec.narrator == "Sam Reader" and spec.publisher == "Pub House" and spec.series_index == "1"
-    assert spec.series == "My Series"  # what the user gave wins over the lookup
-    assert spec.cover == b"\xff\xd8\xff\xe0jpeg" and spec.description == "A story."
+    assert spec.narrator == "Sam Reader" and spec.description == "A story." and spec.year == "2008"
+    assert spec.publisher == "Own Pub"  # the files' own value is never replaced
+    assert spec.title == "Book One" and spec.author == "Ann"  # nor the title or the author
+    assert spec.series == "My Series" and spec.series_index == ""  # the user's series wins; its number is not another series'
+    assert spec.cover == b"\xff\xd8\xff\xe0jpeg"  # the files had none
+
+
+def test_m4b_lookup_takes_the_series_and_its_number_together_and_never_replaces_the_files_cover(tmp_path, capsys, monkeypatch):
+    folder = _tagged_book(tmp_path)
+    monkeypatch.setattr(cmd_m4b, "search", lambda *a, **k: _canned())
+    downloads = []
+    monkeypatch.setattr(cmd_m4b, "download_cover", lambda url, fetch=None: downloads.append(url) or (b"\xff\xd8\xff\xe0new", "image/jpeg"))
+    own = (b"\xff\xd8\xff\xe0own", "image/jpeg")
+    monkeypatch.setattr(cmd_m4b, "defaults_for", lambda book: BookDefaults(
+        title="Book One", author="Ann", year="", cover=own[0], cover_mime=own[1]))
+    captured = _capture_spec(monkeypatch)
+    run(capsys, "m4b", str(folder), "--lookup", "--replace")
+    spec = captured["spec"]
+    assert spec.series == "Sword of Truth" and spec.series_index == "1"
+    assert spec.cover == own[0] and downloads == []  # the files' own cover stays, and nothing is downloaded for nothing
+
+
+def test_m4b_lookup_notes_reach_the_json_document(tmp_path, capsys, monkeypatch):
+    folder = _tagged_book(tmp_path)
+    outcome = _canned()
+    outcome.notes = ["Audible: 503 Service Unavailable from api.audible.com"]
+    monkeypatch.setattr(cmd_m4b, "search", lambda *a, **k: outcome)
+    monkeypatch.setattr(cmd_m4b, "download_cover", lambda url, fetch=None: (b"\xff\xd8\xff\xe0jpeg", "image/jpeg"))
+    _code, document = run_json(capsys, "m4b", str(folder), "--lookup", "-n")
+    assert any("503" in n for n in document["results"][0]["notes"])
 
 
 def test_m4b_lookup_below_the_minimum_score_is_not_used(tmp_path, capsys, monkeypatch):
     (tmp_path / "one").mkdir()
     shutil.copyfile(FIXTURE, tmp_path / "one" / "1.mp3")
     monkeypatch.setattr(cmd_m4b, "search", lambda *a, **k: _canned(score_title="Something Else Entirely"))
-    code, out, err = run(capsys, "m4b", str(tmp_path / "one"), "--lookup", "-n", "--title", "Book One")
-    assert code == 0 and "below --min-score" in err and "matched" not in out
+    code, document = run_json(capsys, "m4b", str(tmp_path / "one"), "--lookup", "-n", "--title", "Book One")
+    row = document["results"][0]
+    assert code == 0 and any("below --min-score" in n for n in row["notes"]) and row["match"] is None
 
 
 # --- one exe ------------------------------------------------------------------------------------------
@@ -484,3 +524,90 @@ def test_the_readme_lists_the_exit_codes_and_the_scripting_ways():
         assert code in section
     for way in ("start /wait", "Start-Process", "Out-Null", "--output"):
         assert way in section
+
+
+# --- second review -------------------------------------------------------------------------------------------
+
+
+@requires_ffmpeg
+def test_m4b_two_books_for_the_same_file_are_not_both_made(tmp_path, capsys):
+    _books(tmp_path, {"one": ("Same Title", "Ann"), "two": ("Same Title", "Bob")})
+    out_dir = tmp_path / "out"
+    _code, plan = run_json(capsys, "m4b", str(tmp_path / "one"), str(tmp_path / "two"), "--into", str(out_dir), "-n")
+    assert [r["status"] for r in plan["results"]] == ["planned", "skipped"]
+    code, real = run_json(capsys, "m4b", str(tmp_path / "one"), str(tmp_path / "two"), "--into", str(out_dir))
+    assert [r["status"] for r in real["results"]] == ["created", "skipped"]
+    assert "same file" in real["results"][1]["message"] and sorted(p.name for p in out_dir.iterdir()) == ["Same Title.m4b"]
+
+
+def test_m4b_sidecar_with_into_for_several_books_is_refused(tmp_path):
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        shutil.copyfile(FIXTURE, tmp_path / folder / "1.mp3")
+    with pytest.raises(CliError, match="same folder"):
+        main(["m4b", str(tmp_path), "--into", str(tmp_path / "out"), "--sidecar"])
+
+
+@requires_ffmpeg
+def test_m4b_replace_sends_the_old_audiobook_and_sidecars_to_the_trash_dir(tmp_path, capsys):
+    _books(tmp_path, {"one": ("Book One", "Ann")})
+    run(capsys, "m4b", str(tmp_path / "one"), "--sidecar")
+    book = tmp_path / "one" / "Book One.m4b"
+    old = book.read_bytes()
+    bin_dir = tmp_path / "bin"
+    code, document = run_json(
+        capsys, "m4b", str(tmp_path / "one"), "--sidecar", "--replace", "--trash-dir", str(bin_dir), "--narrator", "New Reader",
+    )
+    assert code == 0 and document["results"][0]["status"] == "created"
+    assert sorted(p.name for p in bin_dir.iterdir()) == [".Book One.replaced.m4b", "metadata.opf"]
+    assert (bin_dir / ".Book One.replaced.m4b").read_bytes() == old  # the old audiobook, kept
+    assert "New Reader" in (tmp_path / "one" / "metadata.opf").read_text(encoding="utf-8")
+    assert not [p for p in (tmp_path / "one").iterdir() if p.name.startswith(".")]  # no leftovers beside the book
+
+
+@requires_ffmpeg
+def test_m4b_replace_with_an_unusable_trash_dir_keeps_the_old_audiobook(tmp_path, capsys):
+    _books(tmp_path, {"one": ("Book One", "Ann")})
+    run(capsys, "m4b", str(tmp_path / "one"))
+    blocker = tmp_path / "bin"
+    blocker.write_bytes(b"a file, not a folder")
+    code, document = run_json(capsys, "m4b", str(tmp_path / "one"), "--replace", "--trash-dir", str(blocker))
+    row = document["results"][0]
+    assert code == 0 and row["status"] == "created" and any("kept as Book One (previous).m4b" in n for n in row["notes"])
+    assert (tmp_path / "one" / "Book One (previous).m4b").exists() and (tmp_path / "one" / "Book One.m4b").exists()
+
+
+@pytest.mark.parametrize("value", ["5", "-1", "nan", "abc"])
+def test_m4b_min_score_must_be_a_number_from_0_to_4(tmp_path, value):
+    with pytest.raises(SystemExit):
+        main(["m4b", str(tmp_path), "--lookup", "--min-score", value])
+
+
+@pytest.mark.parametrize("argv,message", [
+    (["-s", "title=bad\x01char"], "control character"),
+    (["-s", "title=two\nlines"], "control character"),
+    (["-s", "track=٣"], "number or number/total"),
+    (["-s", "language=English"], "three-letter"),
+    (["-s", "itunesadvisory=3"], "itunesadvisory must be 0"),
+])
+def test_set_refuses_values_no_id3_tag_should_hold(song, argv, message):
+    before = open(song, "rb").read()
+    with pytest.raises(CliError, match=message):
+        main(["set", song, *argv])
+    assert open(song, "rb").read() == before
+
+
+def test_set_keeps_line_breaks_in_a_comment_and_lowercases_a_language(song, capsys):
+    code, document = run_json(capsys, "set", song, "-s", "comment=line one\nline two", "-s", "language=ENG")
+    assert code == 0 and document["results"][0]["status"] == "changed"
+    tags = read_tags(song)
+    assert tags.comment == "line one\nline two" and tags.language == "eng"
+
+
+def test_rename_defaults_come_from_the_saved_settings(song, capsys, monkeypatch):
+    monkeypatch.setattr(cmd_files, "settings", lambda: Settings(rename_zero_pad=True, rename_zero_pad_width=3))
+    run_json(capsys, "set", song, "-s", "track=4")
+    _code, document = run_json(capsys, "rename", song, "-p", "%track% %title%", "-n")
+    assert os.path.basename(document["results"][0]["new_path"]).startswith("004 ")
+    _code, document = run_json(capsys, "rename", song, "-p", "%track% %title%", "--zero-pad", "0", "-n")
+    assert os.path.basename(document["results"][0]["new_path"]).startswith("4 ")

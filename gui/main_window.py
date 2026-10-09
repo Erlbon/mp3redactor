@@ -953,10 +953,16 @@ class MainWindow(QMainWindow):
         results: list[tuple] = []
         skipped: list[str] = []
         todo = []
+        claimed: set[str] = set()  # two books for one file: the second would replace the first
         for spec in specs:
-            if skip_existing and spec.output.exists():
+            key = os.path.normcase(os.path.abspath(spec.output))
+            if key in claimed:
+                skipped.append(f"{spec.title}: another book in this batch is written to {spec.output.name}, left out")
+            elif skip_existing and spec.output.exists():
                 skipped.append(f"{spec.output.name}: already exists, left as it is")
             else:
+                claimed.add(key)
+                spec.trash = move_to_trash  # an audiobook, metadata.opf or cover this replaces goes to the Recycle Bin
                 todo.append(spec)
         total = sum(len(spec.chapters) + 1 for spec in todo)
         cancelled = False

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-10#01 -- M4B: chapter marks, nothing overwritten; command line second review fixes
+
+- **M4B chapter marks drifted** by about 35-45 ms per chapter (so a book of 100 chapters was several seconds off by the end): they were laid out from each piece's container duration, but the join keeps every AAC frame. They now follow the real length of each piece.
+- **Nothing is overwritten for good** (window and command line): an older audiobook, `metadata.opf` or cover image that a build replaces goes to the Recycle Bin first (the command line also has `--trash-dir`). If it cannot, the old audiobook is kept beside the new one as `<Title> (previous).m4b`.
+- Cancel now stops the running ffmpeg at once instead of waiting for the current encode or join; a failed or cancelled build leaves no empty author / series folders; an old `.m4b-build-*` folder from a crash is swept; the series / publisher / language tags are added to a copy that replaces the audiobook only when it reads back, so a failed save cannot leave a damaged file; an output folder that cannot be made is an error message, not a crash; a cover that is not a JPEG or PNG (a GIF or WebP) is left out with a note instead of failing the build.
+- Two books that would be written to the same file (same author and title in the library layout) no longer replace each other: the second is skipped, in the window and on the command line. `m4b --sidecar --into` for several books is refused (they would share one `metadata.opf`).
+- Look Up: an answer from Audible or Open Library with an unexpected shape (a `null` author list, a string runtime, an answer cut short) gives matches or a clear error instead of a crash. On the command line `m4b --lookup` now fills in only what is missing (never the files' own title, author or cover; the series and its number together; a cover only if the files have none), reports what it filled in `match.filled`, and puts a source that failed or a weak match into the row's `notes`; `--min-score` must be 0 to 4.
+- `set` refuses control characters, non-ASCII digits and line breaks (except in `comment`), stores a language in lower case and checks `itunesadvisory` (0, 1 or 2). `rename` / `move` take their zero-pad and ASCII defaults from the app's saved Rename choices, refuse an unknown `%token%` and skip a file the pattern reads nothing for. Redact and `--trash-original` retry a Recycle Bin move a virus scanner blocks for a moment; a `--recipe` file that is not a recipe is refused.
+- Requires redactor_common 2026-10-10-01.
+
 ## 2026-10-09#06 -- Command line: review fixes
 
 - There is no undo for the command line: renames, moves and Redact run from it are no longer recorded in the app's rename log (File > Undo Last Rename does not see them). Preview with `--dry-run`; nothing is overwritten and nothing is deleted for good.

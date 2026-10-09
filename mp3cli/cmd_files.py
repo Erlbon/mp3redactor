@@ -30,6 +30,18 @@ from mp3cli.files import add_path_arguments, collect, load, settings, skip_reaso
 DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
 
 
+def _zero_pad(args: argparse.Namespace) -> int:
+    """--zero-pad N, else the choice saved in the app's Rename window (on: its width), else none."""
+    if args.zero_pad is not None:
+        return args.zero_pad
+    app = settings()
+    return app.rename_zero_pad_width if app.rename_zero_pad else 0
+
+
+def _ascii(args: argparse.Namespace) -> bool:
+    return bool(args.ascii) or settings().ascii_filenames
+
+
 def _values_for(mp3: MP3File, zero_pad: int) -> dict[str, str]:
     values = {key: getattr(mp3, key, "") or "" for key, _label, _multiline in FIELDS}
     if zero_pad > 0 and values.get("track"):
@@ -53,10 +65,11 @@ def add_rename_parser(sub) -> None:
 
 def run_rename(args: argparse.Namespace, out: Output) -> int:
     pattern = args.pattern or DEFAULT_RENAME_PATTERN
+    zero_pad = _zero_pad(args)
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
     failed = commands.rename_items(
-        files, pattern=pattern, values_for=lambda m: _values_for(m, args.zero_pad), path_of=lambda m: str(m.path),
-        skip_reason=skip_reason, out=out, dry_run=args.dry_run, ascii_only=args.ascii,
+        files, pattern=pattern, values_for=lambda m: _values_for(m, zero_pad), path_of=lambda m: str(m.path),
+        skip_reason=skip_reason, out=out, dry_run=args.dry_run, ascii_only=_ascii(args),
     )
     return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, pattern=pattern)
 
@@ -80,11 +93,12 @@ def add_move_parser(sub) -> None:
 
 def run_move(args: argparse.Namespace, out: Output) -> int:
     root = args.root or settings().library_root
+    zero_pad = _zero_pad(args)
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
     failed = commands.move_items(
-        files, root=root, pattern=args.pattern, values_for=lambda m: _values_for(m, args.zero_pad),
+        files, root=root, pattern=args.pattern, values_for=lambda m: _values_for(m, zero_pad),
         path_of=lambda m: str(m.path), skip_reason=skip_reason, out=out, dry_run=args.dry_run, copy=args.copy,
-        ascii_only=args.ascii,
+        ascii_only=_ascii(args),
     )
     return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, root=root)
 
@@ -141,7 +155,7 @@ def run_convert(args: argparse.Namespace, out: Output) -> int:
         row["status"] = "converted"
         if args.trash_original:
             try:
-                move_to_trash(str(source))
+                commands.trash_with_retries(move_to_trash)(str(source))
             except TrashError as exc:
                 row["message"] = f"converted, but the original was kept: {exc}"
                 out.warn(f"{source.name}: the original was kept ({exc})")

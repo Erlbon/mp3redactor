@@ -55,6 +55,9 @@ def recycle_bin(monkeypatch, tmp_path):
 
     bin_ = FakeRecycleBin(tmp_path / "_recycle_bin")
     monkeypatch.setattr(redact_steps, "move_to_trash", bin_)
+    from mp3cli import cmd_m4b  # the command line's m4b --replace sends the old audiobook to the bin too
+
+    monkeypatch.setattr(cmd_m4b, "move_to_trash", bin_)
     return bin_
 
 
