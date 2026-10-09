@@ -110,7 +110,10 @@ def test_builds_a_chaptered_m4b_with_tags(tmp_path):
     out = tmp_path / "out" / "My Book.m4b"
     seen = []
     result = mb.build_m4b(
-        mb.BookSpec(chapters, out, "My Book", author="A. Writer", narrator="N. Reader", year="2024", bitrate_kbps=48),
+        mb.BookSpec(
+            chapters, out, "My Book", author="A. Writer", narrator="N. Reader", year="2024", bitrate_kbps=48,
+            series="The Series", series_index="2", publisher="Pub House", language="eng",
+        ),
         progress=lambda done, total: seen.append((done, total)),
     )
     assert result.status == STATUS_OK, result.message
@@ -126,6 +129,10 @@ def test_builds_a_chaptered_m4b_with_tags(tmp_path):
     tags = {k.lower(): v for k, v in info["format"]["tags"].items()}
     assert tags["title"] == "My Book" and tags["artist"] == "A. Writer" and tags["album"] == "My Book"
     assert tags["composer"] == "N. Reader" and tags["genre"] == "Audiobook"
+    # the tags Audiobookshelf reads by name
+    assert tags["series"] == "The Series" and tags["series-part"] == "2"
+    assert tags["publisher"] == "Pub House" and tags["language"] == "eng"
+    assert any(s["codec_type"] == "video" for s in info["streams"]) is False  # no cover was given here
     audio = next(s for s in info["streams"] if s["codec_type"] == "audio")
     assert audio["codec_name"] == "aac" and int(audio["sample_rate"]) == 44100  # the first file's rate, for all
     # nothing is left beside the result
@@ -171,3 +178,66 @@ def test_nothing_to_build_and_missing_tools_are_reported(tmp_path, monkeypatch):
     monkeypatch.setattr(mb, "find_tool", lambda *a, **k: None)
     result = mb.build_m4b(mb.BookSpec([mb.BookChapter(Path("a.mp3"), "A")], tmp_path / "x.m4b", "X"))
     assert result.status == STATUS_TOOL_MISSING
+
+
+# --- Audiobookshelf conventions: folders, OPF, sidecar --------------------------------
+
+
+def test_group_by_folder_makes_one_book_per_folder_in_reading_order():
+    files = [
+        SimpleNamespace(path=Path("lib/Book B/02.mp3"), discnumber="", track="2"),
+        SimpleNamespace(path=Path("lib/Book A/10.mp3"), discnumber="", track=""),
+        SimpleNamespace(path=Path("lib/Book B/01.mp3"), discnumber="", track="1"),
+        SimpleNamespace(path=Path("lib/Book A/2.mp3"), discnumber="", track=""),
+    ]
+    books = mb.group_by_folder(files)
+    assert [[f.path.name for f in book] for book in books] == [["2.mp3", "10.mp3"], ["01.mp3", "02.mp3"]]
+
+
+def test_library_output_follows_author_series_book():
+    root = Path("lib")
+    assert mb.library_output(root, "Terry Goodkind", "Wizards First Rule", "Sword of Truth") == (
+        root / "Terry Goodkind" / "Sword of Truth" / "Wizards First Rule" / "Wizards First Rule.m4b"
+    )
+    assert mb.library_output(root, "Steven Levy", "Hackers") == root / "Steven Levy" / "Hackers" / "Hackers.m4b"
+    assert mb.library_output(root, "", "Loose: Book?") == root / "Loose Book" / "Loose Book.m4b"  # illegal characters go
+
+
+def test_the_opf_matches_audiobookshelfs_documented_shape():
+    spec = mb.BookSpec(
+        [], Path("b.m4b"), "Dune & Co", author="F. Herbert", narrator="S. Brick", year="1965", publisher="Chilton",
+        language="eng", series="Dune Chronicles", series_index="1",
+    )
+    text = mb.opf_text(spec)
+    assert text.startswith('<package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/"')
+    for line in (
+        "<dc:title>Dune &amp; Co</dc:title>",
+        '<dc:creator opf:role="aut">F. Herbert</dc:creator>',
+        '<dc:creator opf:role="nrt">S. Brick</dc:creator>',
+        "<dc:publisher>Chilton</dc:publisher>", "<dc:date>1965</dc:date>", "<dc:language>eng</dc:language>",
+        '<meta name="calibre:series" content="Dune Chronicles" />',
+        '<meta name="calibre:series_index" content="1" />',
+    ):
+        assert line in text
+    import xml.dom.minidom
+    xml.dom.minidom.parseString(text)  # well-formed
+
+
+@requires_ffmpeg
+def test_the_sidecar_files_are_written_beside_the_audiobook_only_when_asked(tmp_path):
+    from PIL import Image
+    import io
+
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), (10, 120, 200)).save(buf, format="PNG")
+    src = _tone_mp3(tmp_path / "01.mp3", 1.0)
+    for flag, folder in ((False, "plain"), (True, "with")):
+        spec = mb.BookSpec(
+            [mb.BookChapter(src, "One")], tmp_path / folder / "Book.m4b", "Book", author="A",
+            cover=buf.getvalue(), cover_mime="image/png", write_sidecar=flag,
+        )
+        result = mb.build_m4b(spec)
+        assert result.status == STATUS_OK, result.message
+    assert sorted(p.name for p in (tmp_path / "plain").iterdir()) == ["Book.m4b"]
+    assert sorted(p.name for p in (tmp_path / "with").iterdir()) == ["Book.m4b", "cover.png", "metadata.opf"]
+    assert "<dc:title>Book</dc:title>" in (tmp_path / "with" / "metadata.opf").read_text(encoding="utf-8")

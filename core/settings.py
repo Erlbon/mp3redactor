@@ -154,6 +154,8 @@ class Settings:
     rename_zero_pad_width: int = 2
     auto_number_padding: int = 2
     m4b_bitrate_kbps: int = 64  # Create M4B Audiobook's quality choice, remembered
+    m4b_sidecar: bool = False  # also write metadata.opf + cover beside each audiobook
+    m4b_batch_layout: str = "beside"  # "beside" the source files, or "library" (library_root/Author/Title/)
     # The patterns Redact's Rename and Move steps start from: the last
     # one applied in Rename / Export Files' Rename/Export mode and in its
     # "Move into folders" mode (whose patterns contain "/"). Kept apart
@@ -232,6 +234,8 @@ class Settings:
             "rename_zero_pad_width": str(self.rename_zero_pad_width),
             "auto_number_padding": str(self.auto_number_padding),
             "m4b_bitrate_kbps": str(self.m4b_bitrate_kbps),
+            "m4b_sidecar": str(self.m4b_sidecar),
+            "m4b_batch_layout": self.m4b_batch_layout,
             "rename_pattern": self.rename_pattern,
             "move_pattern": self.move_pattern,
             "library_root": self.library_root,
@@ -269,6 +273,8 @@ class Settings:
             rename_zero_pad_width=_get_int(section, "rename_zero_pad_width", 2),
             auto_number_padding=_get_int(section, "auto_number_padding", 2),
             m4b_bitrate_kbps=_get_int(section, "m4b_bitrate_kbps", 64),
+            m4b_sidecar=_get_bool(section, "m4b_sidecar", False),
+            m4b_batch_layout=section.get("m4b_batch_layout", fallback="beside"),
             rename_pattern=section.get("rename_pattern", fallback=""),
             move_pattern=section.get("move_pattern", fallback=""),
             library_root=section.get("library_root", fallback=""),

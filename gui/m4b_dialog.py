@@ -24,18 +24,25 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
-from core.cover_art import find_folder_image, read_cover, sniff_mime
+from core.cover_art import sniff_mime
 from core.m4b_builder import (
-    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, DEFAULT_GENRE, BookChapter, BookSpec, chapter_title, order_files,
+    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, DEFAULT_GENRE, BookChapter, BookSpec, chapter_title, defaults_for,
+    order_files,
 )
 from core.mp3_file import MP3File
 from redactor_common.core.rename_pattern import sanitize_filename
 
 COL_NUMBER, COL_TITLE, COL_LENGTH, COL_FILE = range(4)
+SIDECAR_LABEL = "Also write metadata.opf and a cover image beside the audiobook (Audiobookshelf, Calibre)"
+SIDECAR_TIP = (
+    "Library apps read a book's details from metadata.opf and its cover from cover.jpg in the book's own "
+    "folder, so use this when the audiobook is alone in its folder. Earlier copies of those two files there "
+    "are replaced."
+)
 COVER_BOX = 150
 
 
@@ -49,7 +56,9 @@ def _format_length(seconds: float | None) -> str:
 
 
 class M4bDialog(QDialog):
-    def __init__(self, files: list[MP3File], bitrate_kbps: int = DEFAULT_BITRATE_KBPS, parent=None):
+    def __init__(
+        self, files: list[MP3File], bitrate_kbps: int = DEFAULT_BITRATE_KBPS, sidecar: bool = False, parent=None
+    ):
         super().__init__(parent)
         self.setWindowTitle("Create M4B Audiobook")
         self.resize(820, 640)
@@ -58,6 +67,7 @@ class M4bDialog(QDialog):
         self._cover: bytes | None = None
         self._cover_mime = ""
         first = self._files[0]
+        defaults = defaults_for(self._files)
 
         root = QVBoxLayout(self)
         root.addWidget(QLabel(
@@ -68,11 +78,17 @@ class M4bDialog(QDialog):
 
         top = QHBoxLayout()
         form = QFormLayout()
-        self.title_edit = QLineEdit(first.album or Path(first.path).parent.name)
-        self.author_edit = QLineEdit(first.albumartist or first.artist)
+        self.title_edit = QLineEdit(defaults.title)
+        self.author_edit = QLineEdit(defaults.author)
         self.narrator_edit = QLineEdit()
         self.narrator_edit.setPlaceholderText("optional (stored as Composer)")
-        self.year_edit = QLineEdit(first.year)
+        self.year_edit = QLineEdit(defaults.year)
+        self.series_edit = QLineEdit()
+        self.series_edit.setPlaceholderText("optional")
+        self.series_number_edit = QLineEdit()
+        self.series_number_edit.setPlaceholderText("book number in the series")
+        self.publisher_edit = QLineEdit(defaults.publisher)
+        self._language = defaults.language  # carried through, not edited here
         self.genre_edit = QLineEdit(DEFAULT_GENRE)
         self.bitrate_combo = QComboBox()
         for kbps in BITRATE_CHOICES_KBPS:
@@ -83,6 +99,9 @@ class M4bDialog(QDialog):
         form.addRow("Title:", self.title_edit)
         form.addRow("Author:", self.author_edit)
         form.addRow("Narrator:", self.narrator_edit)
+        form.addRow("Series:", self.series_edit)
+        form.addRow("Series number:", self.series_number_edit)
+        form.addRow("Publisher:", self.publisher_edit)
         form.addRow("Year:", self.year_edit)
         form.addRow("Genre:", self.genre_edit)
         form.addRow("Quality:", self.bitrate_combo)
@@ -141,6 +160,10 @@ class M4bDialog(QDialog):
         browse.clicked.connect(self._browse_output)
         out_row.addWidget(browse)
         root.addLayout(out_row)
+        self.sidecar_check = QCheckBox(SIDECAR_LABEL)
+        self.sidecar_check.setToolTip(SIDECAR_TIP)
+        self.sidecar_check.setChecked(sidecar)
+        root.addWidget(self.sidecar_check)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Create Audiobook")
@@ -148,15 +171,7 @@ class M4bDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
-        cover = read_cover(first.path)
-        if cover is not None:
-            self._set_cover(*cover)
-        else:
-            folder_image = find_folder_image(first.path)
-            if folder_image is not None:
-                self._load_cover_file(folder_image)
-            else:
-                self._set_cover(None, "")
+        self._set_cover(defaults.cover, defaults.cover_mime)
 
     # -- chapters -------------------------------------------------------------
 
@@ -295,4 +310,9 @@ class M4bDialog(QDialog):
             cover=self._cover,
             cover_mime=self._cover_mime,
             bitrate_kbps=self.bitrate_kbps(),
+            write_sidecar=self.sidecar_check.isChecked(),
+            series=self.series_edit.text().strip(),
+            series_index=self.series_number_edit.text().strip(),
+            publisher=self.publisher_edit.text().strip(),
+            language=self._language,
         )

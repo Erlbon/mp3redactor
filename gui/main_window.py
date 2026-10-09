@@ -73,7 +73,7 @@ from core.mp3_file import (
     scan_display,
     scan_tooltip,
 )
-from core.m4b_builder import build_m4b
+from core.m4b_builder import build_m4b, group_by_folder
 from core.mp3_converter import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, plan_conversions,
 )
@@ -118,6 +118,7 @@ from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
+from gui.m4b_batch_dialog import M4bBatchDialog
 from gui.m4b_dialog import M4bDialog
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
@@ -911,37 +912,94 @@ class MainWindow(QMainWindow):
 
     def create_m4b_dialog(self) -> None:
         """File > Create M4B Audiobook...: the selected files (all loaded files when none is
-        selected), one chapter each, joined into one chaptered .m4b beside them. See
-        gui/m4b_dialog.py and core/m4b_builder.py. Nothing in the list changes: the .m4b is a new
-        file, not loaded here."""
+        selected), one chapter each, joined into chaptered .m4b audiobooks. Files from one folder make
+        one book (dialog with the chapter list); files from several folders make one book per folder
+        (batch dialog). See gui/m4b_dialog.py, gui/m4b_batch_dialog.py and core/m4b_builder.py.
+        Nothing in the list changes: the .m4b files are new, not loaded here."""
         files = [mp3 for mp3 in (self._selected_files() or self.files) if not mp3.load_error]
         if not files:
             QMessageBox.information(self, "Create M4B Audiobook", "Load some MP3 files first.")
             return
-        dialog = M4bDialog(files, bitrate_kbps=self.settings.m4b_bitrate_kbps, parent=self)
-        if dialog.exec() != dialog.DialogCode.Accepted:
-            return
-        spec = dialog.spec()
-        self.settings.m4b_bitrate_kbps = spec.bitrate_kbps
-        self._remember_last_directory(str(spec.output))  # saves the settings, the quality choice included
-        with ProgressReporter(self, len(spec.chapters) + 1, "Creating audiobook...", threshold=1) as reporter:
-            result = build_m4b(
-                spec,
-                ffmpeg_path=self.settings.ffmpeg_path or None,
-                ffprobe_path=self.settings.ffprobe_path or None,
-                progress=reporter.on_progress,
-                should_cancel=reporter.should_cancel,
+        books = group_by_folder(files)
+        if len(books) > 1:
+            dialog = M4bBatchDialog(
+                books, bitrate_kbps=self.settings.m4b_bitrate_kbps, sidecar=self.settings.m4b_sidecar,
+                layout=self.settings.m4b_batch_layout, library_root=self.settings.library_root, parent=self,
             )
-        if result.cancelled:
-            self.statusBar().showMessage("Audiobook cancelled; nothing was written.", 6000)
-        elif result.status != STATUS_OK:
-            QMessageBox.warning(self, "Could Not Create the Audiobook", result.message)
+            if dialog.exec() != dialog.DialogCode.Accepted:
+                return
+            specs = dialog.specs()
+            self.settings.m4b_batch_layout = dialog.layout_choice()
+            if dialog.library_root():
+                self.settings.library_root = dialog.library_root()
         else:
-            minutes = int(result.duration_seconds // 60)
-            QMessageBox.information(
-                self, "Audiobook Created",
-                f"{result.output.name}: {result.chapter_count} chapters, about {minutes} minutes.\n\n{result.output}",
+            dialog = M4bDialog(
+                files, bitrate_kbps=self.settings.m4b_bitrate_kbps, sidecar=self.settings.m4b_sidecar, parent=self,
             )
+            if dialog.exec() != dialog.DialogCode.Accepted:
+                return
+            specs = [dialog.spec()]
+        self.settings.m4b_bitrate_kbps = dialog.bitrate_kbps()
+        self.settings.m4b_sidecar = specs[0].write_sidecar if specs else self.settings.m4b_sidecar
+        self._remember_last_directory(str(specs[0].output))  # saves the settings, the choices above included
+        self._build_audiobooks(specs, skip_existing=len(books) > 1)
+
+    def _build_audiobooks(self, specs: list, skip_existing: bool) -> None:
+        """Builds each spec under one progress dialog, then reports. With `skip_existing`, a book whose
+        .m4b is already there is left alone (the batch never replaces anything)."""
+        results: list[tuple] = []
+        skipped: list[str] = []
+        todo = []
+        for spec in specs:
+            if skip_existing and spec.output.exists():
+                skipped.append(f"{spec.output.name}: already exists, left as it is")
+            else:
+                todo.append(spec)
+        total = sum(len(spec.chapters) + 1 for spec in todo)
+        cancelled = False
+        if todo:
+            with ProgressReporter(self, total, "Creating audiobook...", threshold=1) as reporter:
+                offset = 0
+                for number, spec in enumerate(todo, start=1):
+                    reporter.set_label(f"Book {number} of {len(todo)}: {spec.title}" if len(todo) > 1 else f"Creating: {spec.title}")
+                    result = build_m4b(
+                        spec,
+                        ffmpeg_path=self.settings.ffmpeg_path or None,
+                        ffprobe_path=self.settings.ffprobe_path or None,
+                        progress=lambda done, _total, base=offset: reporter.set_value(base + done),
+                        should_cancel=reporter.should_cancel,
+                    )
+                    results.append((spec, result))
+                    offset += len(spec.chapters) + 1
+                    if result.cancelled:
+                        cancelled = True
+                        break
+        made = [(spec, result) for spec, result in results if result.status == STATUS_OK]
+        problems = skipped + [
+            f"{spec.title}: {result.message}" for spec, result in results
+            if result.status != STATUS_OK and not result.cancelled
+        ] + [f"{spec.title}: {note}" for spec, result in made for note in result.notes]
+        if len(specs) == 1 and not skipped:
+            only = results[0][1] if results else None
+            if cancelled:
+                self.statusBar().showMessage("Audiobook cancelled; nothing was written.", 6000)
+            elif only is not None and only.status != STATUS_OK:
+                QMessageBox.warning(self, "Could Not Create the Audiobook", only.message)
+            elif only is not None:
+                minutes = int(only.duration_seconds // 60)
+                extra = f"\n\nNote: {summarize_errors(only.notes)}" if only.notes else ""
+                QMessageBox.information(
+                    self, "Audiobook Created",
+                    f"{only.output.name}: {only.chapter_count} chapters, about {minutes} minutes.\n\n{only.output}{extra}",
+                )
+            return
+        if cancelled:
+            self.statusBar().showMessage(f"Cancelled after {len(made)} audiobook(s); the rest were not made.", 8000)
+        summary = f"{len(made)} of {len(specs)} audiobook(s) created."
+        if problems:
+            QMessageBox.warning(self, "Audiobooks", f"{summary}\n\n{summarize_errors(problems)}")
+        elif made:
+            QMessageBox.information(self, "Audiobooks Created", summary)
 
     # -- rename/export by pattern, and the reverse: parse filename --------
 

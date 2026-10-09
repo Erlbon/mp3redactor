@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-09#03 -- Audiobooks: one per folder, Audiobookshelf conventions
+
+- **Create M4B Audiobook** with files from several folders now makes one audiobook per folder (a folder of chapter files is one book). A new list shows each book's title, author, series and number, filled from the folder's tags, to check or correct, plus the quality, where the audiobooks go and the sidecar option. An audiobook that already exists is skipped, never replaced.
+- Where they go: beside the MP3 files, or in a library folder laid out the way Audiobookshelf documents it, `Author / Series / Title / Title.m4b` (or `Author / Title /...` without a series), a folder of its own per book.
+- New tick box **Also write metadata.opf and a cover image beside the audiobook** (both dialogs, remembered): the OPF follows Audiobookshelf's documented format (author, narrator, publisher, date, language, genre, series and series number) so the library app picks the details up straight away.
+- The audiobook's own tags follow Audiobookshelf's tag map too: artist/album artist = author, composer = narrator, plus series, series-part, publisher and language. The single-book dialog has fields for series, series number and publisher.
+
 ## 2026-10-09#02 -- Create M4B Audiobook
 
 - New **File > Create M4B Audiobook...**: the selected MP3 files (all loaded files when none is selected) become one chaptered .m4b, one chapter per file, in disc / track / file-name order. The dialog sets the title, author, narrator, year and genre (filled from the first file), the cover (the first file's picture, a cover or folder image beside it, or any image), the quality (32-128 kbps AAC, 64 by default, remembered) and where to save it, and lists the chapters with editable titles and Move Up / Move Down.
