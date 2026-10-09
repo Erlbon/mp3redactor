@@ -175,7 +175,7 @@ command line; the commands above are what is.
 
 | Option | Meaning |
 | --- | --- |
-| `PATH...` | One or more MP3 files, folders or wildcards (`D:\Music\Queen*.mp3`). A folder is searched recursively for `.mp3` files (`convert` looks for the other audio formats). A file you name is always used. A path that matches nothing is reported, and if nothing at all matches the command stops with exit code 2. |
+| `PATH...` | One or more MP3 files, folders or wildcards (`D:\Music\Queen*.mp3`). A folder is searched recursively for `.mp3` files (`convert` looks for the other audio formats). A file you name is always used. A path that matches nothing is reported, and if nothing at all matches the command stops with exit code 2. A name containing `[` or `]` is taken literally, a wildcard's matches are filtered by extension like a folder's files, and a folder inside a folder that is a link or junction is not followed. |
 | `-R`, `--no-recurse` | For a folder, look only at the files directly in it. |
 | `--json` | Print one JSON document on stdout instead of text (see "JSON output"). Nothing else goes to stdout. |
 | `-q`, `--quiet` | No progress lines and no warnings on stderr (errors are still shown). |
@@ -227,7 +227,7 @@ Each file's result is `changed`, `unchanged` (nothing differed), `planned` (dry 
 `mp3redactor rename PATH... [-p PATTERN] [--zero-pad N] [--ascii] [-n]`
 
 Renames each MP3 from its tags, in its own folder, like Rename / Export / Move > Rename files in place. Never
-overwrites: a name that is taken gets `(2)`, `(3)`, ...
+overwrites: a name that is taken gets `(2)`, `(3)`, ... A change of letter case alone (`song` to `Song`) counts as a rename.
 
 | Option | Meaning |
 | --- | --- |
@@ -238,7 +238,7 @@ overwrites: a name that is taken gets `(2)`, `(3)`, ...
 
 Tokens are the tag field names above (`%artist%`, `%album%`, `%title%`, `%track%`, `%year%`, ...). A file the
 pattern gives no name for (all its fields are empty) is `skipped`, not renamed to "untitled". A file that
-already has the name is `unchanged`. The rename is recorded, so File > Undo Last Rename in the app undoes it.
+already has the name is `unchanged`. There is no undo for the command line: preview with `--dry-run`.
 
 ### move
 
@@ -253,12 +253,12 @@ or too long is refused.
 | --- | --- |
 | `-p PATTERN`, `--pattern PATTERN` | Required. The path under the library folder, with `%field%` tokens. |
 | `--root FOLDER` | The library folder. Default: the one saved in the app (Rename / Export / Move window). The folder must exist. |
-| `--copy` | Copy instead of move, leaving the originals (nothing is logged for undo). |
+| `--copy` | Copy instead of move, leaving the originals. |
 | `--zero-pad N`, `--ascii` | As for `rename`. |
 | `-n`, `--dry-run` | Show where each file would go, change nothing. |
 
 Across volumes a move is a verified copy followed by sending the original to the Recycle Bin. A file the
-pattern has no name for is `skipped`. Moves are recorded for File > Undo Last Rename.
+pattern has no name for is `skipped`. There is no undo for a move either: preview with `--dry-run`.
 
 ### convert
 
@@ -292,7 +292,7 @@ first, and `--disable` for the steps you do not want.
 | `--recipe FILE` | Use this recipe (a JSON file in the format the app stores) instead of the one saved in the app. |
 | `--enable STEP` | Turn a step on for this run (repeatable). |
 | `--disable STEP` | Turn a step off for this run (repeatable). |
-| `--threshold N` | Confidence needed to apply a guess, `0`-`1` or a percentage (`0.9` or `90`). |
+| `--threshold N` | Confidence needed to apply a guess, `0`-`1` or a percentage (`0.9`, `90` or `90%`); a plain number from 1 to 5 such as `1.5` is refused as ambiguous. |
 | `--trash-dir FOLDER` | Move originals into this folder (created if needed) instead of the Recycle Bin, for a machine or a task that has none. |
 | `--list-steps` | Show the steps and whether the recipe has each on, then stop (no `PATH` needed). |
 
@@ -349,7 +349,7 @@ chapters, the length in minutes and, with `--lookup`, the match that was used.
 
 ### JSON output
 
-`--json` prints one document: `{"results": [...], <summary fields>, "warnings": [...]}`.
+`--json` prints one document: `{"results": [...], <summary fields>, "warnings": [...], "errors": [...]}`. It is ASCII-only (a non-ASCII character in a path is a `\uXXXX` escape, which any JSON reader decodes). If a command fails or is interrupted after it started, the document is still printed, with what was done so far and an `error` entry, so a script reading `--output FILE` never finds an empty or half-written file.
 
 | Command | Each entry in `results` | Summary fields |
 | --- | --- | --- |

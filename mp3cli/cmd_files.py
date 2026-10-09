@@ -6,8 +6,7 @@ mp3cli/cmd_files.py
   convert PATH...   FLAC/WAV/OGG/M4A/... to MP3 beside the original (ffmpeg's libmp3lame)
 
 Rename and move are the shared implementations in redactor_common.cli.commands; this file only says how a
-file's fields and path are read. Renames and moves are recorded in the same log the app's File > Undo Last
-Rename reads.
+file's fields and path are read. There is no undo for the command line (it is not recorded in the app's rename log).
 """
 
 from __future__ import annotations
@@ -21,12 +20,12 @@ from core.mp3_converter import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, convert_to_mp3, plan_conversions,
 )
 from core.mp3_file import STATUS_OK, MP3File
-from redactor_common.cli import EXIT_OK, EXIT_PARTIAL, Output, add_common_options, commands
+from redactor_common.cli import Output, add_common_options, commands
 from redactor_common.cli.commands import add_pattern_options, new_row, say
 from redactor_common.core.rename_pattern import zero_pad_numeric_value
 from redactor_common.core.trash import TrashError, move_to_trash
 
-from mp3cli.files import add_path_arguments, collect, load, rename_log, settings, skip_reason
+from mp3cli.files import add_path_arguments, collect, load, settings, skip_reason
 
 DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
 
@@ -57,11 +56,9 @@ def run_rename(args: argparse.Namespace, out: Output) -> int:
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
     failed = commands.rename_items(
         files, pattern=pattern, values_for=lambda m: _values_for(m, args.zero_pad), path_of=lambda m: str(m.path),
-        skip_reason=skip_reason, out=out, dry_run=args.dry_run, ascii_only=args.ascii, log=rename_log(),
-        log_label="Rename by Pattern (command line)",
+        skip_reason=skip_reason, out=out, dry_run=args.dry_run, ascii_only=args.ascii,
     )
-    out.finish({"files": len(files), "failed": failed, "dry_run": args.dry_run, "pattern": pattern})
-    return EXIT_PARTIAL if failed else EXIT_OK
+    return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, pattern=pattern)
 
 
 # --- move ---------------------------------------------------------------------------
@@ -87,10 +84,9 @@ def run_move(args: argparse.Namespace, out: Output) -> int:
     failed = commands.move_items(
         files, root=root, pattern=args.pattern, values_for=lambda m: _values_for(m, args.zero_pad),
         path_of=lambda m: str(m.path), skip_reason=skip_reason, out=out, dry_run=args.dry_run, copy=args.copy,
-        ascii_only=args.ascii, log=rename_log(), log_label="Move into folders (command line)",
+        ascii_only=args.ascii,
     )
-    out.finish({"files": len(files), "failed": failed, "dry_run": args.dry_run, "root": root})
-    return EXIT_PARTIAL if failed else EXIT_OK
+    return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, root=root)
 
 
 # --- convert ------------------------------------------------------------------------
@@ -152,5 +148,4 @@ def run_convert(args: argparse.Namespace, out: Output) -> int:
     for path in files:
         out.record(rows[path])
         say(out, rows[path])
-    out.finish({"files": len(files), "failed": failed, "dry_run": args.dry_run, "bitrate_kbps": args.bitrate})
-    return EXIT_PARTIAL if failed else EXIT_OK
+    return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, bitrate_kbps=args.bitrate)

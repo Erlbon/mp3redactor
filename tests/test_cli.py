@@ -1,5 +1,5 @@
 """The command line (mp3cli/): every command on real small files, text and --json output, exit codes,
---dry-run, and the log File > Undo Last Rename reads. Settings and the Recycle Bin are the test-isolated ones."""
+--dry-run. Settings and the Recycle Bin are the test-isolated ones."""
 
 import json
 import os
@@ -17,7 +17,6 @@ from core.tag_reader import load_tags
 from mp3cli import cmd_analyze, cmd_files, cmd_m4b, cmd_redact, files as cli_files
 from mp3cli.main import main
 from redactor_common.cli import CliError
-from redactor_common.core.rename_log import RenameLog
 from tests.test_m4b_builder import _tone_mp3, requires_ffmpeg
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny.mp3"
@@ -42,13 +41,10 @@ def read_tags(path):
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    """No real settings file, a private undo log."""
+    """No real settings file."""
     app = Settings()
     monkeypatch.setattr(cli_files, "load_settings", lambda *a, **k: app)
-    log = RenameLog(str(tmp_path / "_cli_rename_log.json"))
-    for module in (cmd_files, cmd_redact):
-        monkeypatch.setattr(module, "rename_log", lambda log=log: log)
-    return SimpleNamespace(settings=app, log=log)
+    return SimpleNamespace(settings=app)
 
 
 @pytest.fixture
@@ -134,13 +130,11 @@ def test_set_accepts_field_spellings_and_track_totals(song, capsys):
 # --- rename / move -------------------------------------------------------------------------------------
 
 
-def test_rename_by_pattern_with_padding_and_the_undo_log(song, tmp_path, capsys, isolated):
+def test_rename_by_pattern_with_padding(song, tmp_path, capsys):
     code, document = run_json(capsys, "rename", song, "-p", "%track% - %artist% - %title%", "--zero-pad", "3")
     assert code == 0 and document["results"][0]["status"] == "renamed"
     new_path = str(tmp_path / "011 - Queen - Bohemian Rhapsody.mp3")
     assert os.path.exists(new_path) and not os.path.exists(song)
-    assert isolated.log.last_batch().renames == [(song, new_path)]
-    assert isolated.log.undo_last() is not None and os.path.exists(song)  # what File > Undo Last Rename does
 
 
 def test_rename_default_pattern_dry_run_collisions_and_nameless(tmp_path, capsys):

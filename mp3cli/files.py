@@ -7,15 +7,12 @@ any window.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from core.app_paths import base_dir
 from core.mp3_file import MP3File
 from core.scan_service import load_files
 from core.settings import Settings, load_settings
 from redactor_common.cli import CliError, Output, expand_paths
-from redactor_common.core.rename_log import RenameLog
 
 EXTENSIONS = (".mp3",)
 
@@ -44,11 +41,6 @@ def load(files: list[str]) -> list[MP3File]:
 
 def settings() -> Settings:
     return load_settings()
-
-
-def rename_log() -> RenameLog:
-    """The same log File > Undo Last Rename reads, so a rename done here can be undone from the app."""
-    return RenameLog(os.path.join(str(base_dir()), "mp3redactor_rename_log.json"))
 
 
 def skip_reason(mp3: MP3File) -> str:

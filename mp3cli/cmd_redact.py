@@ -24,7 +24,7 @@ from redactor_common.cli.commands import (
     add_redact_options, build_recipe, list_steps, read_recipe_file, redact_items, trash_to,
 )
 
-from mp3cli.files import collect, load, rename_log, settings
+from mp3cli.files import collect, load, settings
 
 
 def add_redact_parser(sub) -> None:
@@ -51,7 +51,7 @@ def run_redact(args: argparse.Namespace, out: Output) -> int:
         raise CliError("give the MP3 files to redact (or --list-steps)")
 
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
-    env = RedactEnv(app_settings, rename_log=rename_log(), trash=trash_to(args.trash_dir) if args.trash_dir else None)
+    env = RedactEnv(app_settings, rename_log=None, trash=trash_to(args.trash_dir) if args.trash_dir else None)
     env.begin(files)
     return redact_items(
         files, recipe, catalogue, make_context=lambda mp3: Mp3Ctx(mp3, env), describe=lambda mp3: mp3.filename,
