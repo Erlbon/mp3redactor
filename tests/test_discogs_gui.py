@@ -360,7 +360,7 @@ def test_lookup_after_entering_a_token_goes_on_and_applies_through_the_review(wi
     class FakeLookup:
         DialogCode = QDialog.DialogCode
 
-        def __init__(self, albums, client, parent=None):
+        def __init__(self, albums, client, parent=None, cover_only=False):
             built["token_ok"] = repr(client) == "DiscogsClient()"
             built["files"] = [m for album in albums for m in album.files]
 
@@ -411,3 +411,14 @@ def test_dialog_cover_changes_follow_the_save_cover_toggle(tmp_path, monkeypatch
 def test_a_cover_that_is_not_jpeg_or_png_is_not_saved(tmp_path, monkeypatch):
     dialog = _dialog(_folder(tmp_path), _two_pressings(), monkeypatch)  # fake bytes, no image signature
     assert dialog.cover_changes() == []
+
+
+def test_cover_only_dialog_changes_no_tags(tmp_path, monkeypatch):
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 20
+    fake = _two_pressings()
+    fake.images = {"https://i.discogs.com/primary.jpg": jpeg}
+    monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
+    client = dl.DiscogsClient(TOKEN, fetch=fake, throttle=_fast_throttle())
+    dialog = dlg_module.DiscogsLookupDialog(dlg_module.group_by_folder(_folder(tmp_path)), client, cover_only=True)
+    assert dialog.file_changes() == [] and len(dialog.cover_changes()) == 2
+    assert "Cover Only" in dialog.windowTitle()

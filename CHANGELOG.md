@@ -1,8 +1,9 @@
 # Changelog
 
-## 2026-10-12#02 -- Discogs lookup saves the cover; track "9/10" no longer renames to "910"; MusicBrainz lookup crash fixed
+## 2026-10-12#03 -- Metadata > Cover > Get from MusicBrainz / Discogs; Discogs lookup saves the cover; track "9/10" no longer renames to "910"; MusicBrainz lookup crash fixed
 
 - **Rename / Export, Redact's rename step and the `rename` / `move` commands**: a track or disc tag of the form "9/10" (number/total) now gives just "9" in the filename. The "/" used to be dropped, so the file became "910".
+- **New: Metadata > Cover > Get from MusicBrainz... and Get from Discogs...** (also in the right-click Cover menu): the same album lookup, but only the found cover is saved to the matched files, no tags are touched. One Undo step.
 - **Look Up via Discogs can now save the cover**: a new **Save Cover** button (on by default) embeds the found cover in the matched files of every ticked album when you press Apply (a JPEG or PNG; it replaces a cover the file already has, and File > Undo covers it). Before, the cover was shown but never saved. If the first image address Discogs gives fails, the other sizes of the same image are tried.
 - **Look Up on MusicBrainz** no longer fails with `'NoneType' object has no attribute 'casefold'` when MusicBrainz sends a release with no status (or no date, country or title).
 

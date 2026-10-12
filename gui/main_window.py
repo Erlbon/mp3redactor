@@ -477,6 +477,8 @@ class MainWindow(QMainWindow):
                     Submenu("C&over", [
                         MenuAction("cover_set", "&Set from Image File…", self.set_cover_from_file),
                         MenuAction("cover_from_folder", "Set from &Folder Image", self.set_cover_from_folder_images),
+                        MenuAction("cover_from_musicbrainz", "Get from &MusicBrainz…", self.open_musicbrainz_cover_dialog),
+                        MenuAction("cover_from_discogs", "Get from &Discogs…", self.open_discogs_cover_dialog),
                         MenuAction("cover_remove", "&Remove Cover", self.remove_cover),
                         Separator(),
                         MenuAction("cover_export", "&Export Cover to Image File…", self.export_cover),
@@ -1178,6 +1180,17 @@ class MainWindow(QMainWindow):
             targets[index].apply_tags(fields)
         self._rebuild_table()
 
+    def open_musicbrainz_cover_dialog(self) -> None:
+        """Metadata > Cover > Get from MusicBrainz...: the MusicBrainz lookup dialog, but only the
+        found release's front cover (Cover Art Archive) is applied, never any tag."""
+        from gui.musicbrainz_lookup_dialog import MusicBrainzLookupDialog, group_by_folder
+
+        targets = self._require_targets("get a cover for")
+        if not targets:
+            return
+        dialog = MusicBrainzLookupDialog(group_by_folder(targets), self, cover_only=True)
+        self._apply_musicbrainz_dialog(dialog, "Cover from MusicBrainz")
+
     def open_musicbrainz_lookup_dialog(self) -> None:
         """Import > Look Up via MusicBrainz...: the selected files, one
         album per folder, matched to MusicBrainz releases (see
@@ -1246,22 +1259,32 @@ class MainWindow(QMainWindow):
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         changes = dialog.file_changes()
-        if not changes:
+        covers = dialog.cover_changes()
+        if not changes and not covers:
             return
         files = [mp3 for mp3, _fields in changes]
-        proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
-        labels = {key: label for key, label, _multiline in FIELDS}
-        approved = resolve_overwrite_conflicts(
-            self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
-        )
-        if not approved:
-            return
-        self._push_undo(undo_name, files)
+        approved = {}
+        if changes:
+            proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
+            labels = {key: label for key, label, _multiline in FIELDS}
+            approved = resolve_overwrite_conflicts(
+                self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
+            )
+            if not approved and not covers:
+                return
+        touched = list({id(m): m for m in files + [mp3 for mp3, _data, _mime in covers]}.values())
+        self._push_undo(undo_name, touched)
         for index, fields in approved.items():
             files[index].apply_tags(fields)
-        self._rebuild_table()
+        for mp3, data, mime in covers:
+            mp3.set_cover(data, mime)
+        self._after_cover_change()
 
-    def open_discogs_lookup_dialog(self) -> None:
+    def open_discogs_cover_dialog(self) -> None:
+        """Metadata > Cover > Get from Discogs...: the Discogs lookup dialog, applying only the cover."""
+        self.open_discogs_lookup_dialog(cover_only=True)
+
+    def open_discogs_lookup_dialog(self, cover_only: bool = False) -> None:
         """Metadata > Look Up > Discogs...: like the MusicBrainz lookup (one album per
         folder, reviewed in a dialog, anything that would overwrite a different value goes
         through the per-field overwrite review, one Undo step, written on Save), plus label,
@@ -1286,7 +1309,7 @@ class MainWindow(QMainWindow):
             token = load_token()
             if not token:
                 return
-        dialog = DiscogsLookupDialog(group_by_folder(targets), DiscogsClient(token), self)
+        dialog = DiscogsLookupDialog(group_by_folder(targets), DiscogsClient(token), self, cover_only=cover_only)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         changes = dialog.file_changes()
@@ -1303,8 +1326,8 @@ class MainWindow(QMainWindow):
             )
             if not approved and not covers:
                 return
-        touched = list(dict.fromkeys(files + [mp3 for mp3, _data, _mime in covers]))
-        self._push_undo("Discogs Lookup", touched)
+        touched = list({id(m): m for m in files + [mp3 for mp3, _data, _mime in covers]}.values())
+        self._push_undo("Cover from Discogs" if cover_only else "Discogs Lookup", touched)
         for index, fields in approved.items():
             files[index].apply_tags(fields)
         for mp3, data, mime in covers:
@@ -2692,6 +2715,8 @@ class MainWindow(QMainWindow):
             cover_items: list = [
                 MenuAction("cover_set", "Set from Image File…", self.set_cover_from_file),
                 MenuAction("cover_from_folder", "Set from Folder Image", self.set_cover_from_folder_images),
+                MenuAction("cover_from_musicbrainz", "Get from MusicBrainz…", self.open_musicbrainz_cover_dialog),
+                MenuAction("cover_from_discogs", "Get from Discogs…", self.open_discogs_cover_dialog),
             ]
             if any(mp3.has_cover for mp3 in files):
                 cover_items.append(MenuAction("cover_remove", "Remove Cover", self.remove_cover))

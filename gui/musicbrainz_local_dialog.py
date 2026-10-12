@@ -48,6 +48,7 @@ class MusicBrainzLocalLookupDialog(MusicBrainzLookupDialog):
                  fpcalc: Path | None = None, post=None):
         self._db = db
         super().__init__(albums, parent, fpcalc=fpcalc, post=post)
+        self.cover_button.setVisible(False)  # the offline database has no covers
 
     def _info_text(self, albums: list[AlbumFolder]) -> str:
         by_sound = (

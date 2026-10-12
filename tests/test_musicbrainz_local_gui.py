@@ -186,6 +186,9 @@ def test_lookup_applies_through_the_overwrite_review_and_undoes(window, tmp_path
         def exec(self):
             return self.DialogCode.Accepted
 
+        def cover_changes(self):
+            return []
+
         def file_changes(self):
             return [(built["files"][0], {"publisher": "Apple Records", "catalognumber": "CDP 7 46446 2"})]
 

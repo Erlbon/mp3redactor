@@ -65,7 +65,8 @@ def test_menu_contents_and_order(window):
         ("Look Up", ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]), "---",
         "Edit Lyrics", "Number Tracks", "---",
         ("Cover", [
-            "Set from Image File", "Set from Folder Image", "Remove Cover", "---",
+            "Set from Image File", "Set from Folder Image", "Get from MusicBrainz", "Get from Discogs",
+            "Remove Cover", "---",
             "Export Cover to Image File",
         ]),
     ]
@@ -175,7 +176,9 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
         "Check Integrity", "Fix Integrity Issues", "Deep Check Integrity", "---",
         "Detect BPM", "Detect Key", "Measure Loudness",
     ]
-    assert by_name["Cover"] == ["Set from Image File", "Set from Folder Image"]
+    assert by_name["Cover"] == [
+        "Set from Image File", "Set from Folder Image", "Get from MusicBrainz", "Get from Discogs",
+    ]
 
 
 def test_context_menu_multi_selection_omits_single_file_rows(window, tmp_path, monkeypatch):

@@ -29,6 +29,7 @@ from pathlib import Path
 
 from redactor_common.gui.lookup_dialog import LookupAlternative, LookupDialogBase, LookupResult
 
+from gui.lookup_covers import CoverSaveMixin
 from core.acoustid_lookup import AcoustIdError, candidate_releases, identify_files
 from core.cover_art import read_cover
 from core.mp3_file import MP3File
@@ -77,14 +78,15 @@ def _summary_fields(match: ReleaseMatch) -> dict[str, str]:
     return {k: v for k, v in fields.items() if v}
 
 
-class MusicBrainzLookupDialog(LookupDialogBase):
+class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
     # What the offline twin (gui/musicbrainz_local_dialog.py) changes: its texts, the search form,
     # the cover (the Cover Art Archive is online) and the field mapping.
     window_title = "Look Up via MusicBrainz"
     search_label = "Searching MusicBrainz…"
     query_fields = [("artist", "Artist"), ("album", "Album")]
 
-    def __init__(self, albums: list[AlbumFolder], parent=None, fetch=None, fpcalc: Path | None = None, post=None):
+    def __init__(self, albums: list[AlbumFolder], parent=None, fetch=None, fpcalc: Path | None = None, post=None,
+                 cover_only: bool = False):
         self._fetch = fetch
         self._fpcalc = fpcalc  # None: identify by tags/names only
         self._post = post  # AcoustID transport (tests)
@@ -103,6 +105,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
             resolve_alternative=self._resolve,
             item_noun="folder",
         )
+        self._setup_cover_save(cover_only)
 
     def _info_text(self, albums: list[AlbumFolder]) -> str:
         by_sound = (
@@ -195,7 +198,7 @@ class MusicBrainzLookupDialog(LookupDialogBase):
         """(file, {field: value}) for every file of every ticked album
         that was matched to a track. Unmatched files are left alone."""
         changes = []
-        for row in self.accepted_rows():
+        for row in [] if self.cover_only else self.accepted_rows():
             album = self.items[row]
             match = self._matches.get(id(album))
             if match is None:

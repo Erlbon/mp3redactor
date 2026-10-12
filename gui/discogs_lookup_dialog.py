@@ -27,7 +27,9 @@ from PyQt6.QtWidgets import QLabel, QPushButton
 
 from redactor_common.gui.lookup_dialog import LookupAlternative, LookupDialogBase, LookupResult
 
-from core.cover_art import read_cover, sniff_mime
+from gui.lookup_covers import CoverSaveMixin
+
+from core.cover_art import read_cover
 from core.discogs_lookup import (
     DiscogsClient,
     DiscogsError,
@@ -58,8 +60,8 @@ def _summary_fields(match: DiscogsMatch, include_styles: bool) -> dict[str, str]
     return {k: v for k, v in fields.items() if v}
 
 
-class DiscogsLookupDialog(LookupDialogBase):
-    def __init__(self, albums: list[AlbumFolder], client: DiscogsClient, parent=None):
+class DiscogsLookupDialog(CoverSaveMixin, LookupDialogBase):
+    def __init__(self, albums: list[AlbumFolder], client: DiscogsClient, parent=None, cover_only: bool = False):
         self._client = client
         self._include_styles = True
         self._matches: dict[int, DiscogsMatch] = {}  # id(album) -> the chosen match
@@ -90,13 +92,7 @@ class DiscogsLookupDialog(LookupDialogBase):
         self.styles_button.setToolTip("Put Discogs' styles after its genres in the Genre tag.")
         self.styles_button.toggled.connect(self._on_styles_toggled)
         self.add_toolbar_button(self.styles_button)
-        self.cover_button = QPushButton("Save Cover")
-        self.cover_button.setCheckable(True)
-        self.cover_button.setChecked(True)
-        self.cover_button.setToolTip(
-            "Also embed the found cover in the matched files (replacing a cover they already have)."
-        )
-        self.add_toolbar_button(self.cover_button)
+        self._setup_cover_save(cover_only)
         attribution = QLabel('Data from <a href="https://www.discogs.com">Discogs</a>')
         attribution.setTextFormat(Qt.TextFormat.RichText)
         attribution.setOpenExternalLinks(True)
@@ -168,27 +164,11 @@ class DiscogsLookupDialog(LookupDialogBase):
         if self._current_detail_row >= 0:
             self._render_detail(self._current_detail_row, self._row_results.get(self._current_detail_row))
 
-    def cover_changes(self) -> list[tuple[MP3File, bytes, str]]:
-        """(file, image bytes, mime) for every matched file of every ticked album whose found cover
-        is a JPEG or PNG -- empty when Save Cover is off."""
-        if not self.cover_button.isChecked():
-            return []
-        changes = []
-        for row, result in self.accepted_rows().items():
-            data = result.cover_bytes
-            mime = sniff_mime(data)
-            match = self._matches.get(id(self.items[row]))
-            if not data or not mime or match is None:
-                continue
-            album = self.items[row]
-            changes.extend((album.files[index], data, mime) for index in match.assignment)
-        return changes
-
     def file_changes(self) -> list[tuple[MP3File, dict[str, str]]]:
         """(file, {field: value}) for every file of every ticked album that
         was matched to a track. Unmatched files are left alone."""
         changes = []
-        for row in self.accepted_rows():
+        for row in [] if self.cover_only else self.accepted_rows():
             album = self.items[row]
             match = self._matches.get(id(album))
             if match is None:
