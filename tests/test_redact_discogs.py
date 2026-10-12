@@ -295,3 +295,36 @@ def test_a_recipe_saved_before_the_step_existed_gets_it_after_the_tag_step(with_
                  enabled={"integrity": True, "tags": True, "cover": True})
     order = [s.key for s, _ in old.resolve(cat)]
     assert order.index("discogs") == order.index("tags") + 1
+
+
+# --- the cover step's Discogs source --------------------------------------------------
+
+
+def _cover_fake(image=b"\xff\xd8\xff\xe0" + b"0" * 20):
+    return FakeDiscogs(
+        search_results=[_hit(1, "Miles Davis - Kind Of Blue")], releases={1: _release(1)},
+        images={"https://i.discogs.com/primary.jpg": image},
+    )
+
+
+def test_cover_step_embeds_the_discogs_cover_when_nothing_else_has_one(tmp_path, with_token):
+    files = album_folder(tmp_path)
+    entries, _ = run_files(files, _cover_fake(), only=("cover",))
+    assert entries[0].status is FileStatus.CHANGED
+    assert reloaded(files[0]).has_cover
+
+
+def test_cover_step_discogs_option_off_or_no_token_does_nothing(tmp_path, with_token):
+    files = album_folder(tmp_path)
+    fake = _cover_fake()
+    entries, _ = run_files(files, fake, only=("cover",), options={"cover": {"discogs": False}})
+    assert entries[0].status is FileStatus.UNCHANGED and fake.requests == []
+    secret_store.delete_secret("mp3redactor", "discogs_token")
+    entries, _ = run_files(files, fake, only=("cover",))
+    assert entries[0].status is FileStatus.UNCHANGED and fake.requests == []
+
+
+def test_cover_step_ignores_a_discogs_cover_that_is_not_jpeg_or_png(tmp_path, with_token):
+    files = album_folder(tmp_path)
+    entries, _ = run_files(files, _cover_fake(b"not-an-image"), only=("cover",))
+    assert entries[0].status is FileStatus.UNCHANGED

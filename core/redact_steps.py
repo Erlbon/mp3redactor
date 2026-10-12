@@ -1033,12 +1033,14 @@ class CoverStep(Mp3Step):
     description = (
         "For a file with no embedded cover: a cover.jpg/folder.jpg next to it, else the release's front "
         "cover from the Cover Art Archive (needs the MusicBrainz Album Id tag, which the tag lookup "
-        "can fill in first). A cover is a guess, so it is embedded only at or above the confidence "
+        "can fill in first), else the cover of the Discogs release found for the folder (needs a Discogs "
+        "token). A cover is a guess, so it is embedded only at or above the confidence "
         "threshold; otherwise it is listed under Needs review."
     )
     options = (
         OptionSpec("folder", "Use a folder image (cover.jpg...)", "bool", True),
         OptionSpec("online", "Ask the Cover Art Archive", "bool", True),
+        OptionSpec("discogs", "Ask Discogs (needs a token)", "bool", True),
     )
 
     def process(self, ctx: Mp3Ctx) -> StepResult:
@@ -1072,7 +1074,30 @@ class CoverStep(Mp3Step):
                     min(confidence, ONLINE_COVER_CONFIDENCE),
                     f"front cover of release {work.musicbrainz_albumid}",
                 )
+        if self.options_for(ctx)["discogs"]:
+            return self._discogs_cover(ctx)
         return StepResult.nothing()
+
+    def _discogs_cover(self, ctx: Mp3Ctx) -> StepResult:
+        client = _discogs_client(ctx.env)
+        if client is None or client.rate_limited:
+            return StepResult.nothing()  # no token / stopped for this run: the Discogs step says so
+        lookup, _query = _discogs_lookup_folder(ctx, client, os.path.dirname(ctx.original))
+        if lookup.error or not lookup.matches or all(m is not ctx.mp3 for m in lookup.files):
+            return StepResult.nothing()
+        top = lookup.matches[0]
+        try:
+            data = discogs.fetch_cover(client, top.release)
+        except discogs.DiscogsError:
+            return StepResult.nothing()
+        mime = sniff_mime(data)
+        if not data or not mime:
+            return StepResult.nothing()
+        confidence = min(discogs.confidence(lookup.matches), ONLINE_COVER_CONFIDENCE)
+        return StepResult.suggestion(
+            CoverSuggestion(data, mime, "Discogs cover"), confidence,
+            f"cover of Discogs release '{top.release.title}' ({top.release.year})",
+        )
 
     def apply_suggestion(self, ctx: Mp3Ctx, result: StepResult) -> str:
         suggestion: CoverSuggestion = result.value
