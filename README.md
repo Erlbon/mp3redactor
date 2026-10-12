@@ -304,7 +304,7 @@ first, and `--disable` for the steps you do not want.
 | `--trash-dir FOLDER` | Move originals into this folder (created if needed) instead of the Recycle Bin, for a machine or a task that has none. |
 | `--list-steps` | Show the steps and whether the recipe has each on, then stop (no `PATH` needed). |
 
-Steps: `integrity`, `bpm`, `key`, `loudness`, `deep_check`, `path_tags`, `tags`, `discogs`, `cover`, `rename`,
+Steps: `integrity`, `bpm`, `key`, `loudness`, `deep_check`, `path_tags`, `tags`, `discogs`, `cover`, `lyrics`, `rename`,
 `move_into_folders`. Without `--recipe` the recipe saved in the app is used (the defaults if none was saved).
 The Discogs token comes from the `DISCOGS_TOKEN` environment variable if it is set, else from the app's saved
 token; the library root and tool paths come from the app's settings. A `--recipe` file that is not valid JSON or not a
