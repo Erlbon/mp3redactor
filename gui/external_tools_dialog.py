@@ -10,6 +10,7 @@ Also the Tools page of Preferences (ToolPathsWidget).
 
 import sys
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -105,6 +106,17 @@ class ToolPathsWidget(QWidget):
             "auto-detect via PATH (the default)."
         )
         header.setWordWrap(True)
+        downloads = QLabel(
+            "Downloads: "
+            '<a href="https://acoustid.org/chromaprint">fpcalc (Chromaprint)</a> -- the zip for Windows '
+            "contains fpcalc.exe &middot; "
+            '<a href="https://github.com/Erlbon/keyfinder-cli-windows/releases/latest">keyfinder-cli</a> &middot; '
+            '<a href="https://ffmpeg.org/download.html">ffmpeg / ffprobe</a> &middot; '
+            '<a href="https://mp3val.sourceforge.net/">mp3val</a>'
+        )
+        downloads.setTextFormat(Qt.TextFormat.RichText)
+        downloads.setOpenExternalLinks(True)
+        downloads.setWordWrap(True)
 
         grid_widget = QWidget()
         grid = QGridLayout(grid_widget)
@@ -118,6 +130,7 @@ class ToolPathsWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(header)
+        layout.addWidget(downloads)
         layout.addWidget(grid_widget)
         layout.addStretch()
 
