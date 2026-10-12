@@ -1109,8 +1109,8 @@ class LyricsStep(Mp3Step):
     key = "lyrics"
     label = "Fetch lyrics"
     description = (
-        "Looks the song up on LRCLIB (by artist and title) and embeds the lyrics, synced ones when the "
-        "site has them. Only a result that matches the file's artist and title is used; a miss is "
+        "Looks the song up on LRCLIB (by artist and title) and embeds the lyrics. "
+        "Only a result that matches the file's artist and title is used; a miss is "
         "reported, never another song's lyrics. Put it after the tag lookup so the artist and title are right."
     )
     options = (
