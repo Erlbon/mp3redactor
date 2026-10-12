@@ -194,9 +194,9 @@ def search_releases(query: AlbumQuery, fetch: Optional[Callable] = None, limit: 
         data = _get("release", fetch, query=lucene, limit=limit)
         releases = [
             Release(
-                id=r["id"], title=r.get("title", ""), artist=_credit(r.get("artist-credit")),
-                date=r.get("date", ""), country=r.get("country", ""), status=r.get("status", ""),
-                disambiguation=r.get("disambiguation", ""),
+                id=r["id"], title=r.get("title") or "", artist=_credit(r.get("artist-credit")),
+                date=r.get("date") or "", country=r.get("country") or "", status=r.get("status") or "",
+                disambiguation=r.get("disambiguation") or "",
                 media_formats=", ".join(dict.fromkeys(m.get("format", "") for m in r.get("media", []) if m.get("format"))),
                 track_count=r.get("track-count", 0) or 0,
             )
@@ -213,9 +213,9 @@ def fetch_release(release_id: str, fetch: Optional[Callable] = None) -> Release:
     fetch = fetch or _default_fetch
     r = _get(f"release/{release_id}", fetch, inc="recordings+artist-credits")
     release = Release(
-        id=r.get("id", release_id), title=r.get("title", ""), artist=_credit(r.get("artist-credit")),
-        date=r.get("date", ""), country=r.get("country", ""), status=r.get("status", ""),
-        disambiguation=r.get("disambiguation", ""),
+        id=r.get("id", release_id), title=r.get("title") or "", artist=_credit(r.get("artist-credit")),
+        date=r.get("date") or "", country=r.get("country") or "", status=r.get("status") or "",
+        disambiguation=r.get("disambiguation") or "",
     )
     formats = []
     for medium in r.get("media", []):

@@ -66,3 +66,14 @@ FIELDS: list[tuple[str, str, bool]] = [
 # nothing else in this project's tag reading/writing treats it as a
 # delimited list.
 QUICK_PICK_FIELDS: frozenset[str] = frozenset({"genre", "language"})
+
+
+def filename_values(mp3) -> dict[str, str]:
+    """The placeholder values for a filename pattern: every field as typed, except that a
+    "track/total" or "disc/total" tag (ID3's "9/10") gives just the number -- the "/"
+    would otherwise be dropped from the name and "9/10" became "910"."""
+    values = {key: getattr(mp3, key, "") or "" for key, _label, _multiline in FIELDS}
+    for key in ("track", "discnumber"):
+        if "/" in values.get(key, ""):
+            values[key] = values[key].split("/", 1)[0].strip()
+    return values

@@ -200,3 +200,10 @@ def test_fields_for_drops_an_unknown_track_position_and_disc():
     release.tracks[0].disc = 2  # makes it a multi-disc release
     fields = mb.fields_for(release, track)
     assert "track" not in fields and "discnumber" not in fields
+
+
+def test_null_status_and_date_in_a_release_do_not_crash():
+    from core import musicbrainz_lookup as mb
+
+    release = mb.fetch_release("abc", fetch=lambda url: '{"id": "abc", "title": "T", "status": null, "date": null, "country": null}')
+    assert (release.status, release.date, release.country) == ("", "", "")

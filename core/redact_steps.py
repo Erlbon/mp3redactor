@@ -72,7 +72,7 @@ from core.acoustid_lookup import FPCALC_EXE_NAME, AcoustIdError, candidate_relea
 from core.bpm_detector import detect_bpm
 from core.cover_art import find_folder_image, read_cover, sniff_mime
 from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
-from core.fields import FIELDS
+from core.fields import FIELDS, filename_values
 from core.keyfinder_runner import detect_key
 from core.lock_retry import lock_hint, retry_on_lock
 from core.mp3_file import (
@@ -1164,7 +1164,7 @@ def save_stage(ctx: Mp3Ctx, _file_report: FileReport) -> StepResult | None:
 def _filename_values(ctx: Mp3Ctx) -> dict[str, str]:
     """The pattern values of the finished file, zero-padded like Rename / Export."""
     settings = ctx.env.settings
-    values = {key: getattr(ctx.work, key, "") or "" for key, _label, _multiline in FIELDS}
+    values = filename_values(ctx.work)
     if settings.rename_zero_pad:
         values["track"] = zero_pad_numeric_value(values["track"], settings.rename_zero_pad_width)
     return values

@@ -15,7 +15,7 @@ import argparse
 import os
 from pathlib import Path
 
-from core.fields import FIELDS
+from core.fields import FIELDS, filename_values
 from core.mp3_converter import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, convert_to_mp3, plan_conversions,
 )
@@ -43,7 +43,7 @@ def _ascii(args: argparse.Namespace) -> bool:
 
 
 def _values_for(mp3: MP3File, zero_pad: int) -> dict[str, str]:
-    values = {key: getattr(mp3, key, "") or "" for key, _label, _multiline in FIELDS}
+    values = filename_values(mp3)
     if zero_pad > 0 and values.get("track"):
         values["track"] = zero_pad_numeric_value(values["track"], zero_pad)
     return values

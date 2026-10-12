@@ -611,3 +611,13 @@ def test_rename_defaults_come_from_the_saved_settings(song, capsys, monkeypatch)
     assert os.path.basename(document["results"][0]["new_path"]).startswith("004 ")
     _code, document = run_json(capsys, "rename", song, "-p", "%track% %title%", "--zero-pad", "0", "-n")
     assert os.path.basename(document["results"][0]["new_path"]).startswith("4 ")
+
+
+def test_filename_values_drop_track_total():
+    from core.fields import filename_values
+    from core.mp3_file import MP3File
+
+    mp3 = MP3File(path=Path("x.mp3"))
+    mp3.track, mp3.discnumber, mp3.title = "9/10", "1/2", "A/B"
+    values = filename_values(mp3)
+    assert (values["track"], values["discnumber"], values["title"]) == ("9", "1", "A/B")

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-12#01 -- Track "9/10" no longer renames to "910"; MusicBrainz lookup crash fixed
+
+- **Rename / Export, Redact's rename step and the `rename` / `move` commands**: a track or disc tag of the form "9/10" (number/total) now gives just "9" in the filename. The "/" used to be dropped, so the file became "910".
+- **Look Up on MusicBrainz** no longer fails with `'NoneType' object has no attribute 'casefold'` when MusicBrainz sends a release with no status (or no date, country or title).
+
 ## 2026-10-10#01 -- M4B: chapter marks, nothing overwritten; command line second review fixes
 
 - **M4B chapter marks drifted** by about 35-45 ms per chapter (so a book of 100 chapters was several seconds off by the end): they were laid out from each piece's container duration, but the join keeps every AAC frame. They now follow the real length of each piece.

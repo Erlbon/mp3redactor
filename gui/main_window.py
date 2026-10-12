@@ -61,7 +61,7 @@ from PyQt6.QtWidgets import (
 
 from core.app_paths import asset_path
 from core.cover_art import extension_for, find_folder_image
-from core.fields import FIELDS
+from core.fields import FIELDS, filename_values
 from core.mp3_file import (
     MP3File,
     STATUS_ERROR,
@@ -1082,7 +1082,7 @@ class MainWindow(QMainWindow):
             return
 
         def get_values(mp3: MP3File) -> dict[str, str]:
-            return {key: getattr(mp3, key, "") or "" for key, _label in FILENAME_PLACEHOLDERS}
+            return filename_values(mp3)
 
         dialog = RenamePatternDialog(
             targets, FILENAME_PLACEHOLDERS, get_values, lambda mp3: str(mp3.path),
