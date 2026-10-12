@@ -616,7 +616,7 @@ def test_the_save_stage_reports_a_skip_even_when_no_step_runs(tmp_path):
 
 def test_defaults_match_the_brief():
     cat = {s.key: s for s in rs.build_catalogue(Settings())}
-    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "rename", "move_into_folders"]
+    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "lyrics", "rename", "move_into_folders"]
     # discogs is on by default only once a Discogs token exists (none in tests)
     assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "discogs", "rename", "move_into_folders"]
 
@@ -807,3 +807,33 @@ def test_pinning_keeps_an_existing_stored_pattern_and_old_json_loads_unchanged()
     assert recipe.options["rename"]["pattern"] == "%track% %title%"
     assert recipe.options["move_into_folders"]["pattern"] == ""
     assert rs.recipe_to_setting(recipe) == rs.recipe_to_setting(Recipe.from_json(old))
+
+
+# --- lyrics ---------------------------------------------------------------------
+
+
+def test_lyrics_step_embeds_found_lyrics_and_keeps_existing_ones(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    calls = []
+
+    def fake(query, artist="", title=""):
+        calls.append(query)
+        return "[00:01.00] hello\n[00:02.00] world", STATUS_OK, "found"
+
+    monkeypatch.setattr(rs, "fetch_lyrics", fake)
+    entry, _ = run(mp3, {"lyrics"})
+    assert entry.status is FileStatus.CHANGED and len(calls) == 1
+    from mutagen.id3 import ID3
+    assert "hello" in ID3(str(mp3.path)).getall("USLT")[0].text
+    entry, _ = run(mp3, {"lyrics"})  # a second run: the lyrics are there, no lookup
+    assert entry.status is FileStatus.UNCHANGED and len(calls) == 1
+
+
+def test_lyrics_step_miss_and_network_failure_write_nothing(tmp_path, monkeypatch):
+    mp3 = make_file(tmp_path)
+    monkeypatch.setattr(rs, "fetch_lyrics", lambda q, artist="", title="": ("", STATUS_ERROR, "no lyrics found"))
+    entry, _ = run(mp3, {"lyrics"})
+    assert entry.status is FileStatus.UNCHANGED
+    monkeypatch.setattr(rs, "fetch_lyrics", lambda q, artist="", title="": ("", STATUS_TOOL_ERROR, "network down"))
+    entry, _ = run(mp3, {"lyrics"})
+    assert entry.status is FileStatus.FAILED

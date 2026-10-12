@@ -106,6 +106,7 @@ from core.musicbrainz_lookup import (
     match_release,
     rank_matches,
 )
+from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.scan_service import REDACT_SCRATCH_PREFIX, reload_from_disk
 from core.settings import DEFAULT_MOVE_PATTERN, Settings
 from core.tag_reader import load_tags
@@ -1079,6 +1080,37 @@ class CoverStep(Mp3Step):
         return f"embedded {suggestion.source}"
 
 
+class LyricsStep(Mp3Step):
+    key = "lyrics"
+    label = "Fetch lyrics"
+    description = (
+        "Looks the song up on LRCLIB (by artist and title) and embeds the lyrics, synced ones when the "
+        "site has them. Only a result that matches the file's artist and title is used; a miss is "
+        "reported, never another song's lyrics. Put it after the tag lookup so the artist and title are right."
+    )
+    options = (
+        OptionSpec(
+            "replace", "Replace existing lyrics", "bool", False,
+            tooltip="Off: a file that already has lyrics keeps them (the lookup is skipped).",
+        ),
+    )
+
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        work = ctx.work
+        if not self.options_for(ctx)["replace"] and (work.lyrics or "").strip():
+            return StepResult.nothing()
+        lyrics, status, message = fetch_lyrics(build_query(work), work.artist, work.title)
+        if status == STATUS_TOOL_MISSING:
+            return StepResult.nothing(note=message)
+        if status == STATUS_TOOL_ERROR:
+            return StepResult.failed(message)  # the search itself failed (network...): nothing is written
+        if status != STATUS_OK or not lyrics:
+            return StepResult.nothing(note=message)
+        work.lyrics, work.lyrics_status, work.lyrics_message = lyrics, status, message
+        work.dirty = True
+        return StepResult.applied(f"lyrics embedded ({len(lyrics.splitlines())} lines)")
+
+
 # --- save stage, then the steps that act on the finished file -------------------
 
 
@@ -1387,6 +1419,7 @@ def build_catalogue(settings: Settings | None = None) -> list[Step]:
         TagLookupStep(),
         DiscogsStep(default_enabled=discogs.has_token()),  # on only when a token is set
         CoverStep(),
+        LyricsStep(),
         RenameStep(settings),
         MoveIntoFoldersStep(settings),
     ]
