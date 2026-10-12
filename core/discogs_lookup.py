@@ -451,6 +451,7 @@ class DiscogsRelease:
     styles: list[str] = field(default_factory=list)
     tracks: list[DiscogsTrack] = field(default_factory=list)
     cover_url: str = ""
+    cover_fallbacks: list[str] = field(default_factory=list)  # other sizes of the same image, tried if the first fails
     uri: str = ""
 
     @property
@@ -535,9 +536,9 @@ def parse_release(data: dict, release_id: int = 0) -> DiscogsRelease:
     images = [i for i in data.get("images", []) if isinstance(i, dict)] if isinstance(data.get("images"), list) else []
     images.sort(key=lambda i: i.get("type") != "primary")  # the primary image first (stable)
     for image in images:
-        url = _str(image.get("uri")) or _str(image.get("resource_url"))
-        if url:
-            release.cover_url = url
+        urls = [u for u in (_str(image.get(k)) for k in ("uri", "resource_url", "uri150")) if u]
+        if urls:
+            release.cover_url, release.cover_fallbacks = urls[0], urls[1:]
             break
     tracks = _flatten_tracklist(data.get("tracklist"))
     numbering = number_positions([_str(t.get("position")) for t in tracks])
@@ -562,7 +563,12 @@ def fetch_release(client: DiscogsClient, release_id: int, cache: Optional[dict] 
 def fetch_cover(client: DiscogsClient, release: DiscogsRelease) -> Optional[bytes]:
     """The release's main image (size-capped), or None. Only called where a
     cover is actually wanted -- never as part of a plain search."""
-    return client.get_image(release.cover_url) if release.cover_url else None
+    for url in [release.cover_url, *release.cover_fallbacks]:
+        if url:
+            data = client.get_image(url)
+            if data:
+                return data
+    return None
 
 
 # ---------------------------------------------------------------------------

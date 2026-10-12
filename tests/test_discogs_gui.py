@@ -370,6 +370,9 @@ def test_lookup_after_entering_a_token_goes_on_and_applies_through_the_review(wi
         def file_changes(self):
             return [(built["files"][0], {"publisher": "Columbia", "catalognumber": "CL 1355"})]
 
+        def cover_changes(self):
+            return []
+
     monkeypatch.setattr(dlg_module, "DiscogsLookupDialog", FakeLookup)
     reviewed = {}
 
@@ -391,3 +394,20 @@ def test_lookup_after_entering_a_token_goes_on_and_applies_through_the_review(wi
 def test_the_consent_is_remembered_in_the_settings_by_the_window(window):
     window._remember_unencrypted_fallback()
     assert window.settings.allow_unencrypted_fallback is True
+
+
+def test_dialog_cover_changes_follow_the_save_cover_toggle(tmp_path, monkeypatch):
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 20
+    fake = _two_pressings()
+    fake.images = {"https://i.discogs.com/primary.jpg": jpeg}
+    dialog = _dialog(_folder(tmp_path), fake, monkeypatch)
+    covers = dialog.cover_changes()
+    assert {m.path.name for m, _d, _mime in covers} == {m.path.name for m, _f in dialog.file_changes()}
+    assert all(data == jpeg and mime == "image/jpeg" for _m, data, mime in covers)
+    dialog.cover_button.setChecked(False)
+    assert dialog.cover_changes() == []
+
+
+def test_a_cover_that_is_not_jpeg_or_png_is_not_saved(tmp_path, monkeypatch):
+    dialog = _dialog(_folder(tmp_path), _two_pressings(), monkeypatch)  # fake bytes, no image signature
+    assert dialog.cover_changes() == []

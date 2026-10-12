@@ -1290,20 +1290,26 @@ class MainWindow(QMainWindow):
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
         changes = dialog.file_changes()
-        if not changes:
+        covers = dialog.cover_changes()
+        if not changes and not covers:
             return
         files = [mp3 for mp3, _fields in changes]
-        proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
-        labels = {key: label for key, label, _multiline in FIELDS}
-        approved = resolve_overwrite_conflicts(
-            self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
-        )
-        if not approved:
-            return
-        self._push_undo("Discogs Lookup", files)
+        approved = {}
+        if changes:
+            proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
+            labels = {key: label for key, label, _multiline in FIELDS}
+            approved = resolve_overwrite_conflicts(
+                self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
+            )
+            if not approved and not covers:
+                return
+        touched = list(dict.fromkeys(files + [mp3 for mp3, _data, _mime in covers]))
+        self._push_undo("Discogs Lookup", touched)
         for index, fields in approved.items():
             files[index].apply_tags(fields)
-        self._rebuild_table()
+        for mp3, data, mime in covers:
+            mp3.set_cover(data, mime)
+        self._after_cover_change()
 
     def open_api_keys_dialog(self) -> None:
         """Tools > API Keys...: the Discogs token, kept in the secure credential store."""

@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import QLabel, QPushButton
 
 from redactor_common.gui.lookup_dialog import LookupAlternative, LookupDialogBase, LookupResult
 
-from core.cover_art import read_cover
+from core.cover_art import read_cover, sniff_mime
 from core.discogs_lookup import (
     DiscogsClient,
     DiscogsError,
@@ -90,6 +90,13 @@ class DiscogsLookupDialog(LookupDialogBase):
         self.styles_button.setToolTip("Put Discogs' styles after its genres in the Genre tag.")
         self.styles_button.toggled.connect(self._on_styles_toggled)
         self.add_toolbar_button(self.styles_button)
+        self.cover_button = QPushButton("Save Cover")
+        self.cover_button.setCheckable(True)
+        self.cover_button.setChecked(True)
+        self.cover_button.setToolTip(
+            "Also embed the found cover in the matched files (replacing a cover they already have)."
+        )
+        self.add_toolbar_button(self.cover_button)
         attribution = QLabel('Data from <a href="https://www.discogs.com">Discogs</a>')
         attribution.setTextFormat(Qt.TextFormat.RichText)
         attribution.setOpenExternalLinks(True)
@@ -160,6 +167,22 @@ class DiscogsLookupDialog(LookupDialogBase):
                 self._update_row_cells(row, self.items[row], result)
         if self._current_detail_row >= 0:
             self._render_detail(self._current_detail_row, self._row_results.get(self._current_detail_row))
+
+    def cover_changes(self) -> list[tuple[MP3File, bytes, str]]:
+        """(file, image bytes, mime) for every matched file of every ticked album whose found cover
+        is a JPEG or PNG -- empty when Save Cover is off."""
+        if not self.cover_button.isChecked():
+            return []
+        changes = []
+        for row, result in self.accepted_rows().items():
+            data = result.cover_bytes
+            mime = sniff_mime(data)
+            match = self._matches.get(id(self.items[row]))
+            if not data or not mime or match is None:
+                continue
+            album = self.items[row]
+            changes.extend((album.files[index], data, mime) for index in match.assignment)
+        return changes
 
     def file_changes(self) -> list[tuple[MP3File, dict[str, str]]]:
         """(file, {field: value}) for every file of every ticked album that
