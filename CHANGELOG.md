@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-13#06 -- Help > About shows a real About page; README menus match the app
+
+- **Help > About** now shows ABOUT.md: what the app does, how to open files (Open Files / Open Folder, File > Include Subfolders, dropping files, a folder on the command line) and the full command-line reference. It used to show the developer README.
+- The README's menu and shortcut table now matches the real menus (it still named the old Operations / Import / Settings menus and wrong shortcuts), documents the Redact steps and their defaults, and no longer says duplicate detection is unbuilt (Analyze > Find Duplicates ships).
+
 ## 2026-10-13#05 -- The window stays alive during conversions and checks; fewer boxes to click away; open a folder from the command line or by dropping it
 
 - **Import and Convert, the Analyze checks and Create M4B Audiobook run in the background** under a progress dialog with a working Cancel. Before, one long ffmpeg conversion, a key or loudness pass over a long track, an mp3val run or an M4B join froze the window until it finished, and Cancel could not even be clicked. Cancel now also stops the conversion that is running (nothing half-written is left); the checks stop after the files in progress.

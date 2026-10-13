@@ -270,6 +270,9 @@ REDACT_UNDO_NOTE = (
     "copies of the original: delete them in Explorer once you are happy with the result."
 )
 
+# Help > About shows this file (bundled by mp3redactor.spec).
+ABOUT_FILE = "ABOUT.md"
+
 # Cover column thumbnail size -- same as the sibling apps' table covers.
 COVER_ICON_SIZE = QSize(24, 32)
 # The side panel's cover is decoded no larger than this (2x a wide
@@ -646,16 +649,15 @@ class MainWindow(QMainWindow):
     # -- about/changelog ----------------------------------------------------
 
     def open_about_dialog(self) -> None:
-        # No dedicated ABOUT.md exists yet for this project (unlike the
-        # epub tool) -- README.md is the closest equivalent today and
-        # is already bundled as a data asset, same PyInstaller path
-        # resolution rules apply via asset_path().
+        # ABOUT.md is the user-facing description (features, the command
+        # line), bundled as a data asset like CHANGELOG.md; README.md is
+        # the developer's page.
         dialog = AboutDialog(
             app_name=APP_NAME,
             app_version=APP_VERSION,
             release_label=RELEASE_LABEL,
             icon_path=str(asset_path("assets/icon.ico")),
-            about_path=str(asset_path("README.md")),
+            about_path=str(asset_path(ABOUT_FILE)),
             component_versions={"redactor_common": REDACTOR_COMMON_VERSION},
             repo_url=APP_REPO_URL,
             component_repo_urls={"redactor_common": REDACTOR_COMMON_REPO_URL},

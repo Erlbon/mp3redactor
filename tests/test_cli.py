@@ -491,7 +491,8 @@ def test_output_writes_the_result_to_a_file_for_scripts(song, tmp_path, capsys):
 
 
 def _readme_cli_section() -> str:
-    text = (Path(__file__).parent.parent / "README.md").read_text(encoding="utf-8")
+    # The command line is documented in ABOUT.md (shown under Help > About); README.md links to it.
+    text = (Path(__file__).parent.parent / "ABOUT.md").read_text(encoding="utf-8")
     start = text.index("## Command line")
     end = text.find("\n## ", start + 5)
     return text[start:end if end != -1 else None]

@@ -30,6 +30,7 @@ a = Analysis(
     datas=[
         ("assets/icon.ico", "assets"),
         ("README.md", "."),
+        ("ABOUT.md", "."),
         ("CHANGELOG.md", "."),
         ("CREDITS.md", "."),
     ],
