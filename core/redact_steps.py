@@ -309,9 +309,12 @@ class IntegrityStep(Mp3Step):
     label = "Integrity check (mp3val)"
     description = (
         "Checks the file with mp3val and stamps the result inside the file. A file whose stamp already says "
-        "OK is checked again but not rewritten when it is still OK. With 'Fix problems' on (off by default), "
-        "fixable problems are repaired (on a copy -- the original goes to the Recycle Bin) and the file is "
-        "checked again. A tool failure is never stamped and never triggers a fix."
+        "OK is checked again but not rewritten when it is still OK. 'Fix problems' is off by default: problems "
+        "are then only reported. With it on, fixable problems are repaired (on a copy -- the original goes to "
+        "the Recycle Bin) and the file is checked again; mp3val's backup of the original is also left beside "
+        "the file as <name>.mp3.bak, unless Tools > Preferences > Fixing deletes .bak files automatically "
+        "(delete leftover .bak files by hand: they are plain copies of the original). A tool failure is never "
+        "stamped and never triggers a fix."
     )
     options = (
         OptionSpec("fix", "Fix problems", "bool", False, tooltip="Run mp3val -f when the check finds problems."),

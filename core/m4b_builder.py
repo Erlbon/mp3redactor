@@ -33,7 +33,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
@@ -46,9 +45,10 @@ from core.cover_art import extension_for, find_folder_image, read_cover, sniff_m
 from core.ffmpeg_probe import FFPROBE_EXE_NAME, probe_format
 from core.lock_retry import retry_on_lock
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.subprocess_utils import StoppableProcesses
 from core.tool_locator import find_tool
 from redactor_common.core.rename_pattern import sanitize_filename
-from redactor_common.core.subprocess_utils import decode_output, popen_tool, run_tool
+from redactor_common.core.subprocess_utils import run_tool
 
 FFMPEG_EXE_NAME = "ffmpeg.exe"
 
@@ -373,50 +373,9 @@ def _last_line(stderr: str, fallback: str) -> str:
     return lines[-1] if lines else fallback
 
 
-class _Running:
-    """The ffmpeg processes of one build. A Cancel stops them at once instead of waiting for a long encode or
-    join to finish; the workers poll `stopped`, the calling thread may also pass its own should_cancel."""
-
-    def __init__(self) -> None:
-        self.stopped = threading.Event()
-        self._lock = threading.Lock()
-        self._processes: set[subprocess.Popen] = set()
-
-    def stop(self) -> None:
-        self.stopped.set()
-        with self._lock:
-            processes = list(self._processes)
-        for process in processes:
-            try:
-                process.kill()
-            except OSError:
-                pass
-
-    def run(self, command: list, timeout: float, cancelled: Callable[[], bool] | None = None) -> subprocess.CompletedProcess:
-        """run_tool() that can be stopped: the same flags (no window, stdin closed, UTF-8 output), polled every
-        quarter second. Raises subprocess.TimeoutExpired like run_tool; a stopped process returns a non-zero code."""
-        process = popen_tool([str(a) for a in command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        with self._lock:
-            self._processes.add(process)
-        deadline = time.monotonic() + timeout
-        try:
-            while True:
-                try:
-                    out, err = process.communicate(timeout=0.25)
-                    break
-                except subprocess.TimeoutExpired:
-                    if self.stopped.is_set() or (cancelled is not None and cancelled()):
-                        self.stop()
-                        out, err = process.communicate()
-                        break
-                    if time.monotonic() > deadline:
-                        process.kill()
-                        process.communicate()
-                        raise subprocess.TimeoutExpired(command, timeout) from None
-        finally:
-            with self._lock:
-                self._processes.discard(process)
-        return subprocess.CompletedProcess(command, process.returncode, decode_output(out), decode_output(err))
+# The ffmpeg processes of one build (a Cancel kills them at once). Moved to core/subprocess_utils.py so the
+# import conversion shares it; the old name stays for the tests and callers here.
+_Running = StoppableProcesses
 
 
 def _encode_piece(

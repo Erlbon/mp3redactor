@@ -18,9 +18,11 @@ here.
 import os
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from core.lock_retry import retry_on_lock
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
+from core.subprocess_utils import StoppableProcesses
 from redactor_common.core.subprocess_utils import run_tool
 from redactor_common.core.rename_pattern import unique_path
 from core.tool_locator import find_tool
@@ -30,6 +32,9 @@ FFMPEG_EXE_NAME = "ffmpeg.exe"
 # A full re-encode, not a header scan or even a decode-and-discard --
 # needs real time for a long track.
 CONVERT_TIMEOUT_SECONDS = 300
+
+# The message of a conversion stopped by Cancel (not a failure to report).
+CANCELLED_MESSAGE = "Cancelled."
 
 # Common constant-bitrate presets, matching what most taggers/rippers
 # offer rather than exposing every possible number libmp3lame accepts.
@@ -88,10 +93,12 @@ def convert_to_mp3(
     bitrate_kbps: int = DEFAULT_BITRATE_KBPS,
     tool_path: Path | None = None,
     override_path: str | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[str, str]:
     """
     Returns (status, message): STATUS_OK / STATUS_ERROR /
-    STATUS_TOOL_MISSING. Encodes to a temporary file beside dest_path and
+    STATUS_TOOL_MISSING. With `should_cancel`, ffmpeg is polled and killed
+    as soon as it returns True: (STATUS_ERROR, CANCELLED_MESSAGE). Encodes to a temporary file beside dest_path and
     moves it into place only on success, so a failed/timed-out run
     leaves no partial .mp3 behind. Overwrites dest_path if it already
     exists -- callers are responsible for deciding whether that's safe
@@ -107,15 +114,20 @@ def convert_to_mp3(
     # Hidden temp name in the same folder (same filesystem, so the final
     # os.replace is atomic); "-f mp3" because the extension no longer says so.
     tmp_path = dest_path.with_name(f".{dest_path.name}.converting")
+    command = [
+        str(exe), "-y", "-i", str(src_path),
+        "-codec:a", "libmp3lame", "-b:a", f"{bitrate_kbps}k",
+        "-f", "mp3", str(tmp_path),
+    ]
     try:
-        result = run_tool(
-            [
-                str(exe), "-y", "-i", str(src_path),
-                "-codec:a", "libmp3lame", "-b:a", f"{bitrate_kbps}k",
-                "-f", "mp3", str(tmp_path),
-            ],
-            timeout=CONVERT_TIMEOUT_SECONDS,
-        )
+        if should_cancel is None:
+            result = run_tool(command, timeout=CONVERT_TIMEOUT_SECONDS)
+        else:
+            # Cancel kills ffmpeg at once instead of waiting for a long encode to finish.
+            result = StoppableProcesses().run(command, CONVERT_TIMEOUT_SECONDS, should_cancel)
+            if result.returncode != 0 and should_cancel():
+                _remove_quietly(tmp_path)
+                return STATUS_ERROR, CANCELLED_MESSAGE
     except subprocess.TimeoutExpired:
         _remove_quietly(tmp_path)
         return STATUS_ERROR, f"ffmpeg timed out after {CONVERT_TIMEOUT_SECONDS}s"

@@ -25,7 +25,7 @@ from core.bpm_detector import detect_bpm
 from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
 from core.keyfinder_runner import detect_key
 from core.lyrics_fetcher import build_query, fetch_lyrics
-from core.mp3_converter import DEFAULT_BITRATE_KBPS, convert_to_mp3
+from core.mp3_converter import CANCELLED_MESSAGE, DEFAULT_BITRATE_KBPS, convert_to_mp3
 from core.mp3_file import (
     BASELINE_KEYS, MP3File, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING,
 )
@@ -555,9 +555,18 @@ def run_import_conversion(
     total = len(conversions)
     results = []
     for i, (src_path, dest_path) in enumerate(conversions, start=1):
-        status, message = convert_to_mp3(
-            src_path, dest_path, bitrate_kbps=bitrate_kbps, override_path=ffmpeg_path
-        )
+        if should_cancel is None:
+            status, message = convert_to_mp3(
+                src_path, dest_path, bitrate_kbps=bitrate_kbps, override_path=ffmpeg_path
+            )
+        else:
+            # The conversion running when Cancel is pressed is stopped too (ffmpeg killed, nothing left behind)
+            # and is not reported as a failure.
+            status, message = convert_to_mp3(
+                src_path, dest_path, bitrate_kbps=bitrate_kbps, override_path=ffmpeg_path, should_cancel=should_cancel
+            )
+            if status != STATUS_OK and message == CANCELLED_MESSAGE:
+                break
         results.append((src_path, dest_path, status, message))
         if progress is not None:
             progress(i, total)

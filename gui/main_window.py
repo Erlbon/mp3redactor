@@ -40,7 +40,7 @@ import os
 import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QSize, Qt
+from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QSize, Qt, QTimer
 from PyQt6.QtGui import QColor, QIcon, QImage
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -164,7 +164,8 @@ from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.folder_options import attach_include_subfolders, include_subfolders_slot
-from redactor_common.gui.progress import ProgressReporter, run_busy, run_with_progress
+from redactor_common.gui.progress import run_busy, run_with_progress
+from gui.work_progress import run_work_with_progress
 from redactor_common.gui.redact_dialog import (
     RecipeEditorDialog,
     RedactResultsDialog,
@@ -263,7 +264,10 @@ REDACT_UNDO_NOTE = (
     "Redact can't be undone with Undo. The original of each changed file was sent to the Recycle Bin: "
     "restore it from there to go back. Where the Recycle Bin is not available (a network share or "
     "removable drive) the original was kept beside the file as <name>.redact-orig.mp3 instead; such files "
-    "are named in the notes below."
+    "are named in the notes below. Only when the Integrity step's 'Fix problems' option is on (it is off by "
+    "default) and a file was fixed, mp3val's backup is also left beside it as <name>.mp3.bak, unless Tools > "
+    "Preferences > Fixing deletes .bak files automatically. Leftover .redact-orig.mp3 and .bak files are plain "
+    "copies of the original: delete them in Explorer once you are happy with the result."
 )
 
 # Cover column thumbnail size -- same as the sibling apps' table covers.
@@ -292,6 +296,50 @@ def _drop_keys(items: list, keys: set[str]) -> list:
     separator left doubled or dangling is not possible here because the
     dropped action always sits beside another in its group."""
     return [i for i in items if not (isinstance(i, MenuAction) and i.key in keys)]
+
+
+def refresh_summary(new_count: int, removed_count: int, loaded: int, wanted: int, finished: bool) -> str:
+    """View > Refresh List's status-bar line (a routine result: no box to click away)."""
+    if not finished:
+        return f"Refresh cancelled: {loaded} of {wanted} file(s) reloaded; the rest left the list until the next refresh."
+    found = f"Found {new_count} new file(s) and reloaded the rest." if new_count else "No new files; reloaded everything from disk."
+    gone = f" {removed_count} file(s) no longer on disk left the list." if removed_count else ""
+    return found + gone
+
+
+def rename_file_refusal(selected: int, unreadable: bool) -> str:
+    """Why File > Rename File (F2) did nothing, for the status bar."""
+    if selected == 0:
+        return "Rename File: select the file to rename first."
+    if selected > 1:
+        return f"Rename File renames one file; {selected} are selected. Use Rename / Export / Move (Ctrl+E) for several."
+    if unreadable:
+        return "Rename File: this file could not be read, so it is not renamed here."
+    return ""
+
+
+def command_line_paths(args: list[str]) -> tuple[list[Path], list[str]]:
+    """The files/folders to open from `mp3redactor.exe PATH...` (main.py has already
+    sent command names to the command line): (paths that exist, ones that do not).
+    Options (anything starting with "-") are Qt's own and left alone."""
+    found: list[Path] = []
+    missing: list[str] = []
+    for arg in args:
+        if not arg or arg.startswith("-"):
+            continue
+        if os.path.exists(arg):
+            found.append(Path(arg))
+        else:
+            missing.append(arg)
+    return found, missing
+
+
+def open_paths_at_start(window, args: list[str]) -> None:
+    """main.py: opens the command line's paths once the event loop runs (the
+    window is shown first, so a progress dialog has something to sit on)."""
+    paths, missing = command_line_paths(args)
+    if paths or missing:
+        QTimer.singleShot(0, lambda: window.open_paths(paths, missing))
 
 
 def _rename_log() -> RenameLog:
@@ -402,6 +450,7 @@ class MainWindow(QMainWindow):
         )
 
         self._build_menu_and_toolbar()
+        self.setAcceptDrops(True)  # files/folders dropped on the window are opened (dropEvent)
 
     # -- menu/toolbar -----------------------------------------------------
 
@@ -638,6 +687,32 @@ class MainWindow(QMainWindow):
             self._remember_last_directory(folder)
             self._load_paths([Path(folder)])
 
+    def open_paths(self, paths: list[Path], missing: list[str] | None = None) -> None:
+        """Opens files and folders given on the command line or dropped on the
+        window, exactly like File > Open Files / Open Folder (the list is
+        replaced; folders follow File > Include Subfolders; a folder with
+        only FLAC/WAV/... offers to convert)."""
+        if missing:
+            self.statusBar().showMessage(f"Not found, not opened: {', '.join(missing)}", 10000)
+        if paths:
+            self._remember_last_directory(str(paths[0]))
+            self._load_paths(paths)
+
+    # Drag and drop: files and folders dropped anywhere on the window are opened.
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()]
+        if not paths:
+            return
+        event.acceptProposedAction()
+        # After the drop has returned: the load can show dialogs, and Explorer
+        # waits on the drop until this handler returns.
+        QTimer.singleShot(0, lambda: self.open_paths(paths))
+
     def _set_include_subfolders(self, on: bool) -> None:
         """File > Include Subfolders (redactor_common's shared item): remembered for Load Folder, drops, Refresh."""
         self.settings.include_subfolders = on
@@ -685,7 +760,7 @@ class MainWindow(QMainWindow):
         def step(mp3_path, _index: int) -> None:
             loaded.extend(load_files([mp3_path]))
 
-        run_with_progress(self, mp3_paths, step, "Loading files...", threshold=3)
+        finished = run_with_progress(self, mp3_paths, step, "Loading files...", threshold=3)
         self.files = loaded
         # Old undo snapshots reference now-discarded MP3File objects --
         # restoring into them wouldn't reach anything still on screen.
@@ -693,6 +768,13 @@ class MainWindow(QMainWindow):
         self._update_undo_action()
         self._update_redo_action()
         self._rebuild_table()
+        if finished:
+            self.statusBar().showMessage(f"Loaded {len(loaded)} file(s).", 5000)
+        else:
+            # Cancel keeps what was read so far: say so, the list is not the whole selection.
+            self.statusBar().showMessage(
+                f"Loading cancelled: {len(loaded)} of {len(mp3_paths)} file(s) loaded.", 10000
+            )
 
     def refresh_list(self) -> None:
         """Re-scans the folder(s) your currently-loaded files live in
@@ -711,6 +793,7 @@ class MainWindow(QMainWindow):
         the mp3-specific wiring: how paths are found in memory, and
         what to do once the new set is known."""
         if not self.files:
+            self.statusBar().showMessage("Nothing to refresh: no files are loaded.", 5000)
             return
         if self._count_dirty() and not self._confirm_discard(
             "refresh the list (discarding unsaved changes)"
@@ -734,22 +817,13 @@ class MainWindow(QMainWindow):
         def step(path, _index: int) -> None:
             loaded.extend(load_files([path]))
 
-        run_with_progress(self, all_paths, step, "Refreshing...", threshold=3)
+        finished = run_with_progress(self, all_paths, step, "Refreshing...", threshold=3)
         self.files = loaded
         self.undo_manager.clear()
         self._update_undo_action()
         self._update_redo_action()
         self._rebuild_table()
-
-        gone = f" {removed_count} file(s) no longer on disk were removed from the list." if removed_count else ""
-        if new_paths:
-            QMessageBox.information(
-                self, "Refreshed", f"Found {len(new_paths)} new file(s) and reloaded everything else.{gone}"
-            )
-        else:
-            QMessageBox.information(
-                self, "Refreshed", f"No new files found. Reloaded everything from disk.{gone}"
-            )
+        self.statusBar().showMessage(refresh_summary(len(new_paths), removed_count, len(loaded), len(all_paths), finished), 10000)
 
     def remove_selected_from_list(self) -> None:
         """File > Remove from List (Delete): drops the selected files from
@@ -881,18 +955,29 @@ class MainWindow(QMainWindow):
                 return
 
         if not conversions:
+            self.statusBar().showMessage("Nothing to convert: every file already has an .mp3 of the same name.", 8000)
             return
 
-        # Shared progress dialog (fixed width, threshold-gated, working
-        # Cancel), fed through run_import_conversion()'s own callbacks.
-        with ProgressReporter(self, len(conversions), "Converting to MP3...") as reporter:
-            results = run_import_conversion(
+        # ffmpeg runs on a worker thread, so the window keeps painting during
+        # a long encode; Cancel kills the running ffmpeg too (nothing half-
+        # written is left) and skips the rest.
+        def work(progress):
+            progress.set_label(f"Converting to MP3: {conversions[0][0].name}")
+
+            def on_progress(done, total):
+                progress.on_progress(done, total)
+                if done < total:
+                    progress.set_label(f"Converting to MP3: {conversions[done][0].name}")
+
+            return run_import_conversion(
                 conversions,
                 bitrate_kbps=bitrate_kbps,
-                progress=reporter.on_progress,
+                progress=on_progress,
                 ffmpeg_path=self.settings.ffmpeg_path or None,
-                should_cancel=reporter.should_cancel,
+                should_cancel=progress.should_cancel,
             )
+
+        results, cancelled = run_work_with_progress(self, len(conversions), "Converting to MP3...", work)
 
         self._remember_last_directory(paths[0])
 
@@ -918,17 +1003,19 @@ class MainWindow(QMainWindow):
                     self.files.append(new_mp3)
             self._rebuild_table()
 
+        stopped = (
+            f" Cancelled: {len(conversions) - len(results)} file(s) were not converted." if cancelled else ""
+        )
         if failed:
             QMessageBox.warning(
                 self,
                 "Some Files Failed to Convert",
                 f"{len(failed)} of {len(conversions)} file(s) could not be converted:\n\n"
-                f"{summarize_errors(failed)}",
+                f"{summarize_errors(failed)}{stopped}",
             )
-        elif succeeded_dests:
-            QMessageBox.information(
-                self, "Import Complete", f"Converted and loaded {len(succeeded_dests)} file(s)."
-            )
+        else:
+            # A routine result: the status bar, not a box to click away.
+            self.statusBar().showMessage(f"Converted and loaded {len(succeeded_dests)} file(s).{stopped}", 8000)
 
     def create_m4b_dialog(self) -> None:
         """File > Create M4B Audiobook...: the selected files (all loaded files when none is
@@ -987,22 +1074,28 @@ class MainWindow(QMainWindow):
         total = sum(len(spec.chapters) + 1 for spec in todo)
         cancelled = False
         if todo:
-            with ProgressReporter(self, total, "Creating audiobook...", threshold=1) as reporter:
+            ffmpeg_path, ffprobe_path = self.settings.ffmpeg_path or None, self.settings.ffprobe_path or None
+
+            # The encodes and the join run on a worker thread (the window keeps painting during a join of
+            # several minutes); Cancel stops the running ffmpeg at once.
+            def work(progress) -> bool:
                 offset = 0
                 for number, spec in enumerate(todo, start=1):
-                    reporter.set_label(f"Book {number} of {len(todo)}: {spec.title}" if len(todo) > 1 else f"Creating: {spec.title}")
+                    progress.set_label(f"Book {number} of {len(todo)}: {spec.title}" if len(todo) > 1 else f"Creating: {spec.title}")
                     result = build_m4b(
                         spec,
-                        ffmpeg_path=self.settings.ffmpeg_path or None,
-                        ffprobe_path=self.settings.ffprobe_path or None,
-                        progress=lambda done, _total, base=offset: reporter.set_value(base + done),
-                        should_cancel=reporter.should_cancel,
+                        ffmpeg_path=ffmpeg_path,
+                        ffprobe_path=ffprobe_path,
+                        progress=lambda done, _total, base=offset: progress.set_value(base + done),
+                        should_cancel=progress.should_cancel,
                     )
                     results.append((spec, result))
                     offset += len(spec.chapters) + 1
                     if result.cancelled:
-                        cancelled = True
-                        break
+                        return True
+                return False
+
+            cancelled, _pressed = run_work_with_progress(self, total, "Creating audiobook...", work)
         made = [(spec, result) for spec, result in results if result.status == STATUS_OK]
         problems = skipped + [
             f"{spec.title}: {result.message}" for spec, result in results
@@ -1207,7 +1300,7 @@ class MainWindow(QMainWindow):
         if not targets:
             return
         dialog = MusicBrainzLookupDialog(group_by_folder(targets), self, cover_only=True)
-        self._apply_musicbrainz_dialog(dialog, "Cover from MusicBrainz")
+        self._apply_lookup_dialog(dialog, "Cover from MusicBrainz")
 
     def open_musicbrainz_lookup_dialog(self) -> None:
         """Import > Look Up via MusicBrainz...: the selected files, one
@@ -1228,7 +1321,7 @@ class MainWindow(QMainWindow):
         # lookup works from tags and folder names as before.
         fpcalc = find_tool(FPCALC_EXE_NAME, override=self.settings.fpcalc_path or None)
         dialog = MusicBrainzLookupDialog(group_by_folder(targets), self, fpcalc=fpcalc)
-        self._apply_musicbrainz_dialog(dialog, "MusicBrainz Lookup")
+        self._apply_lookup_dialog(dialog, "MusicBrainz Lookup")
 
     def open_musicbrainz_local_lookup_dialog(self) -> None:
         """Metadata > Look Up > MusicBrainz (Local Database)...: the same review dialog
@@ -1266,10 +1359,10 @@ class MainWindow(QMainWindow):
             return
         fpcalc = find_tool(FPCALC_EXE_NAME, override=self.settings.fpcalc_path or None)
         dialog = MusicBrainzLocalLookupDialog(group_by_folder(targets), db, self, fpcalc=fpcalc)
-        self._apply_musicbrainz_dialog(dialog, "MusicBrainz Lookup (Local Database)")
+        self._apply_lookup_dialog(dialog, "MusicBrainz Lookup (Local Database)")
 
-    def _apply_musicbrainz_dialog(self, dialog, undo_name: str) -> None:
-        """Runs a MusicBrainz review dialog and applies what was ticked: anything that would
+    def _apply_lookup_dialog(self, dialog, undo_name: str) -> None:
+        """Runs a MusicBrainz or Discogs review dialog and applies what was ticked: anything that would
         overwrite a different value goes through the per-field overwrite review, the result is
         one Undo step and is written on Save."""
         from redactor_common.gui.overwrite_review_dialog import resolve_overwrite_conflicts
@@ -1279,6 +1372,7 @@ class MainWindow(QMainWindow):
         changes = dialog.file_changes()
         covers = dialog.cover_changes()
         if not changes and not covers:
+            self.statusBar().showMessage(f"{undo_name}: nothing to apply (no match ticked, or nothing new found).", 8000)
             return
         files = [mp3 for mp3, _fields in changes]
         approved = {}
@@ -1289,6 +1383,7 @@ class MainWindow(QMainWindow):
                 self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
             )
             if not approved and not covers:
+                self.statusBar().showMessage(f"{undo_name}: nothing applied.", 8000)
                 return
         touched = list({id(m): m for m in files + [mp3 for mp3, _data, _mime in covers]}.values())
         self._push_undo(undo_name, touched)
@@ -1308,8 +1403,6 @@ class MainWindow(QMainWindow):
         through the per-field overwrite review, one Undo step, written on Save), plus label,
         catalogue number, country and genre/style tags. Needs a Discogs token: without one
         the API Keys dialog opens first (Tools > API Keys)."""
-        from redactor_common.gui.overwrite_review_dialog import resolve_overwrite_conflicts
-
         from core.discogs_lookup import DiscogsClient, load_token
         from gui.discogs_lookup_dialog import DiscogsLookupDialog, group_by_folder
 
@@ -1328,29 +1421,7 @@ class MainWindow(QMainWindow):
             if not token:
                 return
         dialog = DiscogsLookupDialog(group_by_folder(targets), DiscogsClient(token), self, cover_only=cover_only)
-        if dialog.exec() != dialog.DialogCode.Accepted:
-            return
-        changes = dialog.file_changes()
-        covers = dialog.cover_changes()
-        if not changes and not covers:
-            return
-        files = [mp3 for mp3, _fields in changes]
-        approved = {}
-        if changes:
-            proposed = {index: fields for index, (_mp3, fields) in enumerate(changes)}
-            labels = {key: label for key, label, _multiline in FIELDS}
-            approved = resolve_overwrite_conflicts(
-                self, [_ReviewItem(mp3) for mp3 in files], proposed, lambda key: labels.get(key, key),
-            )
-            if not approved and not covers:
-                return
-        touched = list({id(m): m for m in files + [mp3 for mp3, _data, _mime in covers]}.values())
-        self._push_undo("Cover from Discogs" if cover_only else "Discogs Lookup", touched)
-        for index, fields in approved.items():
-            files[index].apply_tags(fields)
-        for mp3, data, mime in covers:
-            mp3.set_cover(data, mime)
-        self._after_cover_change()
+        self._apply_lookup_dialog(dialog, "Cover from Discogs" if cover_only else "Discogs Lookup")
 
     def open_api_keys_dialog(self) -> None:
         """Tools > API Keys...: the Discogs token, kept in the secure credential store."""
@@ -1603,6 +1674,8 @@ class MainWindow(QMainWindow):
         files = self._selected_files()
         if len(files) == 1 and not files[0].load_error:
             self.rename_single_file(files[0])
+        else:
+            self.statusBar().showMessage(rename_file_refusal(len(files), bool(files and files[0].load_error)), 6000)
 
     # -- tag editing ------------------------------------------------------
 
@@ -2141,15 +2214,11 @@ class MainWindow(QMainWindow):
         self._run_fix_with_progress(targets)
 
     def _run_fix_with_progress(self, targets: list[MP3File]) -> None:
-        def step(target: MP3File, _index: int) -> None:
-            run_integrity_fix(
-                [target],
-                delete_backup=self.settings.delete_backup_after_fix,
-                mp3val_path=self.settings.mp3val_path or None,
-            )
-
-        run_with_progress(self, targets, step, "Fixing file integrity issues...", threshold=3)
-        self._rebuild_table()
+        delete_backup, mp3val_path = self.settings.delete_backup_after_fix, self.settings.mp3val_path or None
+        self._run_per_file_in_background(
+            "Fixing file integrity issues...", targets,
+            lambda target: run_integrity_fix([target], delete_backup=delete_backup, mp3val_path=mp3val_path),
+        )
 
     def run_bpm_check(self) -> None:
         self._run_concurrent_check_with_progress("Detecting BPM...", run_bpm_check)
@@ -2239,12 +2308,17 @@ class MainWindow(QMainWindow):
                 )
             return
 
-        with ProgressReporter(self, len(targets), label) as reporter:
-            scan_fn(
-                targets, progress=reporter.on_progress,
-                should_cancel=reporter.should_cancel, **extra_kwargs,
-            )
+        # The whole batch runs on a worker thread: one long file (keyfinder or
+        # a loudness pass over an hour-long mix) no longer freezes the window.
+        _result, cancelled = run_work_with_progress(
+            self, len(targets), label,
+            lambda progress: scan_fn(
+                targets, progress=progress.on_progress, should_cancel=progress.should_cancel, **extra_kwargs,
+            ),
+        )
         self._rebuild_table()
+        if cancelled:
+            self.statusBar().showMessage(f"{label.rstrip('.')} cancelled; files not reached yet were left as they were.", 8000)
 
     def _selected_files(self) -> list[MP3File]:
         seen: dict[int, MP3File] = {}
@@ -2266,11 +2340,25 @@ class MainWindow(QMainWindow):
                 )
             return
 
-        def step(target: MP3File, _index: int) -> None:
-            check_fn([target], **extra_kwargs)
+        self._run_per_file_in_background(label, targets, lambda target: check_fn([target], **extra_kwargs))
 
-        run_with_progress(self, targets, step, label, threshold=3)
+    def _run_per_file_in_background(self, label: str, targets: list[MP3File], one) -> None:
+        """Calls `one(file)` for each target on a worker thread under a counted
+        progress dialog (mp3val runs per file: the window keeps painting while
+        one runs), Cancel stopping between files; then rebuilds the table."""
+
+        def work(progress) -> None:
+            for index, target in enumerate(targets):
+                if progress.should_cancel():
+                    return
+                progress.set_label(f"{label.rstrip('.')}: {target.filename}")
+                one(target)
+                progress.on_progress(index + 1)
+
+        _result, cancelled = run_work_with_progress(self, len(targets), label, work)
         self._rebuild_table()
+        if cancelled:
+            self.statusBar().showMessage(f"{label.rstrip('.')} cancelled; files not reached yet were left as they were.", 8000)
 
     # -- table ------------------------------------------------------------
 
@@ -2279,9 +2367,14 @@ class MainWindow(QMainWindow):
     # core/tag_writer.py's _write_cover_frame()).
 
     def _cover_targets(self, action_desc: str, need_cover: bool = False) -> list[MP3File]:
-        targets = [mp3 for mp3 in self._require_targets(action_desc) if not mp3.load_error]
+        selected = self._require_targets(action_desc)
+        targets = [mp3 for mp3 in selected if not mp3.load_error]
         if need_cover:
             targets = [mp3 for mp3 in targets if mp3.has_cover]
+        if selected and not targets:
+            # Not silent: say why nothing happened.
+            reason = "none of the selected files has a cover" if need_cover else "the selected files could not be read"
+            self.statusBar().showMessage(f"Nothing to {action_desc}: {reason}.", 8000)
         return targets
 
     def _after_cover_change(self) -> None:
@@ -2347,15 +2440,16 @@ class MainWindow(QMainWindow):
                 targets[index].set_cover(data, mime)
             self._after_cover_change()
 
+        # A routine result goes to the status bar; only an unreadable image is a box.
         message = f"Set a cover on {len(found)} of {len(targets)} file(s)."
         if missing:
-            message += (
-                f"\n\nNo cover.jpg / folder.jpg / front.jpg next to {len(missing)} file(s): "
-                f"{summarize_errors(missing)}"
-            )
+            message += f" No cover.jpg / folder.jpg / front.jpg next to {len(missing)} file(s)."
         if errors:
-            message += f"\n\nUnreadable image(s): {summarize_errors(errors)}"
-        QMessageBox.information(self, "Cover from Folder Image", message)
+            QMessageBox.warning(
+                self, "Cover from Folder Image", f"{message}\n\nUnreadable image(s): {summarize_errors(errors)}"
+            )
+        else:
+            self.statusBar().showMessage(message + (" Save All writes them to the files." if found else ""), 10000)
 
     def remove_cover(self) -> None:
         targets = self._cover_targets("remove the cover from", need_cover=True)
@@ -2370,7 +2464,9 @@ class MainWindow(QMainWindow):
         targets = self._cover_targets("export the cover of", need_cover=True)
         if len(targets) != 1:
             if targets:
-                QMessageBox.information(self, "Export Cover", "Select a single file to export its cover.")
+                self.statusBar().showMessage(
+                    f"Export Cover exports one file's cover; {len(targets)} files with a cover are selected.", 8000
+                )
             return
         mp3 = targets[0]
         cover = mp3.cover_bytes()

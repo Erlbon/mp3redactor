@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-13#05 -- The window stays alive during conversions and checks; fewer boxes to click away; open a folder from the command line or by dropping it
+
+- **Import and Convert, the Analyze checks and Create M4B Audiobook run in the background** under a progress dialog with a working Cancel. Before, one long ffmpeg conversion, a key or loudness pass over a long track, an mp3val run or an M4B join froze the window until it finished, and Cancel could not even be clicked. Cancel now also stops the conversion that is running (nothing half-written is left); the checks stop after the files in progress.
+- **Routine results go to the status bar** instead of a box you have to click away: Refresh List ("Found N new file(s)..."), a finished import ("Converted and loaded N file(s)"), Cover > Set from Folder Image. Boxes stay for errors and questions.
+- **Actions that did nothing now say why** in the status bar: Rename File (F2) with no file or several selected, Remove Cover / Export Cover when no selected file has a cover, a MusicBrainz or Discogs lookup with nothing to apply, Refresh List with nothing loaded, a cancelled load ("Loading cancelled: 3 of 120 file(s) loaded").
+- **`mp3redactor.exe D:\Music` opens that folder** (or file) at start, like File > Open Folder, following File > Include Subfolders. A path that does not exist is named in the status bar. Before, the argument was ignored.
+- **Drag and drop**: files and folders dropped on the window are opened (a folder of FLAC/WAV gets the usual offer to convert). Before, dropping did nothing.
+- **Redact, Integrity step**: its description and the Redact results header now say that "Fix problems" is off by default, that a fix leaves mp3val's backup beside the file as `<name>.mp3.bak` (unless Tools > Preferences > Fixing deletes them), and that leftover `.bak` / `.redact-orig.mp3` files are plain copies you can delete in Explorer.
+- Requires redactor_common 2026-10-13-05 (the menu check now refuses Ctrl+Alt shortcuts, which AltGr types on European keyboards).
+
 ## 2026-10-13#04 -- Review fixes: Analyze no longer blocks Redact, integrity fix opt-in, honest Redact note
 
 - **A scan stamp is not an edit** (A14): after Analyze (integrity, deep check, BPM...) a file is still "unsaved" because its stamp waits for Save, but Redact no longer skips it for "unsaved edits"; only real tag edits do. The row still shows the pending stamp.

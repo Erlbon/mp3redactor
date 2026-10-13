@@ -15,9 +15,12 @@ from redactor_common.gui.app_bootstrap import run_app
 
 
 def _window():
-    from gui.main_window import MainWindow
+    from gui.main_window import MainWindow, open_paths_at_start
 
-    return MainWindow()
+    window = MainWindow()
+    # `mp3redactor.exe D:\Music` (no command name): open that folder or file, like File > Open Folder / Files.
+    open_paths_at_start(window, sys.argv[1:])
+    return window
 
 
 def main() -> int:
