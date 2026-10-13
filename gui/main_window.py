@@ -260,8 +260,10 @@ DEFAULT_RENAME_PATTERN = "%track% - %artist% - %title%"
 
 # Shown at the top of the Redact results: Redact isn't on the in-app Undo stack.
 REDACT_UNDO_NOTE = (
-    "Redact can't be undone with Undo. Each original file was sent to the Recycle Bin: "
-    "restore it from there to go back."
+    "Redact can't be undone with Undo. The original of each changed file was sent to the Recycle Bin: "
+    "restore it from there to go back. Where the Recycle Bin is not available (a network share or "
+    "removable drive) the original was kept beside the file as <name>.redact-orig.mp3 instead; such files "
+    "are named in the notes below."
 )
 
 # Cover column thumbnail size -- same as the sibling apps' table covers.
@@ -2068,7 +2070,7 @@ class MainWindow(QMainWindow):
         targets = self._redact_targets()
         if not targets:
             return
-        unsaved = [mp3 for mp3 in targets if mp3.dirty]
+        unsaved = [mp3 for mp3 in targets if mp3.dirty and not mp3.stamp_only_dirty]
         if unsaved and QMessageBox.question(
             self,
             "Unsaved changes",

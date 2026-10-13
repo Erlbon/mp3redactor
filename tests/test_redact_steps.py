@@ -92,7 +92,7 @@ def test_integrity_fix_runs_on_the_scratch_copy_then_rechecks(tmp_path, monkeypa
 
     monkeypatch.setattr(rs, "check_integrity", check)
     monkeypatch.setattr(rs, "fix_integrity", fix)
-    entry, _ = run(mp3, {"integrity"})
+    entry, _ = run(mp3, {"integrity"}, {"integrity": {"fix": True}})
     assert [c[0] for c in calls] == ["check", "fix", "check"]
     assert all(Path(c[1]) != mp3.path for c in calls)  # never the original
     assert any("fixed 1 problem" in a for a in entry.applied)
@@ -136,7 +136,7 @@ def test_failed_fix_restores_the_scratch_copy_and_reports(tmp_path, monkeypatch,
         return STATUS_TOOL_ERROR, "crashed"
 
     monkeypatch.setattr(rs, "fix_integrity", fix)
-    entry, _ = run(mp3, {"integrity"})
+    entry, _ = run(mp3, {"integrity"}, {"integrity": {"fix": True}})
     assert any("left as it was" in f for f in entry.failures)
     # the stamp from the pre-fix check (ERROR) was still saved, into an intact file
     fresh = MP3File(path=mp3.path)
@@ -157,7 +157,7 @@ def test_mp3val_backup_follows_the_setting(tmp_path, monkeypatch, keep_backups):
         return STATUS_OK, ""
 
     monkeypatch.setattr(rs, "fix_integrity", fix)
-    run(mp3, {"integrity"}, settings=Settings(delete_backup_after_fix=not keep_backups))
+    run(mp3, {"integrity"}, {"integrity": {"fix": True}}, settings=Settings(delete_backup_after_fix=not keep_backups))
     assert (tmp_path / "a.mp3.bak").exists() == keep_backups
     assert leftovers(tmp_path) == [] and not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp.bak")]
 

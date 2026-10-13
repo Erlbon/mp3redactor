@@ -156,13 +156,12 @@ class DiscogsLookupDialog(CoverSaveMixin, LookupDialogBase):
         """Re-renders every found row's summary with or without styles;
         the choice is also what file_changes() uses."""
         self._include_styles = checked
-        for row, result in self._row_results.items():
+        for row, result in list(self.row_results().items()):
             match = self._matches.get(id(self.items[row]))
             if match is not None and result.found:
                 result.fields = _summary_fields(match, checked)
-                self._update_row_cells(row, self.items[row], result)
-        if self._current_detail_row >= 0:
-            self._render_detail(self._current_detail_row, self._row_results.get(self._current_detail_row))
+                self.refresh_row(row, result)
+        self.rerender_detail()
 
     def file_changes(self) -> list[tuple[MP3File, dict[str, str]]]:
         """(file, {field: value}) for every file of every ticked album that

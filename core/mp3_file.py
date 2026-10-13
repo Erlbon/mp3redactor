@@ -234,6 +234,11 @@ class MP3File:
     # core.tag_writer.save_tags() on a successful write. Left set (so
     # the file stays visibly unsaved) if a save attempt fails.
     dirty: bool = False
+    # True while the ONLY unsaved change is a fresh scan stamp (no tag
+    # edits), so Redact doesn't refuse a file for "unsaved edits" right
+    # after an Analyze check. Any other assignment to `dirty` clears it
+    # (see __setattr__); record_scan() is the only thing that sets it.
+    stamp_only_dirty: bool = field(default=False, repr=False, compare=False)
 
     # What the file on disk held for each BASELINE_KEYS attribute at the
     # last load/save (empty for a file never loaded). Replaced, never
@@ -287,7 +292,14 @@ class MP3File:
         setattr(self, f"{kind}_message", message)
         if status in STAMPABLE_STATUSES and not self.load_error:
             setattr(self, f"{kind}_stamp", format_scan_stamp(status, datetime.now(timezone.utc)))
+            only_stamp = not self.dirty or self.stamp_only_dirty
             self.dirty = True
+            self.stamp_only_dirty = only_stamp
+
+    def __setattr__(self, name, value):
+        if name == "dirty":
+            object.__setattr__(self, "stamp_only_dirty", False)
+        object.__setattr__(self, name, value)
 
     def display_bpm(self) -> str:
         if self.bpm is None:

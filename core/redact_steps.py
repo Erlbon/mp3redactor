@@ -208,7 +208,7 @@ class Mp3Ctx:
         self.skip_reason = ""
         if mp3.load_error:
             self.skip_reason = f"the file could not be read ({mp3.load_error})"
-        elif mp3.dirty:
+        elif mp3.dirty and not mp3.stamp_only_dirty:  # a fresh Analyze stamp alone is not an edit
             self.skip_reason = "it has unsaved edits (save or undo them first)"
         if self.skip_reason:
             return
@@ -308,18 +308,23 @@ class IntegrityStep(Mp3Step):
     key = "integrity"
     label = "Integrity check (mp3val)"
     description = (
-        "Checks the file with mp3val and stamps the result inside the file. With 'fix problems' on, "
-        "fixable problems are repaired (on a copy -- the original goes to the Recycle Bin) and the "
-        "file is checked again. A tool failure is never stamped and never triggers a fix."
+        "Checks the file with mp3val and stamps the result inside the file. A file whose stamp already says "
+        "OK is checked again but not rewritten when it is still OK. With 'Fix problems' on (off by default), "
+        "fixable problems are repaired (on a copy -- the original goes to the Recycle Bin) and the file is "
+        "checked again. A tool failure is never stamped and never triggers a fix."
     )
     options = (
-        OptionSpec("fix", "Fix problems", "bool", True, tooltip="Run mp3val -f when the check finds problems."),
+        OptionSpec("fix", "Fix problems", "bool", False, tooltip="Run mp3val -f when the check finds problems."),
     )
 
     def process(self, ctx: Mp3Ctx) -> StepResult:
         work, settings = ctx.work, ctx.env.settings
         mp3val = settings.mp3val_path or None
         status, message = check_integrity(ctx.temp, override_path=mp3val)
+        if status == STATUS_OK and work.integrity_status == STATUS_OK and work.integrity_stamp:
+            # Still OK and the file already carries an OK stamp: re-stamping would rewrite the whole file
+            # on every run for nothing.
+            return StepResult.nothing(note="OK (already stamped OK; not rewritten)")
         work.record_scan("integrity", status, message)  # TOOL MISSING/ERROR: shown, never stamped
         if status == STATUS_TOOL_MISSING:
             return StepResult.nothing(note=message)

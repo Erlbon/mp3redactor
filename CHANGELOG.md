@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-13#04 -- Review fixes: Analyze no longer blocks Redact, integrity fix opt-in, honest Redact note
+
+- **A scan stamp is not an edit** (A14): after Analyze (integrity, deep check, BPM...) a file is still "unsaved" because its stamp waits for Save, but Redact no longer skips it for "unsaved edits"; only real tag edits do. The row still shows the pending stamp.
+- **Integrity check** (A14): "Fix problems" (mp3val -f) is now OFF by default in the Redact recipe; the check itself stays on. A file whose stamp already says OK and is still OK is no longer rewritten (and its original no longer sent to the Recycle Bin) on every Redact run.
+- **Redact results note** (A12): says what really happened: the original went to the Recycle Bin, or, where the bin is not available (network share, removable drive), was kept beside the file as `<name>.redact-orig.mp3` and named in the notes. redactor_common now refuses the Recycle Bin on such drives instead of letting the shell delete permanently.
+- **Lyrics dialog** (A15e): the LRCLIB search runs off the GUI thread under a cancellable busy dialog.
+- **Discogs dialog** (A15a): uses redactor_common's public row/detail API instead of four private members.
+- Requires redactor_common 2026-10-13-04.
+
 ## 2026-10-13#03 -- Shared Include Subfolders item; folder scans show progress
 
 - **File > Include Subfolders** is now redactor_common's shared menu item (the same item and mnemonic in every Redactor app); the setting is unchanged and now also applies to Refresh List, which re-scans loaded folders including subfolders when it is ticked.

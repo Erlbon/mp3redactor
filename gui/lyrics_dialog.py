@@ -27,7 +27,6 @@ tag edit.
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QApplication,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -37,6 +36,8 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
 )
+
+from redactor_common.gui.progress import run_busy
 
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_file import MP3File, STATUS_OK
@@ -91,9 +92,16 @@ class LyricsDialog(QDialog):
     def _fetch(self) -> None:
         query = build_query(self.mp3)
         self.status_label.setText(f'Searching LRCLIB for "{query}"...')
-        QApplication.processEvents()
-
-        lyrics, status, message = fetch_lyrics(query, self.mp3.artist, self.mp3.title)
+        # The HTTP request runs off the GUI thread (run_busy), so the dialog keeps repainting and a slow
+        # LRCLIB answer no longer freezes the window.
+        fetched = run_busy(
+            self, f'Searching LRCLIB for "{query}"...', fetch_lyrics, query, self.mp3.artist, self.mp3.title,
+            cancellable=True,
+        )
+        if fetched is None:
+            self.status_label.setText("Search cancelled.")
+            return
+        lyrics, status, message = fetched
         if status == STATUS_OK:
             self.text_edit.setPlainText(lyrics)
             self.status_label.setText(f'Found lyrics for "{query}".')
