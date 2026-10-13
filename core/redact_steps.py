@@ -777,7 +777,7 @@ class TagLookupStep(Mp3Step):
         "says so. A match made by fingerprint has AcoustID's score as its confidence; one made by tags "
         "needs the album and artist tags to agree exactly to reach 90%. Below the threshold the match is "
         "listed under Needs review and nothing is written. Needs network access. If a local MusicBrainz "
-        "database is set up (Tools > MusicBrainz Database) it is consulted FIRST, offline, and also fills "
+        "database is set up (Tools > MusicBrainz Database Setup) it is consulted FIRST, offline, and also fills "
         "label, catalogue number and country: the file's own MusicBrainz Album Id names its release at 97%, "
         "a recording id tag at 95%, an AcoustID hit keeps its score, and a match by tags needs artist and "
         "album exact and as many tracks as files to reach 90% (otherwise at most 85%). Online MusicBrainz and "

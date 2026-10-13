@@ -43,7 +43,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | File | Include Subfolders (ticked: Open Folder, drops and Refresh List search subfolders) | |
 | File | Import and Convert… (FLAC/WAV/OGG/M4A/... to MP3 beside the original) | |
 | File | Create M4B Audiobook… | |
-| File | Save All | Ctrl+Shift+A, Ctrl+S |
+| File | Save All | Ctrl+Shift+A |
 | File | Rename File… (the one selected file) | F2 |
 | File | Undo Last Rename | |
 | File | Rename / Export / Move… (by `%field%` pattern) | Ctrl+E |
@@ -55,28 +55,35 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Edit | Redact | Ctrl+Shift+E |
 | Edit | Edit Redact Recipe… | |
 | Edit | Search and Replace… | Ctrl+H |
-| Edit | Change Case…, Auto-Number… | |
+| Edit | Change Case… | |
+| Edit | Auto-Number… (Preset "Number Tracks": Track 1..N in table order, no padding) | |
+| Edit | Filter List (show only files whose Filename, Title, Artist, Album or Path contains a text; empty text shows all) | Ctrl+F |
 | View | Show Metadata Panel | |
 | View | Zoom In, Zoom Out, Reset Zoom | Ctrl++, Ctrl+-, Ctrl+0 |
 | View | Refresh List | F5, Ctrl+R |
 | View | Command Palette… | Ctrl+K |
 | Metadata | Parse Filename… (tags from file and folder names) | Ctrl+I |
 | Metadata | Look Up > MusicBrainz…, MusicBrainz (Local Database)…, Discogs…, Lyrics | |
-| Metadata | Edit Lyrics…, Number Tracks… | |
+| Metadata | Edit Lyrics… | |
 | Metadata | Cover > Set from Image File…, Set from Folder Image, Get from MusicBrainz…, Get from Discogs…, Remove Cover, Export Cover to Image File… | |
 | Analyze | Check Integrity, Fix Integrity Issues…, Deep Check Integrity… | |
 | Analyze | Detect BPM, Detect Key, Measure Loudness | |
 | Analyze | Find Duplicates… (all loaded files) | |
 | Tools | Preferences… | Ctrl+, |
-| Tools | API Keys… (Discogs token), External Tools… (mp3val, keyfinder-cli, ffmpeg, ffprobe, fpcalc), MusicBrainz Database… | |
+| Tools | API Keys… (Discogs token), External Tools… (mp3val, keyfinder-cli, ffmpeg, ffprobe, fpcalc), MusicBrainz Database Setup… | |
 | Tools | Columns…, Genres…, Languages… | |
 | Help | Changelog…, Credits…, About The ɯP3 Redactor | |
 
 The table's right-click menu has the everyday subset: Rename File (one file), Look Up, Organize (Rename /
-Export / Move, Number Tracks), Analyze, Cover, Edit Lyrics, Redact, Remove from List, plus Open in Default App,
+Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Redact, Remove from List, plus Open in Default App,
 Open Containing Folder and Copy Path. Double-click a Filename cell to rename that file, a Lyrics cell to edit its
 lyrics. Click a header to sort (Track, Disc, Year, BPM, Loudness, Sample Rate and Channels sort as numbers), drag
 a header to reorder, right-click a header to show or hide columns.
+
+Edit > Filter List (Ctrl+F) hides the rows whose Filename, Title, Artist, Album and Path all lack the text
+(case-insensitive); the status bar says "Showing N of M files (filter: text)". A hidden row is never a target:
+selected rows the filter hides are deselected, and Select All reaches only the rows shown. The filter stays
+through edits, sorting and View > Refresh List; Clear List, or opening new files, clears it.
 
 Every action that can take more than a moment (opening a folder, loading, saving, the checks, conversion,
 lookups, M4B builds) shows a progress dialog, and Cancel works where the work can stop. Routine results go to the
@@ -148,7 +155,7 @@ this has to be built on Windows itself.
 **Published releases deliberately do NOT bundle `tools\`** -- an
 earlier release that did came out at ~226MB (vs. ~50MB without), and
 that's simply too much for what most people using this app actually
-need; Check Integrity/Detect Key/Deep Check/Measure Loudness/Import &
+need; Check Integrity/Detect Key/Deep Check/Measure Loudness/Import and
 Convert just report TOOL MISSING until someone points Tools >
 External Tools at binaries on their own machine (or builds a
 personal copy with `tools\` populated, per the steps below, if they
@@ -190,7 +197,7 @@ If you want a personal build with `tools\` populated anyway:
      or wrapper repo needed the way keyfinder-cli has -- see the
      Licensing note below for why it's still GPLv3 even so.
    (The build still works without a `tools\` folder at all -- Check
-   Integrity/Detect Key/Deep Check/Measure Loudness/Import & Convert
+   Integrity/Detect Key/Deep Check/Measure Loudness/Import and Convert
    will just report TOOL MISSING until the relevant binaries are
    added.)
 2. Optionally bump the version first:

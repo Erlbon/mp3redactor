@@ -94,7 +94,7 @@ class MusicBrainzLocalDatabase(LocalDatabase):
             raise MusicBrainzLocalError(
                 "This MusicBrainz database was built by a different version of the app "
                 f"(missing columns{': ' + ', '.join(missing) if missing else ''}) -- rebuild it in "
-                "Tools > MusicBrainz Database."
+                "Tools > MusicBrainz Database Setup."
             )
         self.has_release_search = self.has_table("releases_fts")
         self.has_track_search = self.has_table("tracks_fts")
@@ -481,7 +481,7 @@ def local_fields_for(release: Release, track: ReleaseTrack) -> dict[str, str]:
 def describe_missing(path: str) -> str:
     """Why `path` can't be used, as one line for a Redact note / message box."""
     if not path:
-        return "no local MusicBrainz database is set up (Tools > MusicBrainz Database)"
+        return "no local MusicBrainz database is set up (Tools > MusicBrainz Database Setup)"
     try:
         open_database(path)
     except LocalDatabaseError as exc:

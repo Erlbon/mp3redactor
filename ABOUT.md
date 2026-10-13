@@ -42,7 +42,9 @@ time.
 File > Open Files (Ctrl+O) or Open Folder (Ctrl+Shift+O), dropping files or folders on the window, or naming
 them when starting the program (`mp3redactor.exe D:\Music`) all do the same: the list is replaced by what you
 opened. A folder is searched including its subfolders while File > Include Subfolders is ticked (the default);
-untick it to load just the folder itself. View > Refresh List (F5) picks up files added since.
+untick it to open just the folder itself. View > Refresh List (F5) picks up files added since. Edit > Filter
+List (Ctrl+F) shows only the files whose name, title, artist, album or path contains a text; actions then reach
+only the files shown, and an empty text shows them all again.
 
 ## Command line
 

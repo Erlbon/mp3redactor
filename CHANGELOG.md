@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-14#03 -- Filter List; Number Tracks is an Auto-Number preset; menu wording
+
+- **Edit > Filter List (Ctrl+F)**: type a text to show only the files whose Filename, Title, Artist, Album or Path contains it (case-insensitive); an empty text shows every file again. The status bar says "Showing N of M files (filter: text)". Hidden files are never a target: selected rows the filter hides are deselected, and Select All reaches only what is shown. The filter stays through edits, sorting and Refresh List; Clear List or opening new files clears it.
+- **Metadata > Number Tracks is gone**: Edit > Auto-Number now has a **Preset** choice, and its "Number Tracks" preset numbers Track 1..N in table order with no padding, exactly as Number Tracks did (you can still change the start before applying). The right-click menu's Organize > Number Tracks is now Organize > Auto-Number.
+- **Ctrl+S no longer saves**: Save All is Ctrl+Shift+A only, the family shortcut.
+- **Tools > MusicBrainz Database Setup** is the new name of Tools > MusicBrainz Database (Metadata > Look Up > MusicBrainz (Local Database) is unchanged).
+- Messages and the Import and Convert dialog title now use the menus' own words ("Open some files first.", "Import and Convert").
+
 ## 2026-10-14#02 -- Shared progress helper
 
 - The counted worker-thread progress dialog (Import and Convert, the Analyze checks, the M4B build) is now redactor_common's `run_work_with_progress`; this app's own copy is gone. No behaviour change.

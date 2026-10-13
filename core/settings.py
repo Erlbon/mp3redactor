@@ -108,15 +108,15 @@ class Settings:
     ffprobe_path: str = ""
     fpcalc_path: str = ""  # Chromaprint, for identifying files by sound (AcoustID)
 
-    # Where Load Files/Load Folder's file dialogs start from -- set via
+    # Where Open Files/Open Folder's file dialogs start from -- set via
     # remember_last_directory() after a successful pick. Empty string
     # means "let Qt use its own default" (same convention the epub
     # tool's QSettings-based last_directory uses, adapted to this
     # project's plain-configparser persistence).
     last_directory: str = ""
 
-    # File > Include Subfolders: Load Folder (and the offer to convert a folder with no .mp3) also searches
-    # the folder's subfolders. On by default, which is how Load Folder always behaved.
+    # File > Include Subfolders: Open Folder (and the offer to convert a folder with no .mp3) also searches
+    # the folder's subfolders. On by default, which is how Open Folder always behaved.
     include_subfolders: bool = True
 
     # Column visibility/order, field-key based -- see
@@ -183,7 +183,7 @@ class Settings:
     # and it is not part of Export Settings (it is about this computer).
     allow_unencrypted_fallback: bool = False
 
-    # The offline MusicBrainz database (Tools > MusicBrainz Database...,
+    # The offline MusicBrainz database (Tools > MusicBrainz Database Setup...,
     # core/musicbrainz_import.py): the built SQLite file, the core dump
     # (mbdump.tar.bz2) it is built from, and the build options as one line
     # of JSON (musicbrainz_import.BuildOptions.to_json(); "" = defaults).
@@ -358,7 +358,7 @@ def resolve_start_directory(last_directory: str) -> str:
 
 def directory_for(path: str) -> str:
     """The directory to remember as the next dialog's starting point,
-    given a path just picked -- a file (from Load Files) or a folder
-    itself (from Load Folder)."""
+    given a path just picked -- a file (from Open Files) or a folder
+    itself (from Open Folder)."""
     p = Path(path)
     return str(p if p.is_dir() else p.parent)

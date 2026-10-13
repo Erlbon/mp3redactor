@@ -4,7 +4,7 @@ gui/musicbrainz_local_dialog.py
 Metadata > Look Up > MusicBrainz (Local Database)...: the Look Up via
 MusicBrainz review dialog (gui/musicbrainz_lookup_dialog.py -- same rows,
 Other Matches, Search Query form, per-file changes) answered from the
-offline database built in Tools > MusicBrainz Database
+offline database built in Tools > MusicBrainz Database Setup
 (core/musicbrainz_local.py): no network, no rate limit, instant.
 
 Differences from the online dialog: a file's own MusicBrainz Album Id tag
@@ -57,7 +57,7 @@ class MusicBrainzLocalLookupDialog(MusicBrainzLookupDialog):
         )
         return (
             f"Finding the MusicBrainz release for {len(albums)} folder(s) -- one album per folder -- in your "
-            "local MusicBrainz database (Tools > MusicBrainz Database): by the files' own MusicBrainz Album "
+            "local MusicBrainz database (Tools > MusicBrainz Database Setup): by the files' own MusicBrainz Album "
             "Id if they have one, else by Artist + Album (or a barcode typed into Album), then matching each "
             "file to its track by number, title and length. Other editions are listed under Other Matches. "
             "Label, catalogue number and country are filled too; MusicBrainz genres and covers are not in the "

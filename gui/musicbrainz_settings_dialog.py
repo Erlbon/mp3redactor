@@ -1,7 +1,7 @@
 """
 gui/musicbrainz_settings_dialog.py
 
-Tools > MusicBrainz Database... -- points the app at an offline MusicBrainz
+Tools > MusicBrainz Database Setup... -- points the app at an offline MusicBrainz
 lookup database and builds it. MusicBrainz's core dump (mbdump.tar.bz2) is
 about 7 GB, so the app never downloads it: the user fetches it from
 musicbrainz.org/doc/MusicBrainz_Database/Download, picks it here, chooses
@@ -79,7 +79,7 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
         self._settings = settings
         self._persist = save or save_settings
         super().__init__(
-            title="MusicBrainz Database",
+            title="MusicBrainz Database Setup",
             instructions_html=INSTRUCTIONS,
             path=settings.musicbrainz_database,
             check=describe_database,

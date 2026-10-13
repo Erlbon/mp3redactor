@@ -1,4 +1,4 @@
-"""Tools > MusicBrainz Database...: the settings dialog (offscreen, with a SMALL SYNTHETIC
+"""Tools > MusicBrainz Database Setup...: the settings dialog (offscreen, with a SMALL SYNTHETIC
 dump from tests/mb_fixture.py), the new Settings fields and their Export/Import Settings
 handling, and the menu entry."""
 
@@ -47,7 +47,7 @@ def make_dialog(settings=None):
 
 def test_dialog_starts_with_the_default_options():
     dialog, _ = make_dialog()
-    assert dialog.windowTitle() == "MusicBrainz Database"
+    assert dialog.windowTitle() == "MusicBrainz Database Setup"
     options = dialog.build_options()
     assert options == BuildOptions()
     assert tuple(n for n, b in dialog.type_boxes.items() if b.isChecked()) == DEFAULT_TYPES

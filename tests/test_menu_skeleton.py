@@ -54,7 +54,7 @@ def test_menu_contents_and_order(window):
     edit = [e for e in _menu_tree(menus["Edit"]) if e != "---"]
     assert edit[0:2] == ["Undo", "Redo"] and edit[2].startswith("Apply to")
     assert edit[3:] == [
-        "Redact", "Edit Redact Recipe", "Search and Replace", "Change Case", "Auto-Number",
+        "Redact", "Edit Redact Recipe", "Search and Replace", "Change Case", "Auto-Number", "Filter List",
     ]
     assert _menu_tree(menus["View"]) == [
         "Show Metadata Panel", "---", "Zoom In", "Zoom Out", "Reset Zoom", "---",
@@ -63,7 +63,7 @@ def test_menu_contents_and_order(window):
     assert _menu_tree(menus["Metadata"]) == [
         "Parse Filename", "---",
         ("Look Up", ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]), "---",
-        "Edit Lyrics", "Number Tracks", "---",
+        "Edit Lyrics", "---",
         ("Cover", [
             "Set from Image File", "Set from Folder Image", "Get from MusicBrainz", "Get from Discogs",
             "Remove Cover", "---",
@@ -75,7 +75,7 @@ def test_menu_contents_and_order(window):
         "Detect BPM", "Detect Key", "Measure Loudness", "---", "Find Duplicates",
     ]
     assert _menu_tree(menus["Tools"]) == [
-        "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database", "---",
+        "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database Setup", "---",
         "Columns", "Genres", "Languages",
     ]
     assert _menu_tree(menus["Help"]) == ["Changelog", "Credits", "---", f"About {mw.APP_NAME}"]
@@ -105,8 +105,8 @@ def test_old_action_keys_still_in_the_registry(window):
         "cover_remove", "cover_export", "parse_filename", "musicbrainz_lookup", "musicbrainz_local_lookup", "musicbrainz_settings", "discogs_lookup", "api_keys", "import_convert",
         "redact", "redact_recipe", "undo", "redo", "apply", "preferences", "external_tools",
         "columns", "genres", "languages", "refresh_list", "rename_file", "rename_export_move",
-        "about", "changelog", "credits", "exit", "number_tracks", "remove_from_list", "clear_list",
-        "search_replace", "change_case", "auto_number", "save_all",
+        "about", "changelog", "credits", "exit", "remove_from_list", "clear_list",
+        "search_replace", "change_case", "auto_number", "filter_list", "save_all",
     ):
         assert key in registry, key
 
@@ -171,7 +171,7 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
     ]
     by_name = {t[0]: t[1] for t in tree if isinstance(t, tuple)}
     assert by_name["Look Up"] == ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]
-    assert by_name["Organize"] == ["Rename / Export / Move", "Number Tracks"]
+    assert by_name["Organize"] == ["Rename / Export / Move", "Auto-Number"]
     assert by_name["Analyze"] == [
         "Check Integrity", "Fix Integrity Issues", "Deep Check Integrity", "---",
         "Detect BPM", "Detect Key", "Measure Loudness",

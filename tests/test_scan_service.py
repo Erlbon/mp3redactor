@@ -40,7 +40,7 @@ def test_find_mp3_files_recursive_false_ignores_subfolders(tmp_path):
     # Refresh List's own use case (gui/main_window.py's refresh_list()):
     # notice a file dropped directly into an already-loaded folder,
     # without also discovering an entire new subfolder tree -- that
-    # stays Load Folder's job.
+    # stays Open Folder's job.
     (tmp_path / "one.mp3").write_bytes(b"")
     sub = tmp_path / "sub"
     sub.mkdir()

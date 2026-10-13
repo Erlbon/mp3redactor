@@ -130,7 +130,7 @@ def test_a_database_error_is_shown_as_the_rows_error(tmp_path, db, monkeypatch):
 def test_menu_entries_exist_and_are_wired(window):
     registry = window.action_registry
     assert registry["musicbrainz_local_lookup"].text() == "Music&Brainz (Local Database)…"
-    assert registry["musicbrainz_settings"].text() == "&MusicBrainz Database…"
+    assert registry["musicbrainz_settings"].text() == "&MusicBrainz Database Setup…"
     for key in ("musicbrainz_local_lookup", "musicbrainz_settings"):
         assert registry[key].isEnabled() and registry[key].receivers(registry[key].triggered) > 0
 
@@ -145,7 +145,7 @@ def test_lookup_without_a_database_offers_the_settings_dialog(window, tmp_path, 
     monkeypatch.setattr(settings_module.MusicBrainzSettingsDialog, "exec", lambda self: opened.append(True) or 0)
     monkeypatch.setattr(dlg_module, "MusicBrainzLocalLookupDialog", lambda *a, **k: pytest.fail("no database, no lookup"))
     window.open_musicbrainz_local_lookup_dialog()
-    assert opened == [True] and "Tools > MusicBrainz Database" in asked[0] and "7 GB" in asked[0]
+    assert opened == [True] and "Tools > MusicBrainz Database Setup" in asked[0] and "7 GB" in asked[0]
 
 
 def test_declining_the_prompt_does_nothing(window, tmp_path, monkeypatch):
@@ -167,7 +167,7 @@ def test_an_unreadable_database_is_reported_with_where_to_fix_it(window, tmp_pat
     monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda parent, title, text, *a, **k: shown.append(text)))
     monkeypatch.setattr(dlg_module, "MusicBrainzLocalLookupDialog", lambda *a, **k: pytest.fail("bad database"))
     window.open_musicbrainz_local_lookup_dialog()
-    assert shown and "Tools > MusicBrainz Database" in shown[0]
+    assert shown and "Tools > MusicBrainz Database Setup" in shown[0]
 
 
 def test_lookup_applies_through_the_overwrite_review_and_undoes(window, tmp_path, db_path, monkeypatch):

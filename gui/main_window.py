@@ -1,6 +1,6 @@
 """
 MainWindow: bulk-edit tag panel (left) + file table (right) in a
-collapsible QSplitter, menu+toolbar for the v1 actions (Load
+collapsible QSplitter, menu+toolbar for the v1 actions (Open
 Files/Folder, bulk tag editing, Check Integrity, Detect BPM, Detect
 Key). Tag editing is deliberately "basic" -- plain text fields only,
 via core.fields.FIELDS -- no covers or external lookups the way the
@@ -133,8 +133,7 @@ from redactor_common.gui.visible_rows import VisibleRowsWatcher
 from gui.cover_image import IMAGE_FILE_FILTER, CoverImageError, cover_from_file
 from redactor_common.gui.about_dialog import AboutDialog, ChangelogDialog, CreditsDialog
 from redactor_common.gui.action_factory import make_action
-from redactor_common.gui.auto_numbering_dialog import AutoNumberingDialog
-from redactor_common.gui.quick_series_number import prompt_and_generate_series_numbers
+from gui.auto_number_presets import AutoNumberingDialog
 from redactor_common.gui.collapsible_splitter import SplitterPaneCollapser
 from redactor_common.gui.colors import DIRTY_COLOR, HIGHLIGHT_TEXT_COLOR, TABLE_SELECTION_STYLESHEET
 from redactor_common.gui.column_menu import show_column_header_context_menu
@@ -153,7 +152,6 @@ from redactor_common.gui.standard_menus import (
     standard_help_items,
     standard_tools_items,
     standard_view_items,
-    with_aliases,
 )
 from redactor_common.gui.command_palette import add_command_palette
 from redactor_common.gui.case_conversion_dialog import CaseConversionDialog
@@ -301,6 +299,13 @@ def _drop_keys(items: list, keys: set[str]) -> list:
     return [i for i in items if not (isinstance(i, MenuAction) and i.key in keys)]
 
 
+def file_matches_filter(mp3: MP3File, needle: str) -> bool:
+    """Edit > Filter List: does `needle` (already casefolded) occur in the
+    file's Filename, Title, Artist, Album or Path?"""
+    haystack = (mp3.filename, mp3.title, mp3.artist, mp3.album, str(mp3.path))
+    return any(needle in (value or "").casefold() for value in haystack)
+
+
 def refresh_summary(new_count: int, removed_count: int, loaded: int, wanted: int, finished: bool) -> str:
     """View > Refresh List's status-bar line (a routine result: no box to click away)."""
     if not finished:
@@ -371,6 +376,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.files: list[MP3File] = []
+        self._list_filter = ""  # Edit > Filter List's text; "" = every file shown
         self.settings: Settings = load_settings()
         # The remembered "an unencrypted key file is OK on this computer" answer
         # (see gui/secret_prompts.py); a secret itself is never in the settings.
@@ -473,7 +479,7 @@ class MainWindow(QMainWindow):
                 extra_open=[MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog)],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
-                # dropped below; Ctrl+S stays as an alias of Save All.
+                # dropped below. No Ctrl+S alias (owner, 2026-10-14).
                 save_all=self.save_changed,
                 # Quick, direct rename of the one selected file -- matches
                 # Explorer's F2 exactly. Distinct from "Rename / Export /
@@ -502,6 +508,7 @@ class MainWindow(QMainWindow):
                 search_replace=self.open_search_replace_dialog,
                 change_case=self.open_case_conversion_dialog,
                 auto_number=self.open_auto_numbering_dialog,
+                filter_list=self.filter_list,
             ),
             view=standard_view_items(
                 show_metadata_panel=self._toggle_tag_panel,
@@ -528,7 +535,6 @@ class MainWindow(QMainWindow):
                     ]),
                     Separator(),
                     MenuAction("edit_lyrics", "&Edit Lyrics…", self.edit_lyrics_for_selection),
-                    MenuAction("number_tracks", "&Number Tracks…", self.number_tracks_for_selection),
                     Separator(),
                     Submenu("C&over", [
                         MenuAction("cover_set", "&Set from Image File…", self.set_cover_from_file),
@@ -558,7 +564,7 @@ class MainWindow(QMainWindow):
                 external_tools=self.open_external_tools_dialog,
                 app_settings=[
                     MenuAction(
-                        "musicbrainz_settings", "&MusicBrainz Database…", self.open_musicbrainz_settings_dialog,
+                        "musicbrainz_settings", "&MusicBrainz Database Setup…", self.open_musicbrainz_settings_dialog,
                     ),
                 ],
                 columns=self.open_column_settings_dialog,
@@ -571,10 +577,6 @@ class MainWindow(QMainWindow):
         )
         build_standard_menu_bar(self, spec)
         actions = self.action_registry
-        # Ctrl+S was "Save File(s)" = save every changed file; that is Save All
-        # now (Ctrl+Shift+A). Ctrl+S stays as a secondary key (epubredactor did
-        # the same); lint only checks the key against the label "Save ...".
-        with_aliases(actions["save_all"], "Ctrl+S")
 
         self.action_include_subfolders = actions["include_subfolders"]
         attach_include_subfolders(
@@ -716,7 +718,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: self.open_paths(paths))
 
     def _set_include_subfolders(self, on: bool) -> None:
-        """File > Include Subfolders (redactor_common's shared item): remembered for Load Folder, drops, Refresh."""
+        """File > Include Subfolders (redactor_common's shared item): remembered for Open Folder, drops, Refresh."""
         self.settings.include_subfolders = on
         save_settings(self.settings)
 
@@ -751,11 +753,12 @@ class MainWindow(QMainWindow):
                 self._convert_paths_and_load([str(p) for p in importable])
             return
 
-        # Load Files/Folder replaces self.files wholesale (unlike the epub
-        # tool's additive Add Files) -- always did, but now that files can
+        # Open Files/Folder replaces self.files wholesale (unlike the epub
+        # tool, which adds to its list) -- always did, but now that files can
         # carry unsaved tag edits, doing that silently would discard them.
-        if self._count_dirty() and not self._confirm_discard("load a new selection"):
+        if self._count_dirty() and not self._confirm_discard("open a new selection"):
             return
+        self._list_filter = ""  # a new list starts unfiltered (Edit > Filter List)
 
         loaded: list[MP3File] = []
 
@@ -784,7 +787,7 @@ class MainWindow(QMainWindow):
         re-reads every file still present from disk. Doesn't discover a
         brand-new subfolder you haven't loaded anything from yet (only
         folders already represented in your current list get scanned,
-        non-recursively) -- use Load Folder for that. A file that's
+        non-recursively) -- use Open Folder for that. A file that's
         disappeared from disk is dropped from the list (only files
         still present are shown).
 
@@ -850,7 +853,60 @@ class MainWindow(QMainWindow):
         if self._count_dirty() and not self._confirm_discard("clear the entire list"):
             return
         self.files = []
+        self._list_filter = ""
         self._after_list_shrunk()
+
+    # -- filter list --------------------------------------------------------
+
+    @property
+    def list_filter(self) -> str:
+        """The Edit > Filter List text in force ("" = every file shown)."""
+        return self._list_filter
+
+    def filter_list(self) -> None:
+        """Edit > Filter List (Ctrl+F): asks for a text and shows only the
+        files whose Filename, Title, Artist, Album or Path contains it
+        (case-insensitive). Empty text shows every file again."""
+        text, ok = QInputDialog.getText(
+            self, "Filter List",
+            "Show only files whose Filename, Title, Artist, Album or Path contains\n"
+            "(leave empty to show every file):",
+            text=self._list_filter,
+        )
+        if ok:
+            self.set_list_filter(text)
+
+    def set_list_filter(self, text: str) -> None:
+        self._list_filter = text.strip()
+        self._apply_list_filter()
+        if self._list_filter:
+            return  # _apply_list_filter() has said "Showing N of M files"
+        self.statusBar().showMessage(f"Filter cleared: showing all {len(self.files)} files.", 5000)
+
+    def _apply_list_filter(self) -> None:
+        """Hides the rows the filter text does not match and deselects any
+        selected row it hides, so a batch action only reaches files the user
+        can see. Re-run after every table rebuild; sorting keeps hidden rows
+        with their files (QHeaderView keeps hidden sections across a sort)."""
+        needle = self._list_filter.casefold()
+        col = self._col_index["filename"]
+        shown = 0
+        selected_before = {id(mp3) for mp3 in self._selected_files()}
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, col)
+            mp3 = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+            visible = not needle or (mp3 is not None and file_matches_filter(mp3, needle))
+            self.table.setRowHidden(row, not visible)
+            shown += visible
+        selected_after = {id(mp3) for mp3 in self._selected_files()}
+        if selected_after != selected_before:
+            self._reselect_files(selected_after)
+            self.tag_panel.set_selection(self._selected_files())
+            self._update_cover_panel()
+        if needle:
+            self.statusBar().showMessage(
+                f"Showing {shown} of {len(self.files)} files (filter: {self._list_filter})"
+            )
 
     # -- find duplicates ---------------------------------------------------
 
@@ -863,7 +919,7 @@ class MainWindow(QMainWindow):
         the user picks an action. See core/mp3_duplicates.py."""
         readable = [mp3 for mp3 in self.files if not mp3.load_error]
         if len(readable) < 2:
-            QMessageBox.information(self, "Find Duplicates", "Load at least two readable MP3 files first.")
+            QMessageBox.information(self, "Find Duplicates", "Open at least two readable MP3 files first.")
             return
         intro = f"Compared all {len(readable)} loaded files (not only the selection)."
         if len(readable) < len(self.files):
@@ -914,15 +970,15 @@ class MainWindow(QMainWindow):
         converting it to .mp3 via ffmpeg's libmp3lame encoder
         (core.mp3_converter), same directory, same base filename.
 
-        Deliberately ADDITIVE to self.files, unlike Load Files/Folder's
+        Deliberately ADDITIVE to self.files, unlike Open Files/Folder's
         replace-wholesale semantics -- Import brings something new IN
         alongside whatever's already loaded, it doesn't represent a
-        fresh "start over with this selection" the way Load does (see
+        fresh "start over with this selection" the way Open does (see
         this module's own docstring on the Import menu's intent)."""
         extensions_filter = " ".join(f"*{ext}" for ext in sorted(IMPORTABLE_EXTENSIONS))
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Import & Convert to MP3",
+            "Import and Convert",
             resolve_start_directory(self.settings.last_directory),
             f"Audio Files ({extensions_filter})",
         )
@@ -1027,7 +1083,7 @@ class MainWindow(QMainWindow):
         Nothing in the list changes: the .m4b files are new, not loaded here."""
         files = [mp3 for mp3 in (self._selected_files() or self.files) if not mp3.load_error]
         if not files:
-            QMessageBox.information(self, "Create M4B Audiobook", "Load some MP3 files first.")
+            QMessageBox.information(self, "Create M4B Audiobook", "Open some MP3 files first.")
             return
         books = group_by_folder(files)
         if len(books) > 1:
@@ -1184,7 +1240,7 @@ class MainWindow(QMainWindow):
         targets = self._selected_files()
         if not targets:
             if not self.files:
-                QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+                QMessageBox.information(self, "No Files Loaded", "Open some files first.")
             else:
                 QMessageBox.information(
                     self, "No Files Selected", f"Select one or more files in the table to {action_desc}."
@@ -1328,7 +1384,7 @@ class MainWindow(QMainWindow):
     def open_musicbrainz_local_lookup_dialog(self) -> None:
         """Metadata > Look Up > MusicBrainz (Local Database)...: the same review dialog
         answered from the offline database (core/musicbrainz_local.py). Without one set up,
-        explain and offer Tools > MusicBrainz Database... rather than just failing."""
+        explain and offer Tools > MusicBrainz Database Setup... rather than just failing."""
         from core.acoustid_lookup import FPCALC_EXE_NAME
         from core.musicbrainz_local import MusicBrainzLocalError, open_database
         from core.tool_locator import find_tool
@@ -1344,7 +1400,7 @@ class MainWindow(QMainWindow):
                 self, name,
                 "No local MusicBrainz database is set up yet. It is built from MusicBrainz's free core data "
                 "dump (about 7 GB), which you download yourself.\n\n"
-                "Open Tools > MusicBrainz Database... "
+                "Open Tools > MusicBrainz Database Setup... "
                 "to set it up?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
@@ -1357,7 +1413,7 @@ class MainWindow(QMainWindow):
         try:
             db = open_database(path)  # fail here, with the file's own message, not once per album
         except MusicBrainzLocalError as exc:
-            QMessageBox.warning(self, name, f"{exc}\n\nCheck Tools > MusicBrainz Database...")
+            QMessageBox.warning(self, name, f"{exc}\n\nCheck Tools > MusicBrainz Database Setup...")
             return
         fpcalc = find_tool(FPCALC_EXE_NAME, override=self.settings.fpcalc_path or None)
         dialog = MusicBrainzLocalLookupDialog(group_by_folder(targets), db, self, fpcalc=fpcalc)
@@ -1436,6 +1492,9 @@ class MainWindow(QMainWindow):
         save_settings(self.settings)
 
     def open_auto_numbering_dialog(self) -> None:
+        """Edit > Auto-Number (also right-click > Organize). Its "Number
+        Tracks" preset (gui/auto_number_presets.py) is what the old Metadata
+        > Number Tracks did: Track 1..N in table order."""
         # Explicit selection required, same "no silent all-files
         # fallback" reasoning as _require_targets's own docstring --
         # doubly true here since this assigns a DIFFERENT value per
@@ -1597,30 +1656,6 @@ class MainWindow(QMainWindow):
         self._push_undo("Change Case", changed)
         for index, new_value in changes.items():
             targets[index].apply_tags({field_key: new_value})
-        self._rebuild_table()
-
-    def number_tracks_for_selection(self) -> None:
-        """Metadata > Number Tracks...: the menu entry for the quick
-        numbering the right-click menu already had."""
-        targets = self._require_targets("number")
-        if targets:
-            self._quick_number_tracks(targets)
-
-    def _quick_number_tracks(self, files: list[MP3File]) -> None:
-        """The table right-click's quick version of Auto-Numbering:
-        just prompts for a starting Track # (no field picker, no step,
-        no preview) and numbers the given files +1 per row from there,
-        in their current table order. For anything beyond the plain
-        "start here, count up by one" case on Track specifically --
-        a different field, a different step, or a look at what's
-        changing before it does -- use Edit > Auto-Number...
-        instead."""
-        values = prompt_and_generate_series_numbers(self, len(files), field_label="Starting Track #")
-        if values is None:
-            return
-        self._push_undo("Number Tracks", files)
-        for mp3, new_value in zip(files, values):
-            mp3.apply_tags({"track": new_value})
         self._rebuild_table()
 
     def _on_cell_double_clicked(self, row: int, col: int) -> None:
@@ -2091,7 +2126,7 @@ class MainWindow(QMainWindow):
             save_settings(self.settings)
 
     def open_musicbrainz_settings_dialog(self) -> None:
-        """Tools > MusicBrainz Database...: where the offline MusicBrainz database
+        """Tools > MusicBrainz Database Setup...: where the offline MusicBrainz database
         is and how to build it from the core dump (gui/musicbrainz_settings_dialog.py)."""
         from gui.musicbrainz_settings_dialog import MusicBrainzSettingsDialog
 
@@ -2123,7 +2158,7 @@ class MainWindow(QMainWindow):
         if targets:
             return targets
         if not self.files:
-            QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+            QMessageBox.information(self, "No Files Loaded", "Open some files first.")
             return []
         reply = QMessageBox.question(
             self,
@@ -2303,7 +2338,7 @@ class MainWindow(QMainWindow):
         targets = self._selected_files()
         if not targets:
             if not self.files:
-                QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+                QMessageBox.information(self, "No Files Loaded", "Open some files first.")
             else:
                 QMessageBox.information(
                     self, "No Files Selected", "Select one or more files in the table."
@@ -2323,8 +2358,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{label.rstrip('.')} cancelled; files not reached yet were left as they were.", 8000)
 
     def _selected_files(self) -> list[MP3File]:
+        """The selected files the user can see: a row hidden by Edit > Filter
+        List is never a target, even if Select All reached it."""
         seen: dict[int, MP3File] = {}
         for item in self.table.selectedItems():
+            if self.table.isRowHidden(item.row()):
+                continue
             mp3 = item.data(Qt.ItemDataRole.UserRole)
             if mp3 is not None:
                 seen[id(mp3)] = mp3
@@ -2335,7 +2374,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         if not targets:
             if not self.files:
-                QMessageBox.information(self, "No Files Loaded", "Load some files first.")
+                QMessageBox.information(self, "No Files Loaded", "Open some files first.")
             else:
                 QMessageBox.information(
                     self, "No Files Selected", "Select one or more files in the table."
@@ -2564,6 +2603,7 @@ class MainWindow(QMainWindow):
             for row, mp3 in enumerate(self.files):
                 self._populate_row(row, mp3)
         self._reselect_files(selected_ids)
+        self._apply_list_filter()  # rows were rebuilt (and re-sorted): hide again by file
         # Rows were just torn down and rebuilt from scratch, so whatever
         # rows Qt now considers "selected" may not match what the tag
         # panel is showing -- keep the two in sync explicitly rather
@@ -2814,9 +2854,9 @@ class MainWindow(QMainWindow):
                 ]),
                 Submenu("Organize", [
                     self.action_rename_files,
-                    MenuAction(
-                        "number_tracks", "Number Tracks…", lambda: self._quick_number_tracks(files)
-                    ),
+                    # Edit > Auto-Number itself; its "Number Tracks" preset
+                    # replaced the old quick Number Tracks (2026-10-14).
+                    self.action_registry["auto_number"],
                 ]),
                 Submenu("Analyze", [
                     MenuAction("check_integrity", "Check Integrity", self.run_integrity_check),
