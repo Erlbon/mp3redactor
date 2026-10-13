@@ -8,7 +8,6 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PIL import Image  # noqa: E402
 
 import gui.m4b_lookup_dialog as lookup_mod  # noqa: E402
 from core.m4b_builder import group_by_folder  # noqa: E402
@@ -20,9 +19,16 @@ from tests.test_cover_gui import _app, _load, window  # noqa: E402,F401
 
 
 def _jpeg() -> bytes:
-    buf = io.BytesIO()
-    Image.new("RGB", (40, 40), (20, 90, 160)).save(buf, format="JPEG")
-    return buf.getvalue()
+    """A small JPEG made with Qt (PyQt6 is a requirement; Pillow is not, and a clean checkout must run the suite)."""
+    from PyQt6.QtCore import QBuffer, QIODevice
+    from PyQt6.QtGui import QColor, QImage
+
+    image = QImage(40, 40, QImage.Format.Format_RGB32)
+    image.fill(QColor(20, 90, 160))
+    buf = QBuffer()
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buf, "JPEG")
+    return bytes(buf.data())
 
 
 @pytest.fixture
