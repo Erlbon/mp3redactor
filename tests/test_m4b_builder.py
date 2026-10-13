@@ -18,6 +18,20 @@ from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING
 from core.tool_locator import find_tool
 from redactor_common.core.subprocess_utils import run_tool
 
+
+def _image_bytes(size: int, rgb: tuple, fmt: str) -> bytes:
+    """A small solid-colour JPEG or PNG made with Qt (PyQt6 is a requirement; Pillow is not, and a clean checkout
+    must run the whole suite)."""
+    from PyQt6.QtCore import QBuffer, QIODevice
+    from PyQt6.QtGui import QColor, QImage
+
+    image = QImage(size, size, QImage.Format.Format_RGB32)
+    image.fill(QColor(*rgb))
+    buf = QBuffer()
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buf, fmt)
+    return bytes(buf.data())
+
 _FFMPEG = find_tool("ffmpeg.exe")
 _FFPROBE = find_tool(FFPROBE_EXE_NAME)
 requires_ffmpeg = pytest.mark.skipif(_FFMPEG is None or _FFPROBE is None, reason="ffmpeg/ffprobe not available")
@@ -141,14 +155,9 @@ def test_builds_a_chaptered_m4b_with_tags(tmp_path):
 
 @requires_ffmpeg
 def test_the_cover_is_embedded(tmp_path):
-    from PIL import Image
-    import io
-
-    buf = io.BytesIO()
-    Image.new("RGB", (64, 64), (200, 30, 30)).save(buf, format="JPEG")
     chapters = [mb.BookChapter(_tone_mp3(tmp_path / "01.mp3", 1.5), "One")]
     out = tmp_path / "Book.m4b"
-    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book", cover=buf.getvalue(), cover_mime="image/jpeg"))
+    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book", cover=_image_bytes(64, (200, 30, 30), "JPEG"), cover_mime="image/jpeg"))
     assert result.status == STATUS_OK, result.message
     video = [s for s in _probe(out)["streams"] if s["codec_type"] == "video"]
     assert video and video[0]["disposition"]["attached_pic"] == 1
@@ -225,16 +234,12 @@ def test_the_opf_matches_audiobookshelfs_documented_shape():
 
 @requires_ffmpeg
 def test_the_sidecar_files_are_written_beside_the_audiobook_only_when_asked(tmp_path):
-    from PIL import Image
-    import io
-
-    buf = io.BytesIO()
-    Image.new("RGB", (32, 32), (10, 120, 200)).save(buf, format="PNG")
+    png = _image_bytes(32, (10, 120, 200), "PNG")
     src = _tone_mp3(tmp_path / "01.mp3", 1.0)
     for flag, folder in ((False, "plain"), (True, "with")):
         spec = mb.BookSpec(
             [mb.BookChapter(src, "One")], tmp_path / folder / "Book.m4b", "Book", author="A",
-            cover=buf.getvalue(), cover_mime="image/png", write_sidecar=flag,
+            cover=png, cover_mime="image/png", write_sidecar=flag,
         )
         result = mb.build_m4b(spec)
         assert result.status == STATUS_OK, result.message
@@ -328,15 +333,12 @@ def test_old_build_folders_are_swept_but_a_fresh_one_is_left(tmp_path):
 
 @requires_ffmpeg
 def test_a_cover_an_m4b_cannot_carry_is_left_out_with_a_note(tmp_path):
-    import io
-
-    from PIL import Image
-
-    buf = io.BytesIO()
-    Image.new("RGB", (32, 32), (1, 2, 3)).save(buf, format="GIF")
+    # Qt cannot write GIFs and Pillow is not a requirement; the builder judges the BYTES (the GIF89a magic), so a
+    # GIF header followed by padding is all this test needs.
+    gif = b"GIF89a" + bytes(40)
     chapters = [mb.BookChapter(_tone_mp3(tmp_path / "01.mp3", 1.0), "One")]
     out = tmp_path / "Book.m4b"
-    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book", cover=buf.getvalue(), cover_mime="image/gif"))
+    result = mb.build_m4b(mb.BookSpec(chapters, out, "Book", cover=gif, cover_mime="image/gif"))
     assert result.status == STATUS_OK, result.message
     assert any("not a JPEG or PNG" in n for n in result.notes)
     assert not [s for s in _probe(out)["streams"] if s["codec_type"] == "video"]
