@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-14#01 -- Redact no longer freezes the window on a slow file
+
+- Redact now runs each file on a worker thread (redactor_common 2026-10-13-06): the window keeps painting and Cancel stays clickable while a repair, a lookup or a big save is running. Before, the window could freeze for the whole length of one slow file and the Cancel click was only seen between files.
+- Requires redactor_common 2026-10-13-06.
+
 ## 2026-10-13#06 -- Help > About shows a real About page; README menus match the app
 
 - **Help > About** now shows ABOUT.md: what the app does, how to open files (Open Files / Open Folder, File > Include Subfolders, dropping files, a folder on the command line) and the full command-line reference. It used to show the developer README.
