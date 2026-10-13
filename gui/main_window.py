@@ -414,7 +414,10 @@ class MainWindow(QMainWindow):
                 open_files=self.load_files_dialog,
                 open_folder=self.load_folder_dialog,
                 import_and_convert=self.import_and_convert_dialog,
-                extra_open=[MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog)],
+                extra_open=[
+                    MenuAction("include_subfolders", "Include &Subfolders", self._toggle_include_subfolders, checkable=True),
+                    MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog),
+                ],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
                 # dropped below; Ctrl+S stays as an alias of Save All.
@@ -520,6 +523,8 @@ class MainWindow(QMainWindow):
         # the same); lint only checks the key against the label "Save ...".
         with_aliases(actions["save_all"], "Ctrl+S")
 
+        self.action_include_subfolders = actions["include_subfolders"]
+        self.action_include_subfolders.setChecked(self.settings.include_subfolders)
         self.action_load_files = actions["open_files"]
         self.action_load_folder = actions["open_folder"]
         self.action_save_all = actions["save_all"]
@@ -630,6 +635,11 @@ class MainWindow(QMainWindow):
             self._remember_last_directory(folder)
             self._load_paths([Path(folder)])
 
+    def _toggle_include_subfolders(self) -> None:
+        """File > Include Subfolders: remembered setting for Load Folder / drops."""
+        self.settings.include_subfolders = self.action_include_subfolders.isChecked()
+        save_settings(self.settings)
+
     def _remember_last_directory(self, path: str) -> None:
         self.settings.last_directory = directory_for(path)
         save_settings(self.settings)
@@ -653,10 +663,10 @@ class MainWindow(QMainWindow):
 
     def _load_paths(self, raw_paths: list[Path]) -> None:
         mp3_paths = self._scan_with_progress(
-            "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths)
+            "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths, recursive=self.settings.include_subfolders)
         )
         if not mp3_paths:
-            importable = find_importable_files(raw_paths)
+            importable = find_importable_files(raw_paths, recursive=self.settings.include_subfolders)
             if not importable:
                 QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
                 return

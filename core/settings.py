@@ -115,6 +115,10 @@ class Settings:
     # project's plain-configparser persistence).
     last_directory: str = ""
 
+    # File > Include Subfolders: Load Folder (and the offer to convert a folder with no .mp3) also searches
+    # the folder's subfolders. On by default, which is how Load Folder always behaved.
+    include_subfolders: bool = True
+
     # Column visibility/order, field-key based -- see
     # redactor_common.core.table_settings for why field-name (not
     # index) based persistence matters.
@@ -222,6 +226,7 @@ class Settings:
             "ffprobe_path": self.ffprobe_path,
             "fpcalc_path": self.fpcalc_path,
             "last_directory": self.last_directory,
+            "include_subfolders": str(self.include_subfolders),
             "hidden_columns": _dump_list(self.hidden_columns),
             "column_order": _dump_list(self.column_order),
             "has_column_preference": str(self.has_column_preference),
@@ -262,6 +267,7 @@ class Settings:
             ffprobe_path=section.get("ffprobe_path", fallback=""),
             fpcalc_path=section.get("fpcalc_path", fallback=""),
             last_directory=section.get("last_directory", fallback=""),
+            include_subfolders=_get_bool(section, "include_subfolders", True),
             hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
             column_order=_load_str_list(section.get("column_order", fallback="")),
             has_column_preference=_get_bool(section, "has_column_preference", False),

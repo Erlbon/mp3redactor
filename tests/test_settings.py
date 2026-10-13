@@ -253,3 +253,9 @@ def test_library_root_and_move_pattern_round_trip(tmp_path):
     save_settings(Settings(library_root="/music", move_pattern="%artist%/%title%"), tmp_path)
     loaded = load_settings(tmp_path)
     assert loaded.library_root == "/music" and loaded.saved_move_pattern() == "%artist%/%title%"
+
+
+def test_include_subfolders_defaults_on_and_round_trips(tmp_path):
+    assert Settings().include_subfolders is True
+    save_settings(Settings(include_subfolders=False), tmp_path)
+    assert load_settings(tmp_path).include_subfolders is False
