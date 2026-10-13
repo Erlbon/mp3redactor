@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-13#01 -- Opening a folder of FLAC (or WAV, OGG, M4A...) offers to convert it
+
+- Load Folder / Load Files on a selection with no `.mp3` used to say only "No .mp3 files found". When the folder (and its subfolders) holds audio files the app can convert, it now says how many and which kinds, and offers to convert them to MP3 beside the originals (which are kept) and load the new files; the same bitrate question as File > Import & Convert follows. A folder with nothing convertible gives the old message.
+
 ## 2026-10-12#06 -- Redact: Discogs as a cover source, new Fetch lyrics step; Metadata > Cover > Get from MusicBrainz / Discogs; Discogs lookup saves the cover; track "9/10" no longer renames to "910"; MusicBrainz lookup crash fixed
 
 - **Rename / Export, Redact's rename step and the `rename` / `move` commands**: a track or disc tag of the form "9/10" (number/total) now gives just "9" in the filename. The "/" used to be dropped, so the file became "910".

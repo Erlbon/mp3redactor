@@ -122,3 +122,16 @@ def test_successful_conversion_leaves_only_the_mp3(tmp_path):
     status, _ = convert_to_mp3(src, tmp_path / "tone.mp3")
     assert status == STATUS_OK
     assert sorted(p.name for p in tmp_path.iterdir()) == ["tone.mp3", "tone.wav"]
+
+
+def test_find_importable_files_searches_subfolders_and_ignores_the_rest(tmp_path):
+    from core.mp3_converter import find_importable_files
+
+    (tmp_path / "album" / "disc2").mkdir(parents=True)
+    for name in ("a.flac", "album/b.WAV", "album/disc2/c.m4a", "album/cover.jpg", "album/d.mp3"):
+        (tmp_path / name).write_text("x")
+    names = [p.name for p in find_importable_files([tmp_path])]
+    assert names == ["a.flac", "b.WAV", "c.m4a"]
+    assert [p.name for p in find_importable_files([tmp_path], recursive=False)] == ["a.flac"]
+    assert [p.name for p in find_importable_files([tmp_path / "a.flac"])] == ["a.flac"]
+    assert find_importable_files([tmp_path / "missing"]) == []

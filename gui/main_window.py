@@ -75,7 +75,7 @@ from core.mp3_file import (
 )
 from core.m4b_builder import build_m4b, group_by_folder
 from core.mp3_converter import (
-    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, plan_conversions,
+    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, find_importable_files, plan_conversions,
 )
 from core.mp3_genres import COMMON_MP3_GENRES
 from core.mp3_genres import exclude_hidden as exclude_hidden_genres
@@ -656,7 +656,18 @@ class MainWindow(QMainWindow):
             "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths)
         )
         if not mp3_paths:
-            QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
+            importable = find_importable_files(raw_paths)
+            if not importable:
+                QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
+                return
+            kinds = ", ".join(sorted({p.suffix.lstrip(".").upper() for p in importable}))
+            answer = QMessageBox.question(
+                self, "No MP3 Files",
+                f"No .mp3 files found, but {len(importable)} audio file(s) ({kinds}) that can be converted to MP3.\n\n"
+                "Convert them to MP3 (beside the originals, which are kept) and load the new files?",
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self._convert_paths_and_load([str(p) for p in importable])
             return
 
         # Load Files/Folder replaces self.files wholesale (unlike the epub
@@ -837,7 +848,10 @@ class MainWindow(QMainWindow):
         )
         if not paths:
             return
+        self._convert_paths_and_load(paths)
 
+    def _convert_paths_and_load(self, paths: list[str]) -> None:
+        """Asks the bitrate, converts `paths` to MP3 beside the originals and adds the results to the list."""
         bitrate_labels = [f"{kbps} kbps" for kbps in BITRATE_CHOICES_KBPS]
         default_index = BITRATE_CHOICES_KBPS.index(DEFAULT_BITRATE_KBPS)
         chosen_label, ok = QInputDialog.getItem(
