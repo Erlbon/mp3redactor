@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-13#03 -- Shared Include Subfolders item; folder scans show progress
+
+- **File > Include Subfolders** is now redactor_common's shared menu item (the same item and mnemonic in every Redactor app); the setting is unchanged and now also applies to Refresh List, which re-scans loaded folders including subfolders when it is ticked.
+- The folder walks (Load Folder, the "convert FLAC/WAV..." offer, Refresh List) run in the background under a progress dialog; before, the window could look frozen on a big or networked library and the dialog never repainted.
+- Requires redactor_common 2026-10-13-02.
+
 ## 2026-10-13#02 -- File > Include Subfolders
 
 - New checkable **File > Include Subfolders** (on by default, remembered): Load Folder, a dropped folder and the offer to convert a folder with no `.mp3` search the subfolders only when it is ticked. Untick it to load just the folder itself.

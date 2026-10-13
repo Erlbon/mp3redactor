@@ -163,7 +163,8 @@ from redactor_common.core.rename_pattern import unique_path, validate_filename_s
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
-from redactor_common.gui.progress import ProgressReporter, run_with_progress
+from redactor_common.gui.folder_options import attach_include_subfolders, include_subfolders_slot
+from redactor_common.gui.progress import ProgressReporter, run_busy, run_with_progress
 from redactor_common.gui.redact_dialog import (
     RecipeEditorDialog,
     RedactResultsDialog,
@@ -413,11 +414,9 @@ class MainWindow(QMainWindow):
             file=_drop_keys(standard_file_items(
                 open_files=self.load_files_dialog,
                 open_folder=self.load_folder_dialog,
+                include_subfolders=include_subfolders_slot(),
                 import_and_convert=self.import_and_convert_dialog,
-                extra_open=[
-                    MenuAction("include_subfolders", "Include &Subfolders", self._toggle_include_subfolders, checkable=True),
-                    MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog),
-                ],
+                extra_open=[MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog)],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
                 # dropped below; Ctrl+S stays as an alias of Save All.
@@ -524,7 +523,9 @@ class MainWindow(QMainWindow):
         with_aliases(actions["save_all"], "Ctrl+S")
 
         self.action_include_subfolders = actions["include_subfolders"]
-        self.action_include_subfolders.setChecked(self.settings.include_subfolders)
+        attach_include_subfolders(
+            self.action_include_subfolders, load=lambda: self.settings.include_subfolders, save=self._set_include_subfolders,
+        )
         self.action_load_files = actions["open_files"]
         self.action_load_folder = actions["open_folder"]
         self.action_save_all = actions["save_all"]
@@ -635,9 +636,9 @@ class MainWindow(QMainWindow):
             self._remember_last_directory(folder)
             self._load_paths([Path(folder)])
 
-    def _toggle_include_subfolders(self) -> None:
-        """File > Include Subfolders: remembered setting for Load Folder / drops."""
-        self.settings.include_subfolders = self.action_include_subfolders.isChecked()
+    def _set_include_subfolders(self, on: bool) -> None:
+        """File > Include Subfolders (redactor_common's shared item): remembered for Load Folder, drops, Refresh."""
+        self.settings.include_subfolders = on
         save_settings(self.settings)
 
     def _remember_last_directory(self, path: str) -> None:
@@ -645,28 +646,19 @@ class MainWindow(QMainWindow):
         save_settings(self.settings)
 
     def _scan_with_progress(self, label: str, scan):
-        """Runs a folder walk (find_mp3_files() and friends -- slow on a
-        big or networked library) under an indeterminate, non-cancellable
-        progress dialog, so the window doesn't look frozen. The walk
-        itself stays on this thread; the dialog is pumped between the
-        per-folder steps via the `scan` callable's own single call, so
-        this just shows it (threshold 0) and lets it paint first."""
-        reporter = ProgressReporter(self, 0, label, threshold=0, cancellable=False)
-        try:
-            dialog = reporter.dialog
-            if dialog is not None:
-                dialog.setRange(0, 0)  # busy indicator
-                QApplication.processEvents()
-            return scan()
-        finally:
-            reporter.close()
+        """Runs a folder walk (find_mp3_files() and friends -- slow on a big or networked library) on a worker
+        thread under an indeterminate progress dialog (redactor_common's run_busy), so the window keeps painting."""
+        return run_busy(self, label, scan)
 
     def _load_paths(self, raw_paths: list[Path]) -> None:
         mp3_paths = self._scan_with_progress(
             "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths, recursive=self.settings.include_subfolders)
         )
         if not mp3_paths:
-            importable = find_importable_files(raw_paths, recursive=self.settings.include_subfolders)
+            importable = self._scan_with_progress(
+                "Looking for audio files to convert...",
+                lambda: find_importable_files(raw_paths, recursive=self.settings.include_subfolders),
+            )
             if not importable:
                 QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
                 return
@@ -728,7 +720,7 @@ class MainWindow(QMainWindow):
             "Scanning for new files...",
             lambda: find_new_files_in_loaded_folders(
                 existing_paths,
-                lambda folder: find_mp3_files([Path(folder)], recursive=False),
+                lambda folder: find_mp3_files([Path(folder)], recursive=self.settings.include_subfolders),
             ),
         )
         present_paths = [p for p in existing_paths if os.path.exists(p)]
