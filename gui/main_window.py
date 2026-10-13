@@ -165,7 +165,7 @@ from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
 from redactor_common.gui.folder_options import attach_include_subfolders, include_subfolders_slot
 from redactor_common.gui.progress import run_busy, run_with_progress
-from gui.work_progress import run_work_with_progress
+from redactor_common.gui.work_progress import run_work_with_progress
 from redactor_common.gui.redact_dialog import (
     RecipeEditorDialog,
     RedactResultsDialog,

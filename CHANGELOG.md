@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-14#02 -- Shared progress helper
+
+- The counted worker-thread progress dialog (Import and Convert, the Analyze checks, the M4B build) is now redactor_common's `run_work_with_progress`; this app's own copy is gone. No behaviour change.
+- Requires redactor_common 2026-10-14-01.
+
 ## 2026-10-14#01 -- Redact no longer freezes the window on a slow file
 
 - Redact now runs each file on a worker thread (redactor_common 2026-10-13-06): the window keeps painting and Cancel stays clickable while a repair, a lookup or a big save is running. Before, the window could freeze for the whole length of one slow file and the Cancel click was only seen between files.

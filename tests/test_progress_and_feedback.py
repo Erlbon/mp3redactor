@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import QInputDialog, QMessageBox, QProgressDialog  # noqa: 
 
 import gui.main_window as mw  # noqa: E402
 from core.mp3_file import STATUS_ERROR, STATUS_OK  # noqa: E402
-from gui.work_progress import run_work_with_progress  # noqa: E402
+from redactor_common.gui.work_progress import run_work_with_progress  # noqa: E402
 from tests.test_cover_gui import FIXTURE, _app, _image_bytes, _load, _pump_until, _select_all, window  # noqa: E402,F401
 
 

@@ -28,7 +28,7 @@ Where each part lives:
 | M4B audiobooks | `core/m4b_builder.py`, lookup `core/audiobook_lookup.py` |
 | Redact steps | `core/redact_steps.py` on redactor_common's pipeline |
 | Command line | `mp3cli/` (the same exe, see ABOUT.md) |
-| Slow work off the GUI thread | `gui/work_progress.py`, redactor_common's `run_with_progress` / `run_busy` |
+| Slow work off the GUI thread | redactor_common's `run_work_with_progress` / `run_with_progress` / `run_busy` |
 
 ## Menus and shortcuts
 
