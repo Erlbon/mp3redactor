@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-14#07 -- Small clean-ups after redactor_common 2026-10-14-06
+
+- **Tools > MusicBrainz Database Setup**: the free-disk-space line is back inside the "Build from the MusicBrainz core dump" box, under the build options, where it was before the shared dialog was adopted.
+- **Command line**: a folder or wildcard no longer picks up the app's own leftovers (a Redact backup such as `song.redact-orig.mp3`, a hidden `.mp3redactor-redact-*.mp3` scratch copy); a leftover named explicitly is still processed.
+- Requires redactor_common 2026-10-14-06.
+
 ## 2026-10-14#06 -- More shared code: lookups, key prompt, command line, folder scans, settings dialogs
 
 This app's own copies of code the Redactor family shared are gone; it now uses redactor_common's. Almost nothing changes for you:

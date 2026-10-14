@@ -84,6 +84,20 @@ def test_info_reports_an_unreadable_file_and_exits_1(tmp_path, capsys):
     assert code == 1 and document["failed"] == 1 and document["results"][0]["status"] != "ok"
 
 
+def test_folder_and_wildcard_skip_the_apps_own_leftovers_but_a_named_one_is_kept(tmp_path):
+    """A Redact backup or hidden scratch copy left beside the songs never becomes work when a folder or a
+    wildcard is expanded; naming it on the command line still processes it."""
+    for name in ("song.mp3", "song.redact-orig.mp3", ".mp3redactor-redact-x.mp3"):
+        (tmp_path / name).write_bytes(b"x")
+    errors = []
+    out = SimpleNamespace(error=errors.append)
+    names = lambda files: [os.path.basename(f) for f in files]  # noqa: E731
+    assert names(cli_files.collect([str(tmp_path)], out)) == ["song.mp3"]
+    assert names(cli_files.collect([str(tmp_path / "*.mp3")], out)) == ["song.mp3"]
+    assert names(cli_files.collect([str(tmp_path / "song.redact-orig.mp3")], out)) == ["song.redact-orig.mp3"]
+    assert errors == []
+
+
 def test_info_with_nothing_found_is_a_usage_error(tmp_path, capsys):
     with pytest.raises(CliError, match="no MP3 files"):
         main(["info", str(tmp_path / "nope.mp3")])

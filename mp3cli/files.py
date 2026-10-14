@@ -13,6 +13,7 @@ from core.mp3_file import MP3File
 from core.scan_service import load_files
 from core.settings import Settings, load_settings
 from redactor_common.cli import CliError, Output, expand_paths
+from redactor_common.core.temp_names import is_app_temp_name
 
 EXTENSIONS = (".mp3",)
 
@@ -26,8 +27,10 @@ def add_path_arguments(parser) -> None:
 
 def collect(paths: list[str], out: Output, recurse: bool = True, extensions=EXTENSIONS, noun: str = "MP3") -> list[str]:
     """The files the arguments name. An argument that matches nothing is an error; if that leaves no files at
-    all the command ends with a usage error."""
-    files, missing = expand_paths(paths, extensions, recursive=recurse)
+    all the command ends with a usage error. The app's own temp/backup leftovers (e.g. "x.redact-orig.mp3",
+    ".mp3redactor-redact-*.mp3") found in a folder or by a wildcard are skipped; a file named explicitly is
+    still processed."""
+    files, missing = expand_paths(paths, extensions, recursive=recurse, skip=is_app_temp_name)
     for argument in missing:
         out.error(f"nothing found for {argument}")
     if not files:

@@ -96,6 +96,7 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
             browse_for_destination=True,
             show_status=True,
             free_space_warning=(FREE_SPACE_WARNING_BYTES, FREE_SPACE_WARNING_TEXT),
+            space_label_placement="manual",  # placed below the build options, as before the adoption
         )
         self.setMinimumWidth(640)
         options = BuildOptions.from_json(settings.musicbrainz_options)
@@ -139,7 +140,9 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
         self.track_index.setChecked(options.track_index)
         layout.addWidget(self.track_index)
         self._sync_track_boxes()
-        # Below the shared status and free-space lines, above the Check File / Build row.
+        # The free-space line belongs to the build: last in the "Build from" box, under its options.
+        layout.addWidget(self.space_label)
+        # Below the shared status line, above the Check File / Build row.
         self.add_section(box)
 
     # -- widgets -------------------------------------------------------------------------

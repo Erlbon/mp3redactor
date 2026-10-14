@@ -56,6 +56,33 @@ def test_dialog_starts_with_the_default_options():
     assert "Free space" in dialog.space_label.text()
 
 
+def test_free_space_line_sits_last_in_the_build_box_as_before():
+    """The free-space note is part of the build: inside the "Build from" box, under its options (the layout
+    from before the shared dialog was adopted), not above the box."""
+    from PyQt6.QtWidgets import QGroupBox
+
+    dialog, _ = make_dialog()
+    box = dialog.space_label.parentWidget()
+    assert isinstance(box, QGroupBox) and box.title() == "Build from the MusicBrainz core dump"
+    layout = box.layout()
+    assert layout.itemAt(layout.count() - 1).widget() is dialog.space_label
+    assert dialog.layout().indexOf(dialog.space_label) == -1
+
+
+def test_build_question_ends_with_the_replacing_note(boxes, tmp_path, monkeypatch):
+    import redactor_common.gui.local_db_settings_dialog as shared_dialog
+
+    dest = tmp_path / "mb.db"
+    dest.write_bytes(b"old")
+    dialog, _ = make_dialog()
+    dialog.dump_edit.setText(str(tmp_path / "mbdump.tar.bz2"))
+    dialog.path_edit.setText(str(dest))
+    monkeypatch.setattr(shared_dialog, "run_dump_import", lambda *a, **k: None)
+    dialog._build_database()
+    confirm = next(text for kind, _title, text in boxes if kind == "question")
+    assert confirm.endswith(".\n\nThe existing database is replaced only when the new one is complete.")
+
+
 def test_dialog_names_the_download_page_and_the_licence():
     text = dlg_module.INSTRUCTIONS
     assert "musicbrainz.org/doc/MusicBrainz_Database/Download" in text
