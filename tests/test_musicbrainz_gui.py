@@ -108,6 +108,8 @@ def test_build_database_end_to_end(boxes, tmp_path):
     assert dialog._build_database() == dest
     assert os.path.isfile(dest)
     assert boxes[-1][0] == "information" and "6 releases kept" in boxes[-1][2]
+    confirm = next(text for kind, _title, text in boxes if kind == "question")
+    assert confirm.startswith("Build mb.db from the dump?") and "Keeping:" in confirm
     assert "6 releases, 11 tracks" in dialog.status_label.text()
     assert settings.musicbrainz_database == dest and settings.musicbrainz_dump == dump  # remembered
     ok, message = dialog.check_result()
@@ -130,7 +132,9 @@ def test_cancelled_build_leaves_nothing(boxes, tmp_path, monkeypatch):
     dialog, _ = make_dialog()
     dialog.dump_edit.setText(dump)
     dialog.path_edit.setText(str(tmp_path / "mb.db"))
-    monkeypatch.setattr(dlg_module, "run_dump_import", lambda *a, **k: None)  # the user pressed Cancel
+    import redactor_common.gui.local_db_settings_dialog as shared_dialog  # the shared build tail runs it
+
+    monkeypatch.setattr(shared_dialog, "run_dump_import", lambda *a, **k: None)  # the user pressed Cancel
     assert dialog._build_database() is None
     assert not (tmp_path / "mb.db").exists()
 
@@ -152,15 +156,16 @@ def test_browse_dump_fills_the_field(monkeypatch):
 
 
 def test_free_space_warning_when_the_drive_is_small(monkeypatch, tmp_path):
+    import shutil
     from collections import namedtuple
 
     usage = namedtuple("usage", "total used free")
-    monkeypatch.setattr(dlg_module.shutil, "disk_usage", lambda _p: usage(100, 90, 5 << 30))
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(100, 90, 5 << 30))
     dialog, _ = make_dialog()
     dialog.path_edit.setText(str(tmp_path / "not" / "yet" / "mb.db"))  # nearest existing folder is measured
     text = dialog.free_space_text()
-    assert "5.0 GB" in text and "may not be enough" in text
-    monkeypatch.setattr(dlg_module.shutil, "disk_usage", lambda _p: usage(100, 10, 500 << 30))
+    assert "5.0 GB" in text and "may not be enough" in text and "roughly 12 GB" in text
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(100, 10, 500 << 30))
     assert "may not be enough" not in dialog.free_space_text()
 
 

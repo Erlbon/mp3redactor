@@ -180,7 +180,7 @@ class Settings:
 
     # The user agreed to keep an API key/token in a plain, UNENCRYPTED file
     # because this computer has no secure credential store (asked once by
-    # gui/secret_prompts.py). Only the yes/no lives here -- never a secret --
+    # redactor_common.gui.secret_prompts). Only the yes/no lives here -- never a secret --
     # and it is not part of Export Settings (it is about this computer).
     allow_unencrypted_fallback: bool = False
 
@@ -360,19 +360,5 @@ def save_settings(settings: Settings, target_dir: Path | None = None) -> None:
         # settings persistence is best-effort; in-memory value still applies this session
 
 
-def resolve_start_directory(last_directory: str) -> str:
-    """Returns last_directory if it's still a real directory, else "" --
-    e.g. a removable drive that's since been unplugged, or a settings
-    file carried over from another machine. Callers should treat ""
-    as "let Qt use its own default" for a file dialog's starting
-    location, same semantics as the epub tool's QSettings-based
-    load_last_directory()."""
-    return last_directory if last_directory and Path(last_directory).is_dir() else ""
-
-
-def directory_for(path: str) -> str:
-    """The directory to remember as the next dialog's starting point,
-    given a path just picked -- a file (from Open Files) or a folder
-    itself (from Open Folder)."""
-    p = Path(path)
-    return str(p if p.is_dir() else p.parent)
+# The last-directory helpers (resolve_start_directory, directory_for) are
+# redactor_common.gui.qsettings_store's Qt-free functions; the GUI imports them there.

@@ -114,7 +114,8 @@ order, with the default recipe:
 | Move into library folders | no | Under the saved library folder. |
 
 Leftover `.redact-orig.mp3` and `.bak` files are plain copies of the originals: delete them in Explorer once you
-are happy with the result.
+are happy with the result. Open Folder and Refresh List never list them (nor the other Redactor apps' temp and
+scratch files: redactor_common's `core/temp_names`).
 
 ## Command line
 

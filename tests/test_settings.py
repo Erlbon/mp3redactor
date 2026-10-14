@@ -1,11 +1,11 @@
 from core.settings import (
     Settings,
     dedupe_and_trim_pattern_history,
-    directory_for,
     load_settings,
-    resolve_start_directory,
     save_settings,
 )
+# The window's last-directory helpers are redactor_common's (gui/main_window.py imports them there).
+from gui.main_window import directory_for, resolve_start_directory
 
 
 def test_default_settings_keep_backups():

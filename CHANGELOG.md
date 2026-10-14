@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-14#06 -- More shared code: lookups, key prompt, command line, folder scans, settings dialogs
+
+This app's own copies of code the Redactor family shared are gone; it now uses redactor_common's. Almost nothing changes for you:
+
+- **Online lookups** (MusicBrainz, AcoustID, Discogs): the request pacing, the Discogs transport (size cap, the token never carried to another host on a redirect), the HTTP 429 handling and the token scrubbing are redactor_common's `lookup_client` (Throttle, make_default_fetch, status_errors, redact_text). Error messages are the same; an API key or token never appears in one.
+- **"No Secure Storage Available"** (Tools > API Keys on a computer without a credential store): the shared question; it now also names macOS Keychain and the Linux Secret Service. Your remembered answer is applied at start-up as before.
+- **Command line**: field names match a little more leniently: "album-artist", "Album Artist", "album_artist" and "albumartist" all work for `--fields`, `-s` and `--clear`. The parser itself is the shared one; options and messages are unchanged.
+- **Open Folder / drops / Refresh List** skip the whole family's leftover files now, not only Redact's scratch copies: `*.redact-orig.mp3` backups, `.part` copies and other apps' hidden scratch files are never listed.
+- **A folder with no MP3s but convertible audio**: the offer is the shared box (same title, "No MP3 Files", and the same question); its text now says "No MP3 files found, but N audio file(s) in other formats (FLAC, WAV) ..." and **Show Details** lists the files. Family leftovers are never offered for conversion.
+- **Tools > MusicBrainz Database Setup**: the status line, free-space note, Browse (a Save dialog) and the build's confirm / progress / summary are the shared dialog's. The free-space line now sits under the status line, above the build options.
+- **Tools > External Tools** and Preferences > Tools: the rows are the shared ones (same labels, "✓ found" / "✗ not found", Browse now also offers All files).
+- Removed: `gui/secret_prompts.py`; the throttle classes in `core/musicbrainz_lookup.py` and `core/discogs_lookup.py` (and AcoustID's use of it); Discogs' own fetch and 429 wrapper; `resolve_field`/`parse_assignment` in `mp3cli/fields.py` (now `RESOLVER`); the body of `mp3cli/main.py`; `find_importable_files` in `core/mp3_converter.py`; the folder walk in `find_mp3_files` (kept as a thin wrapper); `resolve_start_directory`/`directory_for` in `core/settings.py`; the import coercers in `core/settings_adapter.py`; the MusicBrainz dialog's browse/status/free-space/build tail; `_ToolRow` in `gui/external_tools_dialog.py`.
+- Requires redactor_common 2026-10-14-05.
+
 ## 2026-10-14#05 -- History follows renamed and moved files; Delete History uses the Recycle Bin; history in Export/Import Settings
 
 - **A renamed or moved file keeps its history.** With history on, File > Rename File, Search and Replace on the filename, Rename / Export / Move (rename and move into folders), File > Undo Last Rename, Redact's rename and move steps, and the command line's `rename`, `move` and `redact` now take the file's history entries along, so Tools > History lists them under the file's current name and Restore Old Values finds it. A Redact entry is written at the name the file had when it was saved, then follows the rename or move. A copy (Export, `move --copy`) leaves the entries with the original. With history off nothing is written.

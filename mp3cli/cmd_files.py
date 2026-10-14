@@ -51,6 +51,11 @@ def _values_for(mp3: MP3File, zero_pad: int) -> dict[str, str]:
     return values
 
 
+def _follow_move(old_path: str, new_path: str) -> None:
+    """The shared rename_items/move_items on_moved hook: with history on, the journal's entries follow the file."""
+    record_file_moves([(old_path, new_path)])
+
+
 # --- rename -------------------------------------------------------------------------
 
 
@@ -72,7 +77,7 @@ def run_rename(args: argparse.Namespace, out: Output) -> int:
     failed = commands.rename_items(
         files, pattern=pattern, values_for=lambda m: _values_for(m, zero_pad), path_of=lambda m: str(m.path),
         skip_reason=skip_reason, out=out, dry_run=args.dry_run, ascii_only=_ascii(args),
-        on_renamed=lambda m, new_path: record_file_moves([(str(m.path), new_path)]),
+        on_moved=_follow_move,
     )
     return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, pattern=pattern)
 
@@ -98,16 +103,11 @@ def run_move(args: argparse.Namespace, out: Output) -> int:
     root = args.root or settings().library_root
     zero_pad = _zero_pad(args)
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
-    first_row = len(out.records)
+    # on_moved is called only for a real move (never a copy, which leaves the original and its entries).
     failed = commands.move_items(
         files, root=root, pattern=args.pattern, values_for=lambda m: _values_for(m, zero_pad),
         path_of=lambda m: str(m.path), skip_reason=skip_reason, out=out, dry_run=args.dry_run, copy=args.copy,
-        ascii_only=_ascii(args),
-    )
-    # The journal's entries follow each moved file (a copy leaves the original, and its entries, where they are).
-    record_file_moves(
-        (row["path"], row["new_path"]) for row in out.records[first_row:]
-        if isinstance(row, dict) and row.get("status") == "moved" and row.get("new_path")
+        ascii_only=_ascii(args), on_moved=_follow_move,
     )
     return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, root=root)
 

@@ -124,14 +124,20 @@ def test_successful_conversion_leaves_only_the_mp3(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["tone.mp3", "tone.wav"]
 
 
-def test_find_importable_files_searches_subfolders_and_ignores_the_rest(tmp_path):
-    from core.mp3_converter import find_importable_files
+def test_importable_extensions_find_what_the_convert_offer_should_list(tmp_path):
+    # The GUI's convert offer walks with redactor_common's find_by_extension over IMPORTABLE_EXTENSIONS.
+    from pathlib import Path
+
+    from core.mp3_converter import IMPORTABLE_EXTENSIONS
+    from redactor_common.core.folder_discovery import find_by_extension
+
+    def names(paths, recursive=True):
+        return [Path(p).name for p in find_by_extension(paths, IMPORTABLE_EXTENSIONS, recursive)]
 
     (tmp_path / "album" / "disc2").mkdir(parents=True)
     for name in ("a.flac", "album/b.WAV", "album/disc2/c.m4a", "album/cover.jpg", "album/d.mp3"):
         (tmp_path / name).write_text("x")
-    names = [p.name for p in find_importable_files([tmp_path])]
-    assert names == ["a.flac", "b.WAV", "c.m4a"]
-    assert [p.name for p in find_importable_files([tmp_path], recursive=False)] == ["a.flac"]
-    assert [p.name for p in find_importable_files([tmp_path / "a.flac"])] == ["a.flac"]
-    assert find_importable_files([tmp_path / "missing"]) == []
+    assert names([tmp_path]) == ["a.flac", "b.WAV", "c.m4a"]
+    assert names([tmp_path], recursive=False) == ["a.flac"]
+    assert names([tmp_path / "a.flac"]) == ["a.flac"]
+    assert names([tmp_path / "missing"]) == []

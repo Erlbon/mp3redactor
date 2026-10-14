@@ -8,17 +8,19 @@ musicbrainz.org/doc/MusicBrainz_Database/Download, picks it here, chooses
 what to keep, and Build Database... converts it
 (core/musicbrainz_import.py) behind a cancellable progress dialog.
 
-redactor_common's LocalDatabaseSettingsDialog supplies the database path,
-Check File and the Build button; this adds the dump picker, the build
-options, a free-disk-space note and a status line (what the file was built
-from). The paths and options are saved in the app's Settings
-(core/settings.py), which the caller passes in.
+redactor_common's LocalDatabaseSettingsDialog supplies the database path
+(Browse is a Save dialog: the file may not exist yet), Check File, the
+Build button, the status line (what the file was built from), the
+free-disk-space note and the build tail (confirm, save first, progress
+dialog with a working Cancel, summary or error); this adds the dump
+picker, the build options and the MusicBrainz build function. The paths
+and options are saved in the app's Settings (core/settings.py), which the
+caller passes in.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 from typing import Callable, Optional
 
 from PyQt6.QtWidgets import (
@@ -33,9 +35,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-from redactor_common.core.dump_import import DumpImportError
-from redactor_common.core.local_db import LocalDatabaseError, forget_cached
-from redactor_common.gui.dump_import_runner import run_dump_import
+from redactor_common.core.local_db import LocalDatabaseError
 from redactor_common.gui.local_db_settings_dialog import LocalDatabaseSettingsDialog
 
 from core.app_paths import base_dir
@@ -54,6 +54,10 @@ DUMP_FILTER = "MusicBrainz core dump (*.tar.bz2 *.tar.xz *.tar.gz *.tar);;All fi
 # the real file): the default options end near 5-6 GB, and the scratch file needed while
 # building is about as big again.
 FREE_SPACE_WARNING_BYTES = 15 * (1 << 30)
+FREE_SPACE_WARNING_TEXT = (
+    " That may not be enough: a build with the default options needs roughly 12 GB while it runs "
+    "(about 5-6 GB stays afterwards). Choose another location or keep less."
+)
 
 INSTRUCTIONS = (
     "Look up albums offline in <b>MusicBrainz</b>: by release or recording id, barcode, or artist and "
@@ -88,9 +92,12 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
             build=lambda dialog: self._build_database(),
             build_label="Build Database…",
             parent=parent,
+            default_path=default_database_path,
+            browse_for_destination=True,
+            show_status=True,
+            free_space_warning=(FREE_SPACE_WARNING_BYTES, FREE_SPACE_WARNING_TEXT),
         )
         self.setMinimumWidth(640)
-        self.path_edit.setPlaceholderText(default_database_path())
         options = BuildOptions.from_json(settings.musicbrainz_options)
 
         box = QGroupBox("Build from the MusicBrainz core dump")
@@ -132,17 +139,8 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
         self.track_index.setChecked(options.track_index)
         layout.addWidget(self.track_index)
         self._sync_track_boxes()
-
-        self.space_label = QLabel()
-        self.space_label.setWordWrap(True)
-        layout.addWidget(self.space_label)
-        self.status_label = QLabel()
-        self.status_label.setWordWrap(True)
-        # Between the path row and the Check File / Build row.
-        self.layout().insertWidget(2, box)
-        self.layout().insertWidget(2, self.status_label)
-        self.path_edit.textChanged.connect(self._refresh_status)
-        self._refresh_status()
+        # Below the shared status and free-space lines, above the Check File / Build row.
+        self.add_section(box)
 
     # -- widgets -------------------------------------------------------------------------
 
@@ -154,47 +152,6 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
         path, _ = QFileDialog.getOpenFileName(self, "Choose the MusicBrainz core dump", start, DUMP_FILTER)
         if path:
             self.dump_edit.setText(path)
-
-    def _browse(self) -> None:
-        """The database may not exist yet, so this is a Save dialog that doesn't
-        ask to overwrite (picking an existing file just selects it)."""
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Choose where the database is (or will be) stored",
-            self.path_edit.text().strip() or default_database_path(),
-            self._file_filter, options=QFileDialog.Option.DontConfirmOverwrite,
-        )
-        if path:
-            self.path_edit.setText(path)
-
-    def free_space_text(self) -> str:
-        """How much room the database's drive has, with a warning when that is
-        less than a default build needs; "" when it can't be told."""
-        folder = os.path.dirname(os.path.abspath(self.path_edit.text().strip() or default_database_path()))
-        while folder and not os.path.isdir(folder):
-            parent = os.path.dirname(folder)
-            if parent == folder:
-                return ""
-            folder = parent
-        try:
-            free = shutil.disk_usage(folder).free
-        except OSError:
-            return ""
-        text = f"Free space where the database goes: {free / (1 << 30):,.1f} GB."
-        if free < FREE_SPACE_WARNING_BYTES:
-            text += (" That may not be enough: a build with the default options needs roughly 12 GB while it runs "
-                     "(about 5-6 GB stays afterwards). Choose another location or keep less.")
-        return text
-
-    def _refresh_status(self) -> None:
-        path = self.path_edit.text().strip()
-        if not path:
-            self.status_label.setText("No database yet.")
-        elif not os.path.isfile(path):
-            self.status_label.setText("Not built yet -- the file doesn't exist.")
-        else:
-            ok, message = self.check_result()
-            self.status_label.setText(message if ok else f"Problem: {message}")
-        self.space_label.setText(self.free_space_text())
 
     # -- options / build -----------------------------------------------------------------
 
@@ -224,31 +181,16 @@ class MusicBrainzSettingsDialog(LocalDatabaseSettingsDialog):
         if not options.types:
             QMessageBox.information(self, "Build Database", "Tick at least one release type.")
             return None
-        dest = self.path_edit.text().strip() or default_database_path()
-        replacing = (
-            "\n\nThe existing database is replaced only when the new one is complete." if os.path.exists(dest) else ""
+        # redactor_common's build tail: asks (adding "the existing database is replaced only when the new one is
+        # complete" when there is one), saves first so the source is remembered even if the build is cancelled,
+        # releases a cached open handle, runs the build behind a cancellable progress dialog, reports the
+        # summary or the error, and fills in the path.
+        confirm = (
+            "Build {name} from the dump?\n\nIt reads the whole dump, which can take an hour or more, and needs "
+            f"several GB of free disk space.\n{self.free_space_text()}\nKeeping: {options.describe()}."
         )
-        free = self.free_space_text()
-        answer = QMessageBox.question(
-            self, "Build Database",
-            f"Build {os.path.basename(dest)} from the dump?\n\nIt reads the whole dump, which can take an hour or "
-            f"more, and needs several GB of free disk space.\n{free}\nKeeping: {options.describe()}.{replacing}",
+        return self.run_build(
+            "Build MusicBrainz Database", "Reading the MusicBrainz dump…",
+            lambda dest, progress, cancelled: build_musicbrainz_database(source, dest, options, progress, cancelled),
+            confirm=confirm,
         )
-        if answer != QMessageBox.StandardButton.Yes:
-            return None
-        self._save_all(dest)  # remember the source even if the build is cancelled
-        forget_cached(dest)  # a lookup may still hold the old build open
-        try:
-            summary = run_dump_import(
-                self, "Build MusicBrainz Database", "Reading the MusicBrainz dump…",
-                lambda progress, cancelled: build_musicbrainz_database(source, dest, options, progress, cancelled),
-            )
-        except DumpImportError as exc:
-            QMessageBox.warning(self, "Build MusicBrainz Database", str(exc))
-            return None
-        if summary is None:
-            return None
-        QMessageBox.information(self, "Build MusicBrainz Database", summary.describe())
-        self.path_edit.setText(dest)
-        self._refresh_status()
-        return dest

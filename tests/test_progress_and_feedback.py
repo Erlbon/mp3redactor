@@ -109,6 +109,26 @@ def test_import_conversion_runs_on_a_worker_and_reports_in_the_status_bar(window
     assert no_info_boxes == [] and "Converted and loaded 1 file(s)" in _status(window)
 
 
+def test_a_folder_without_mp3s_gets_the_shared_convert_offer(window, tmp_path, monkeypatch):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "a.flac").write_bytes(b"x")
+    (tmp_path / "sub" / "b.wav").write_bytes(b"x")
+    (tmp_path / "song.redact-orig.flac").write_bytes(b"x")  # a family leftover: never offered
+    asked, converted = {}, []
+
+    def fake_offer(parent, found, loaded_count, **kwargs):
+        asked.update(found=[Path(p).name for p in found], loaded=loaded_count, **kwargs)
+        return mw.CONVERT_YES
+
+    monkeypatch.setattr(mw, "offer_conversion", fake_offer)
+    monkeypatch.setattr(window, "_convert_paths_and_load", lambda paths: converted.extend(paths))
+    window.settings.include_subfolders = True
+    window._load_paths([tmp_path])
+    assert asked["found"] == ["a.flac", "b.wav"] and asked["loaded"] == 0
+    assert asked["title"] == "No MP3 Files" and "beside the originals" in asked["question"]
+    assert [Path(p).name for p in converted] == ["a.flac", "b.wav"]
+
+
 def test_the_analyze_checks_run_on_a_worker_thread(window, tmp_path, monkeypatch):
     _load(window, tmp_path, ["a.mp3", "b.mp3"])
     _select_all(window)

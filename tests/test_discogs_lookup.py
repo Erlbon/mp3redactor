@@ -476,6 +476,16 @@ def test_the_default_pace_is_under_sixty_requests_a_minute():
     assert dl.MIN_REQUEST_INTERVAL >= 1.0
 
 
+def test_pacing_and_transport_are_the_shared_lookup_client():
+    from redactor_common.core import lookup_client
+
+    assert dl.Throttle is lookup_client.Throttle
+    assert dl._shared_throttle.interval == dl.MIN_REQUEST_INTERVAL
+    with pytest.raises(ValueError) as info:
+        dl._make_default_fetch()(f"file:///etc/passwd?token={TOKEN}")
+    assert TOKEN not in str(info.value)
+
+
 # ---------------------------------------------------------------------------
 # The token never leaks
 # ---------------------------------------------------------------------------

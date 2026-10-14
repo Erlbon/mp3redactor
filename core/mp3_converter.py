@@ -50,22 +50,6 @@ IMPORTABLE_EXTENSIONS: frozenset[str] = frozenset({
 })
 
 
-def find_importable_files(paths, recursive: bool = True) -> list[Path]:
-    """The convertible audio files (FLAC, WAV, OGG, M4A... see IMPORTABLE_EXTENSIONS) in a mix of files and
-    folders, de-duplicated and sorted; folders are searched including their subfolders unless `recursive` is
-    False. Used when a folder holds no .mp3 at all, to offer converting what is there."""
-    found: set[Path] = set()
-    for p in paths:
-        p = Path(p)
-        if p.is_dir():
-            for child in (p.rglob("*") if recursive else p.iterdir()):
-                if child.is_file() and child.suffix.lower() in IMPORTABLE_EXTENSIONS:
-                    found.add(child.resolve())
-        elif p.is_file() and p.suffix.lower() in IMPORTABLE_EXTENSIONS:
-            found.add(p.resolve())
-    return sorted(found)
-
-
 def plan_conversions(sources: list[Path]) -> tuple[list[tuple[Path, Path]], list[Path]]:
     """(src, dest) pairs plus the dests skipped because a file already
     sits there. dest is the source's name with .mp3 in the same folder;

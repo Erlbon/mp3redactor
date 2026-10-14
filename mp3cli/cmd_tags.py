@@ -13,7 +13,7 @@ from core.mp3_file import MP3File
 from core.tag_writer import save_tags
 from redactor_common.cli import EXIT_OK, EXIT_PARTIAL, CliError, Output, add_common_options
 
-from mp3cli.fields import DEFAULT_INFO_FIELDS, FIELD_KEYS, parse_assignment, resolve_field
+from mp3cli.fields import DEFAULT_INFO_FIELDS, FIELD_KEYS, RESOLVER
 from mp3cli.files import add_path_arguments, collect, load, skip_reason
 
 
@@ -39,7 +39,7 @@ def add_info_parser(sub) -> None:
 def run_info(args: argparse.Namespace, out: Output) -> int:
     files = collect(args.paths, out, recurse=not args.no_recurse)
     wanted = FIELD_KEYS if args.all else (
-        [resolve_field(name) for name in args.fields.split(",") if name.strip()] if args.fields else DEFAULT_INFO_FIELDS
+        [RESOLVER.resolve(name) for name in args.fields.split(",") if name.strip()] if args.fields else DEFAULT_INFO_FIELDS
     )
     failed = 0
     for index, mp3 in enumerate(load(files), start=1):
@@ -81,10 +81,10 @@ def add_set_parser(sub) -> None:
 def run_set(args: argparse.Namespace, out: Output) -> int:
     changes: dict[str, str] = {}
     for text in args.assignments:
-        key, value = parse_assignment(text)
+        key, value = RESOLVER.parse_assignment(text)
         changes[key] = value
     for name in args.clear:
-        changes[resolve_field(name)] = ""
+        changes[RESOLVER.resolve(name)] = ""
     if not changes:
         raise CliError("nothing to change: give at least one -s FIELD=VALUE or --clear FIELD")
 

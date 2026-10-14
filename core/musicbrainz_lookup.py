@@ -26,15 +26,13 @@ from __future__ import annotations
 
 import difflib
 import re
-import threading
-import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import quote, urlencode
 
-from redactor_common.core.lookup_client import fetch_bytes, fetch_json, make_default_fetch
+from redactor_common.core.lookup_client import Throttle, fetch_bytes, fetch_json, make_default_fetch, throttled
 
 API_BASE = "https://musicbrainz.org/ws/2"
 COVER_ART_BASE = "https://coverartarchive.org"
@@ -47,30 +45,10 @@ class MusicBrainzError(Exception):
     """Searching or fetching from MusicBrainz failed."""
 
 
-class _Throttle:
-    """One process-wide pace for all MusicBrainz requests, whichever
-    thread makes them."""
-
-    def __init__(self, interval: float):
-        self.interval = interval
-        self._lock = threading.Lock()
-        self._last = 0.0
-
-    def wait(self) -> None:
-        with self._lock:
-            delay = self.interval - (time.monotonic() - self._last)
-            if delay > 0:
-                time.sleep(delay)
-            self._last = time.monotonic()
-
-
-_throttle = _Throttle(MIN_REQUEST_INTERVAL)
+# One process-wide pace for all MusicBrainz requests, whichever thread makes them.
+_throttle = Throttle(MIN_REQUEST_INTERVAL)
 _raw_fetch = make_default_fetch(USER_AGENT, timeout=30.0)
-
-
-def _default_fetch(url):
-    _throttle.wait()
-    return _raw_fetch(url)
+_default_fetch = throttled(_raw_fetch, _throttle)
 
 
 def _get(path: str, fetch: Callable, **params) -> dict:

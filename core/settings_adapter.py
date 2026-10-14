@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 from core.settings import Settings, save_settings
 from redactor_common.core import settings_bundle as sb
+from redactor_common.core import settings_coerce as sc
 
 APP_SLUG = "mp3redactor"
 
@@ -113,33 +114,23 @@ _INT_MIN = 0
 _INT_MAX = 99
 
 
+# kind -> (redactor_common's coercer, the ValueError message when it gives None).
+# The coercers never let a JSON true pass as the int 1 (bool is an int subclass).
+_COERCERS: dict[str, tuple[Callable[[Any], Any], str]] = {
+    "str": (sc.coerce_str, "expected text"),
+    "bool": (sc.coerce_bool, "expected true/false"),
+    "int": (lambda v: sc.coerce_int(v, _INT_MIN, _INT_MAX), "expected a small whole number"),
+    "strlist": (sc.coerce_str_list, "expected a list of text"),
+    "pairs": (sc.coerce_pairs, "expected a list of [code, name] pairs"),
+}
+
+
 def _coerce(kind: str, value: Any) -> Any:
     """The value as the field's type, or raises ValueError if it can't be."""
-    if kind == "str":
-        if isinstance(value, str):
-            return value
-        raise ValueError("expected text")
-    if kind == "bool":
-        if isinstance(value, bool):
-            return value
-        raise ValueError("expected true/false")
-    if kind == "int":
-        # bool is an int subclass in Python; don't let true become 1.
-        if isinstance(value, int) and not isinstance(value, bool) and _INT_MIN <= value <= _INT_MAX:
-            return value
-        raise ValueError("expected a small whole number")
-    if kind == "strlist":
-        if isinstance(value, list) and all(isinstance(v, str) for v in value):
-            return list(value)
-        raise ValueError("expected a list of text")
-    if kind == "pairs":
-        if isinstance(value, list) and all(
-            isinstance(p, (list, tuple)) and len(p) == 2 and all(isinstance(x, str) for x in p)
-            for p in value
-        ):
-            return [(p[0], p[1]) for p in value]
-        raise ValueError("expected a list of [code, name] pairs")
-    raise ValueError(f"unknown kind {kind}")
+    if kind not in _COERCERS:
+        raise ValueError(f"unknown kind {kind}")
+    coerce, message = _COERCERS[kind]
+    return sc.required(coerce(value), message)
 
 
 def _to_json(kind: str, value: Any) -> Any:

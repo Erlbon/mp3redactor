@@ -21,6 +21,9 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from redactor_common.core import temp_names
+from redactor_common.core.folder_discovery import find_by_extension
+
 from core.bpm_detector import detect_bpm
 from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
 from core.keyfinder_runner import detect_key
@@ -41,6 +44,12 @@ MP3_EXTENSIONS = {".mp3"}
 # one left behind by a crash must never be discovered as a library file.
 REDACT_SCRATCH_PREFIX = ".mp3redactor-redact-"
 
+# This app's own scratch names, added to redactor_common's temp-name registry
+# (which already knows the family's other leftovers: ".redact-orig" backups,
+# ".part" copies, other apps' scratch files), so a folder scan skips them all.
+APP_TEMP_PATTERNS = (r"\.mp3redactor-redact-.*\.mp3", r"\.mp3redactor-.*\.tmp")
+temp_names.register(APP_TEMP_PATTERNS)
+
 
 def _describe(exc: Exception) -> str:
     """Per-file message for a check that raised instead of returning a status."""
@@ -50,30 +59,22 @@ def _describe(exc: Exception) -> str:
 def find_mp3_files(paths: Iterable[Path], recursive: bool = True) -> list[Path]:
     """
     Expands a mix of files and folders (as dropped/selected in the GUI)
-    into a flat, de-duplicated, sorted list of .mp3 file paths.
+    into a flat, de-duplicated, sorted list of .mp3 file paths, symlinks
+    resolved -- redactor_common's find_by_extension, skipping the family's
+    temp/scratch names (temp_names.is_app_temp_name) even when one is named
+    directly.
 
-    recursive=True (the default, matching this function's original and
-    only behavior, used by Open Files/Folder) walks into subfolders;
-    pass recursive=False to only look at a folder's direct children --
-    what Refresh List wants (see gui/main_window.py's refresh_list()):
-    re-scanning already-loaded folders should notice a file dropped
-    right there, not go discover an entire new subfolder tree, which
-    stays Open Folder's job.
+    recursive=True (the default, used by Open Files/Folder) walks into
+    subfolders; pass recursive=False to only look at a folder's direct
+    children -- what Refresh List wants (see gui/main_window.py's
+    refresh_list()): re-scanning already-loaded folders should notice a
+    file dropped right there, not go discover an entire new subfolder
+    tree, which stays Open Folder's job.
     """
-    found: set[Path] = set()
-    for p in paths:
-        if p.is_dir():
-            children = p.rglob("*") if recursive else p.iterdir()
-            for child in children:
-                if (
-                    child.is_file()
-                    and child.suffix.lower() in MP3_EXTENSIONS
-                    and not child.name.startswith(REDACT_SCRATCH_PREFIX)
-                ):
-                    found.add(child.resolve())
-        elif p.is_file() and p.suffix.lower() in MP3_EXTENSIONS and not p.name.startswith(REDACT_SCRATCH_PREFIX):
-            found.add(p.resolve())
-    return sorted(found)
+    found = find_by_extension(
+        paths, MP3_EXTENSIONS, recursive, skip=temp_names.is_app_temp_name, skip_named=True, resolve=True,
+    )
+    return [Path(p) for p in found]
 
 
 def load_files(paths: Iterable[Path], progress: ProgressCallback | None = None) -> list[MP3File]:

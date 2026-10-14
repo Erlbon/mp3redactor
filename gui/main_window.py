@@ -75,7 +75,7 @@ from core.mp3_file import (
 )
 from core.m4b_builder import build_m4b, group_by_folder
 from core.mp3_converter import (
-    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, find_importable_files, plan_conversions,
+    BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, plan_conversions,
 )
 from core.mp3_genres import COMMON_MP3_GENRES
 from core.mp3_genres import exclude_hidden as exclude_hidden_genres
@@ -120,11 +120,10 @@ from redactor_common.gui.history_dialog import HistoryDialog
 from core.settings import (
     Settings,
     dedupe_and_trim_pattern_history,
-    directory_for,
     load_settings,
-    resolve_start_directory,
     save_settings,
 )
+from redactor_common.gui.qsettings_store import directory_for, resolve_start_directory
 from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
 from gui.external_tools_dialog import ExternalToolsDialog
@@ -134,6 +133,9 @@ from gui.m4b_dialog import M4bDialog
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
+from redactor_common.core.temp_names import is_app_temp_name
+from redactor_common.gui.convert_offer import YES as CONVERT_YES
+from redactor_common.gui.convert_offer import find_convertible, offer_conversion
 from redactor_common.core.error_summary import summarize_errors
 from redactor_common.core.folder_refresh import find_new_files_in_loaded_folders
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
@@ -392,8 +394,12 @@ class MainWindow(QMainWindow):
         self._list_filter = ""  # Edit > Filter List's text; "" = every file shown
         self.settings: Settings = load_settings()
         # The remembered "an unencrypted key file is OK on this computer" answer
-        # (see gui/secret_prompts.py); a secret itself is never in the settings.
-        secret_store.set_allow_unencrypted_fallback(self.settings.allow_unencrypted_fallback)
+        # is applied now, and a new yes is stored through the returned callable
+        # (redactor_common's secret_store/secret_prompts); a secret itself is
+        # never in the settings.
+        self._remember_unencrypted_fallback = secret_store.bind_fallback_preference(
+            lambda: self.settings.allow_unencrypted_fallback, self._store_unencrypted_fallback,
+        )
         # In-memory-edit undo only (bulk-edit Apply) -- never physical
         # file operations (Save, mp3val Fix). See redactor_common.core.
         # undo's own module docstring for why.
@@ -802,21 +808,22 @@ class MainWindow(QMainWindow):
             "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths, recursive=self.settings.include_subfolders)
         )
         if not mp3_paths:
-            importable = self._scan_with_progress(
-                "Looking for audio files to convert...",
-                lambda: find_importable_files(raw_paths, recursive=self.settings.include_subfolders),
+            # redactor_common's convert offer: the walk under run_busy, then one box listing the formats found
+            # (Show Details lists the files).
+            importable = find_convertible(
+                self, raw_paths, IMPORTABLE_EXTENSIONS, self.settings.include_subfolders, skip=is_app_temp_name,
+                label="Looking for audio files to convert...",
             )
             if not importable:
                 QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
                 return
-            kinds = ", ".join(sorted({p.suffix.lstrip(".").upper() for p in importable}))
-            answer = QMessageBox.question(
-                self, "No MP3 Files",
-                f"No .mp3 files found, but {len(importable)} audio file(s) ({kinds}) that can be converted to MP3.\n\n"
-                "Convert them to MP3 (beside the originals, which are kept) and load the new files?",
+            answer = offer_conversion(
+                self, importable, 0, kind_label="MP3", target_label="MP3", noun="audio file",
+                question="Convert them to MP3 (beside the originals, which are kept) and load the new files?",
+                title="No MP3 Files", yes_text="Yes", no_text="No",
             )
-            if answer == QMessageBox.StandardButton.Yes:
-                self._convert_paths_and_load([str(p) for p in importable])
+            if answer == CONVERT_YES:
+                self._convert_paths_and_load(list(importable))
             return
 
         # Open Files/Folder replaces self.files wholesale (unlike the epub
@@ -1553,8 +1560,8 @@ class MainWindow(QMainWindow):
 
         ApiKeysDialog(self, remember_fallback=self._remember_unencrypted_fallback).exec()
 
-    def _remember_unencrypted_fallback(self) -> None:
-        self.settings.allow_unencrypted_fallback = True
+    def _store_unencrypted_fallback(self, allowed: bool) -> None:
+        self.settings.allow_unencrypted_fallback = allowed
         save_settings(self.settings)
 
     def open_auto_numbering_dialog(self) -> None:

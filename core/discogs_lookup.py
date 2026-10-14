@@ -36,9 +36,6 @@ from __future__ import annotations
 
 import difflib
 import re
-import threading
-import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -47,7 +44,9 @@ from typing import Callable, Optional
 
 from redactor_common.core import secret_store
 from redactor_common.core.local_db import normalize_words
-from redactor_common.core.lookup_client import build_request, fetch_bytes, fetch_json
+from redactor_common.core.lookup_client import (
+    Throttle, build_request, fetch_bytes, fetch_json, make_default_fetch, redact_text,
+)
 
 from core.musicbrainz_lookup import FileFacts, album_query
 
@@ -89,29 +88,9 @@ def has_token() -> bool:
 # Transport: pacing, headers, safe redirects
 # ---------------------------------------------------------------------------
 
-class Throttle:
-    """One pace for a client's requests, whichever thread makes them.
-    `clock` and `sleep` are injectable so tests never really wait."""
-
-    def __init__(self, interval: float = MIN_REQUEST_INTERVAL, clock=time.monotonic, sleep=time.sleep):
-        self.interval = interval
-        self._clock = clock
-        self._sleep = sleep
-        self._lock = threading.Lock()
-        self._last: Optional[float] = None
-
-    def wait(self) -> None:
-        with self._lock:
-            now = self._clock()
-            if self._last is not None:
-                delay = self.interval - (now - self._last)
-                if delay > 0:
-                    self._sleep(delay)
-                    now = self._clock()
-            self._last = now
-
-
-_shared_throttle = Throttle()  # one pace for the whole process
+# Throttle is redactor_common's (re-exported here: tests and redact_steps
+# pass a Throttle(interval, clock=, sleep=) of their own).
+_shared_throttle = Throttle(MIN_REQUEST_INTERVAL)  # one pace for the whole process
 
 
 def is_discogs_url(url: str) -> bool:
@@ -135,22 +114,10 @@ class _TokenOnlyToDiscogs(urllib.request.HTTPRedirectHandler):
 
 
 def _make_default_fetch(timeout: float = _TIMEOUT) -> Callable:
-    opener = urllib.request.build_opener(_TokenOnlyToDiscogs)
-
-    def _fetch(request) -> bytes:
-        if not isinstance(request, urllib.request.Request):
-            request = urllib.request.Request(request)
-        if not request.has_header("User-agent"):
-            request.add_header("User-Agent", USER_AGENT)
-        if urllib.parse.urlsplit(request.full_url).scheme.lower() not in ("http", "https"):
-            raise ValueError("Only http and https URLs are allowed")
-        with opener.open(request, timeout=timeout) as response:
-            data = response.read(_MAX_RESPONSE_BYTES + 1)
-        if len(data) > _MAX_RESPONSE_BYTES:
-            raise OSError("the response was too large")
-        return data
-
-    return _fetch
+    return make_default_fetch(
+        USER_AGENT, timeout=timeout, opener=urllib.request.build_opener(_TokenOnlyToDiscogs),
+        max_bytes=_MAX_RESPONSE_BYTES,
+    )
 
 
 class DiscogsClient:
@@ -167,34 +134,32 @@ class DiscogsClient:
     def __repr__(self) -> str:  # never the token
         return "DiscogsClient()"
 
-    def _scrub(self, text: str) -> str:
-        return text.replace(self._token, "***") if self._token else text
-
     def _headers(self, url: str) -> dict[str, str]:
         headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.discogs.v2.discogs+json"}
         if is_discogs_url(url):  # an image URL from a reply must never collect the token elsewhere
             headers["Authorization"] = f"Discogs token={self._token}"
         return headers
 
-    def _guarded_fetch(self, request):
-        try:
-            return self._fetch(request)
-        except urllib.error.HTTPError as exc:
-            if exc.code == 429:
-                raise DiscogsRateLimited(RATE_LIMIT_MESSAGE) from None
-            raise
-
     def _call(self, run):
         if self.rate_limited:
             raise DiscogsRateLimited(RATE_LIMIT_MESSAGE)
         self._throttle.wait()
+        # The shared fetch_json/fetch_bytes already redact the token (secrets=);
+        # re-raising "from None" also drops the chained original exception,
+        # whose own text could still carry it.
         try:
             return run()
         except DiscogsRateLimited:
             self.rate_limited = True
-            raise
+            raise DiscogsRateLimited(RATE_LIMIT_MESSAGE) from None
         except DiscogsError as exc:
-            raise DiscogsError(self._scrub(str(exc))) from None
+            raise DiscogsError(redact_text(str(exc), (self._token,))) from None
+
+    def _http_options(self) -> dict:
+        """What every request passes to the shared fetch_json/fetch_bytes: an
+        HTTP 429 becomes DiscogsRateLimited, and the token never appears in
+        an error message."""
+        return {"status_errors": {429: DiscogsRateLimited}, "secrets": (self._token,)}
 
     def get_json(self, path: str, **params) -> dict:
         url = f"{API_BASE}/{path}"
@@ -202,11 +167,13 @@ class DiscogsClient:
 
         def run():
             data = fetch_json(
-                request, self._guarded_fetch, error_cls=DiscogsError, source_name=_SOURCE_NAME,
+                request, self._fetch, error_cls=DiscogsError, source_name=_SOURCE_NAME,
                 status_messages={
                     401: "Discogs rejected the token (HTTP 401) -- check it in Tools > API Keys.",
                     403: "Discogs refused the request (HTTP 403) -- check the token in Tools > API Keys.",
+                    429: RATE_LIMIT_MESSAGE,
                 },
+                **self._http_options(),
             )
             return data if isinstance(data, dict) else {}
 
@@ -220,7 +187,10 @@ class DiscogsClient:
         request = build_request(url, None, self._headers(url))
 
         def run():
-            return fetch_bytes(request, self._guarded_fetch, error_cls=DiscogsError, what="the cover image")
+            return fetch_bytes(
+                request, self._fetch, error_cls=DiscogsError, what="the cover image",
+                status_messages={429: RATE_LIMIT_MESSAGE}, **self._http_options(),
+            )
 
         try:
             data = self._call(run)

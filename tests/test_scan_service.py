@@ -49,3 +49,17 @@ def test_find_mp3_files_recursive_false_ignores_subfolders(tmp_path):
     result = find_mp3_files([tmp_path], recursive=False)
 
     assert [p.name for p in result] == ["one.mp3"]
+
+
+def test_find_mp3_files_skips_the_familys_temp_names_through_the_shared_registry(tmp_path):
+    from redactor_common.core.temp_names import is_app_temp_name
+
+    import core.scan_service  # noqa: F401  (registers this app's own scratch patterns)
+
+    leftovers = [".mp3redactor-redact-ab12.mp3", "song.redact-orig.mp3", "song.redact-orig2.mp3", ".0123abcd.part"]
+    for name in ["real.mp3", *leftovers]:
+        (tmp_path / name).write_bytes(b"")
+    assert [p.name for p in find_mp3_files([tmp_path])] == ["real.mp3"]
+    assert find_mp3_files([tmp_path / "song.redact-orig.mp3"]) == []  # named directly: still skipped
+    assert is_app_temp_name(".mp3redactor-redact-x.mp3") and is_app_temp_name(".mp3redactor-1234.tmp")
+    assert not is_app_temp_name("My.Partial.Song.mp3")

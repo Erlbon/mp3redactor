@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from redactor_common.core.lookup_client import Throttle
+
 from core.subprocess_utils import run_tool
 from core.version import APP_VERSION
 
@@ -90,13 +92,7 @@ def _default_post(url: str, data: bytes) -> bytes:
         return response.read()
 
 
-def _make_throttle():
-    from core.musicbrainz_lookup import _Throttle
-
-    return _Throttle(MIN_REQUEST_INTERVAL)
-
-
-_POST_THROTTLE = _make_throttle()
+_POST_THROTTLE = Throttle(MIN_REQUEST_INTERVAL)
 
 
 def lookup(fp: Fingerprint, post: Optional[Callable[[str, bytes], bytes]] = None,

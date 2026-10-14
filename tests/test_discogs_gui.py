@@ -308,6 +308,22 @@ def test_preferences_tools_page_saves_paths_on_ok():
     assert settings.mp3val_path == "/opt/mp3val" and saved
 
 
+def test_tool_rows_are_the_shared_deferred_rows(monkeypatch):
+    import gui.external_tools_dialog as tools_module
+    from redactor_common.gui.tool_path_row import COMMIT_DEFERRED, ToolPathRow
+
+    monkeypatch.setattr(tools_module, "find_tool", lambda exe, override=None: None)
+    settings = Settings(ffmpeg_path="/opt/ffmpeg")
+    page = tools_module.ToolPathsWidget(settings)
+    assert all(isinstance(r, ToolPathRow) and r.commit == COMMIT_DEFERRED for r in page.rows)
+    assert [r.label for r in page.rows] == ["mp3val:", "keyfinder-cli:", "ffmpeg:", "ffprobe:", "fpcalc:"]
+    assert page.result_paths()[2] == "/opt/ffmpeg" and page._ffmpeg_row.status_label.text() == "✗ not found"
+    page._fpcalc_row.set_path("/opt/fpcalc")
+    assert settings.fpcalc_path == ""  # deferred: nothing stored until applied
+    assert page.apply_to(settings) and settings.fpcalc_path == "/opt/fpcalc"
+    assert not page.apply_to(settings)
+
+
 def test_startup_applies_the_remembered_consent(monkeypatch):
     monkeypatch.setattr(mw, "load_settings", lambda: Settings(allow_unencrypted_fallback=True))
     monkeypatch.setattr(mw, "save_settings", lambda *a, **k: None)
@@ -394,6 +410,7 @@ def test_lookup_after_entering_a_token_goes_on_and_applies_through_the_review(wi
 def test_the_consent_is_remembered_in_the_settings_by_the_window(window):
     window._remember_unencrypted_fallback()
     assert window.settings.allow_unencrypted_fallback is True
+    assert secret_store.allow_unencrypted_fallback_enabled()  # redactor_common's bind_fallback_preference
 
 
 def test_dialog_cover_changes_follow_the_save_cover_toggle(tmp_path, monkeypatch):

@@ -20,6 +20,18 @@ def _adapter(tmp_path, settings=None, **kw):
     return holder, Mp3SettingsAdapter(lambda: holder["s"], "test", target_dir=tmp_path, **kw)
 
 
+def test_import_coercion_is_redactor_commons_settings_coerce():
+    from redactor_common.core import settings_coerce as sc
+
+    assert sa._COERCERS["bool"][0] is sc.coerce_bool and sa._COERCERS["pairs"][0] is sc.coerce_pairs
+    assert sa._coerce("int", 12) == 12 and sa._coerce("pairs", [["eng", "English"]]) == [("eng", "English")]
+    for kind, value in (("int", True), ("int", 100), ("bool", 1), ("str", 5), ("strlist", ["a", 1]), ("pairs", [["x"]])):
+        with pytest.raises(ValueError):
+            sa._coerce(kind, value)
+    with pytest.raises(ValueError, match="small whole number"):
+        sa._coerce("int", -1)
+
+
 def _export(adapter, sections=None):
     chosen = sections if sections is not None else sb.default_selection(adapter)
     return sb.dump_bundle(sb.build_bundle(adapter, chosen))

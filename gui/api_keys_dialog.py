@@ -27,8 +27,8 @@ from PyQt6.QtWidgets import (
 )
 
 from core.discogs_lookup import SECRET_APP, SECRET_NAME, TOKEN_ENV_VAR, TOKEN_HELP_URL
-from gui.secret_prompts import save_with_fallback_prompt
 from redactor_common.gui.secret_field import SecretField
+from redactor_common.gui.secret_prompts import save_with_fallback_prompt
 
 
 class ApiKeysDialog(QDialog):
@@ -74,6 +74,6 @@ class ApiKeysDialog(QDialog):
         self.token_field.apply(allow)
 
     def accept(self) -> None:
-        if not save_with_fallback_prompt(self, self._save, self._remember_fallback):
+        if not save_with_fallback_prompt(self, self._save, self._remember_fallback, noun="key or token"):
             return  # declined: stay open, the typed token is kept
         super().accept()

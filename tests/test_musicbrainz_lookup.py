@@ -127,13 +127,13 @@ def test_fields_for_a_matched_file():
     }
 
 
-def test_throttle_spaces_requests():
-    throttle = mb._Throttle(0.2)
-    import time
-    start = time.monotonic()
-    for _ in range(3):
-        throttle.wait()
-    assert time.monotonic() - start >= 0.39
+def test_requests_go_through_the_shared_throttle():
+    from redactor_common.core.lookup_client import Throttle
+    import core.acoustid_lookup as acoustid
+
+    assert isinstance(mb._throttle, Throttle) and mb._throttle.interval == mb.MIN_REQUEST_INTERVAL
+    assert isinstance(acoustid._POST_THROTTLE, Throttle)
+    assert acoustid._POST_THROTTLE.interval == acoustid.MIN_REQUEST_INTERVAL
 
 
 def test_musicbrainz_ids_round_trip_as_picard_writes_them(tmp_path):

@@ -2,7 +2,9 @@
 mp3cli/fields.py
 
 Tag field names for the command line: any spelling the user is likely to type ("albumartist", "Album Artist",
-"album_artist") finds the field, and a value is checked before anything is written.
+"album_artist", "album-artist") finds the field, and a value is checked before anything is written. The name
+matching and the FIELD=VALUE split are redactor_common's FieldResolver (RESOLVER below); what is mp3redactor's
+own is the field table and check_value()'s tag rules.
 """
 
 from __future__ import annotations
@@ -11,16 +13,10 @@ import re
 
 from core.fields import FIELDS
 from redactor_common.cli import CliError
+from redactor_common.cli.fields import FieldResolver, spelling_variants
 from redactor_common.cli.values import check_text
 
 FIELD_KEYS = [key for key, _label, _multiline in FIELDS]
-
-_LOOKUP: dict[str, str] = {}
-for _key, _label, _multiline in FIELDS:
-    for _spelling in (
-        _key, _label, _label.replace(" ", ""), _label.replace(" ", "_"), _label.replace(" ", "-"), _key.replace("_", ""),
-    ):
-        _LOOKUP[_spelling.lower()] = _key
 
 _TRACK = re.compile(r"^[0-9]+(/[0-9]+)?$")  # ASCII digits only: \d would also take Arabic-Indic digits
 _YEAR = re.compile(r"^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$")
@@ -30,14 +26,6 @@ ADVISORY_VALUES = ("0", "1", "2")  # iTunes: none, explicit, clean
 
 # What `info` shows when no --fields or --all is given.
 DEFAULT_INFO_FIELDS = ["title", "artist", "album", "track", "year"]
-
-
-def resolve_field(name: str) -> str:
-    """The MP3File attribute for what the user typed. Raises CliError listing the valid names."""
-    key = _LOOKUP.get(name.strip().lower())
-    if key is None:
-        raise CliError(f"unknown field {name!r}. Fields: {', '.join(FIELD_KEYS)}")
-    return key
 
 
 def check_value(key: str, value: str) -> str:
@@ -58,10 +46,9 @@ def check_value(key: str, value: str) -> str:
     return value
 
 
-def parse_assignment(text: str) -> tuple[str, str]:
-    """"artist=Queen" -> (key, checked value). Splits on the first "="."""
-    if "=" not in text:
-        raise CliError(f"expected FIELD=VALUE, got {text!r}")
-    name, _, value = text.partition("=")
-    key = resolve_field(name)
-    return key, check_value(key, value)
+# RESOLVER.resolve("Album Artist") -> "albumartist"; RESOLVER.parse_assignment("artist=Queen") -> ("artist", "Queen").
+RESOLVER = FieldResolver(
+    spellings={spelling: key for key, label, _multiline in FIELDS for spelling in spelling_variants(key, label)},
+    names=FIELD_KEYS,
+    check=check_value,
+)

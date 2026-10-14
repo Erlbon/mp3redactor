@@ -131,8 +131,8 @@ changes there like the app does, so Tools > History can restore the old values; 
 | `--clear FIELD` | Empty a field (repeat for several). |
 | `-n`, `--dry-run` | Show the old and new value of each field, save nothing. |
 
-Field names are case-insensitive and accept the plain, spaced or underscored spelling (`albumartist`, `Album
-Artist`, `album_artist`). The fields are: title, artist, albumartist, album, track, discnumber, year, genre,
+Field names are case-insensitive and accept the plain, spaced, underscored or hyphenated spelling (`albumartist`,
+`Album Artist`, `album_artist`, `album-artist`). The fields are: title, artist, albumartist, album, track, discnumber, year, genre,
 composer, comment, language, albumsort, artistsort, albumartistsort, acoustid_fingerprint, itunesadvisory,
 musicbrainz_albumid, musicbrainz_trackid, publisher, catalognumber, releasecountry.
 

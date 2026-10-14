@@ -107,6 +107,26 @@ def test_set_dry_run_writes_nothing_and_same_value_is_unchanged(song, capsys):
     assert document["results"][0]["status"] == "unchanged"
 
 
+@pytest.mark.parametrize("spelling", ["albumartist", "Album Artist", "album_artist", "album-artist", "ALBUM-ARTIST"])
+def test_field_names_resolve_through_the_shared_resolver_in_any_usual_spelling(spelling):
+    from redactor_common.cli.fields import FieldResolver
+    from mp3cli.fields import RESOLVER
+
+    assert isinstance(RESOLVER, FieldResolver)
+    assert RESOLVER.resolve(spelling) == "albumartist"
+    assert RESOLVER.parse_assignment(f"{spelling}= Queen ") == ("albumartist", "Queen")
+
+
+def test_cli_main_is_the_shared_make_main():
+    from mp3cli import COMMANDS
+    from mp3cli.main import build_parser
+
+    parser = build_parser()
+    assert parser.prog == "mp3redactor"
+    sub = next(a for a in parser._actions if a.dest == "command")
+    assert tuple(sub.choices) == COMMANDS
+
+
 @pytest.mark.parametrize("argv, message", [
     (["-s", "Nonsense=1"], "unknown field"),
     (["-s", "track=abc"], "number or number/total"),
