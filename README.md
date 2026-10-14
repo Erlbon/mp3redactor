@@ -43,6 +43,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | File | Include Subfolders (ticked: Open Folder, drops and Refresh List search subfolders) | |
 | File | Import and Convert… (FLAC/WAV/OGG/M4A/... to MP3 beside the original) | |
 | File | Create M4B Audiobook… | |
+| File | Preview… (plays the one selected file in a separate read-only window) | Ctrl+P |
 | File | Save All | Ctrl+Shift+A |
 | File | Rename File… (the one selected file) | F2 |
 | File | Undo Last Rename | |
@@ -75,7 +76,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Tools | History… (opt-in, off by default: every tag change the app made, old and new values, Restore Old Values; switched on in Preferences > History or by answering yes when History is opened; entries follow a renamed or moved file, via the RenameLog's on_move hook and the command line's rename/move/redact; Preferences > History > Delete History… is a PrefAction that sends the file to the Recycle Bin; Export/Import Settings carry `[history] enabled`) | |
 | Help | Changelog…, Credits…, About The ɯP3 Redactor | |
 
-The table's right-click menu has the everyday subset: Rename File (one file), Look Up, Organize (Rename /
+The table's right-click menu has the everyday subset: Preview (one file), Rename File (one file), Look Up, Organize (Rename /
 Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Redact, Remove from List, plus Open in Default App,
 Open Containing Folder and Copy Path. Double-click a Filename cell to rename that file, a Lyrics cell to edit its
 lyrics. Click a header to sort (Track, Disc, Year, BPM, Loudness, Sample Rate and Channels sort as numbers), drag

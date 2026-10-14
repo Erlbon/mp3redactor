@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-14#08 -- File > Preview
+
+- **File > Preview... (Ctrl+P)** and a **Preview** row in the right-click menu: opens a small separate player window for the one selected file (play/pause, seek bar, volume) so you can check that it plays and the tail is intact without leaving the app. Read-only: the file is only opened for playback, nothing is written. Select exactly one file, otherwise the status bar says so. The main window stays usable while the preview is open.
+- Requires redactor_common 2026-10-14-07.
+
 ## 2026-10-14#07 -- Small clean-ups after redactor_common 2026-10-14-06
 
 - **Tools > MusicBrainz Database Setup**: the free-disk-space line is back inside the "Build from the MusicBrainz core dump" box, under the build options, where it was before the shared dialog was adopted.

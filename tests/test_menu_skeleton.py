@@ -44,7 +44,7 @@ def test_headings_in_skeleton_order(window):
 def test_menu_contents_and_order(window):
     menus = _top_menus(window)
     assert _menu_tree(menus["File"]) == [
-        "Open Files", "Open Folder", "Include Subfolders", "Import and Convert", "Create M4B Audiobook", "---",
+        "Open Files", "Open Folder", "Include Subfolders", "Import and Convert", "Create M4B Audiobook", "Preview", "---",
         "Save All", "---",
         "Rename File", "Undo Last Rename", "Rename / Export / Move", "---",
         "Export Settings", "Import Settings", "---",
@@ -166,7 +166,7 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
     tree = _context_menu_tree(window, monkeypatch)
     top = [t if isinstance(t, str) else t[0] for t in tree if t != "---"]
     assert top == [
-        "Open in Default App", "Open Containing Folder", "Copy Path", "Rename File",
+        "Open in Default App", "Open Containing Folder", "Copy Path", "Preview", "Rename File",
         "Look Up", "Organize", "Analyze", "Cover", "Edit Lyrics", "Redact", "Remove from List",
     ]
     by_name = {t[0]: t[1] for t in tree if isinstance(t, tuple)}

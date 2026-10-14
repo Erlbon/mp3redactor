@@ -495,7 +495,11 @@ class MainWindow(QMainWindow):
                 open_folder=self.load_folder_dialog,
                 include_subfolders=include_subfolders_slot(),
                 import_and_convert=self.import_and_convert_dialog,
-                extra_open=[MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog)],
+                extra_open=[
+                    MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog),
+                    # Read-only player window for the one selected file (never Ctrl+Alt: AltGr).
+                    MenuAction("preview", "Previe&w…", self.preview_selected_file, shortcut="Ctrl+P"),
+                ],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
                 # dropped below. No Ctrl+S alias (owner, 2026-10-14).
@@ -1787,6 +1791,20 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(rename_file_refusal(len(files), bool(files and files[0].load_error)), 6000)
 
+    def preview_selected_file(self) -> None:
+        """File > Preview (Ctrl+P) and the right-click "Preview": a separate,
+        read-only player window (redactor_common's media_preview) for the one
+        selected file. Opens the file for playback only; nothing is written."""
+        files = self._selected_files()
+        if len(files) != 1:
+            self.statusBar().showMessage(
+                "Preview plays one file; select exactly one." if files else "Select a file to preview.", 6000,
+            )
+            return
+        from redactor_common.gui.media_preview import show_media_preview
+
+        show_media_preview(self, files[0].path, video=False)
+
     # -- tag editing ------------------------------------------------------
 
     def _apply_bulk_edit(self, values: dict) -> None:
@@ -2915,6 +2933,8 @@ class MainWindow(QMainWindow):
             # real shortcut hint and can never drift out of sync with
             # it. Only offered for a single file -- renaming several to
             # the same name doesn't make sense.
+            if len(files) == 1:
+                items.append(self.action_registry["preview"])
             if len(files) == 1 and not files[0].load_error:
                 items.extend([self.action_rename_file, Separator()])
             items.extend([
