@@ -38,6 +38,7 @@ from redactor_common.core.pattern_history import dedupe_and_trim
 
 SETTINGS_FILENAME = "mp3redactor_settings.ini"
 SECTION = "general"
+HISTORY_SECTION = "history"  # [history] enabled = Tools > History records changes (opt-in)
 
 # Rename/Export <-> Parse Filename pattern history -- shared between both
 # dialogs (see gui/main_window.py's open_rename_dialog()/
@@ -183,6 +184,11 @@ class Settings:
     # and it is not part of Export Settings (it is about this computer).
     allow_unencrypted_fallback: bool = False
 
+    # Tools > History (core/history.py): record every tag change with its old
+    # values. OPT-IN, off by default (owner, 2026-10-14: nothing is logged
+    # unless the user asked for it). Stored as [history] enabled.
+    history_enabled: bool = False
+
     # The offline MusicBrainz database (Tools > MusicBrainz Database Setup...,
     # core/musicbrainz_import.py): the built SQLite file, the core dump
     # (mbdump.tar.bz2) it is built from, and the build options as one line
@@ -252,10 +258,18 @@ class Settings:
             "musicbrainz_dump": self.musicbrainz_dump,
             "musicbrainz_options": self.musicbrainz_options,
         }
+        config[HISTORY_SECTION] = {"enabled": str(self.history_enabled)}
         return config
 
     @classmethod
     def from_config(cls, config: configparser.ConfigParser) -> "Settings":
+        settings = cls._from_general(config)
+        if HISTORY_SECTION in config:
+            settings.history_enabled = _get_bool(config[HISTORY_SECTION], "enabled", False)
+        return settings
+
+    @classmethod
+    def _from_general(cls, config: configparser.ConfigParser) -> "Settings":
         if SECTION not in config:
             return cls()
         section = config[SECTION]

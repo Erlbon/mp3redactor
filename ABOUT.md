@@ -36,6 +36,16 @@ time.
   beside the original. Opening a folder that has no MP3 at all but such files offers the same.
 - **M4B audiobooks**: File > Create M4B Audiobook joins the selected MP3s into a chaptered `.m4b` (one book per
   folder), with optional Audible / Open Library lookup and an Audiobookshelf-style library layout.
+- **History** (Tools > History) is opt-in, off by default: nothing is recorded until you turn on Tools >
+  Preferences > History > "Keep a history of tag changes" (or answer yes when you open Tools > History).
+  From then on every tag change the app writes to a file (Save, Save All, Redact, the command line's `set`,
+  and restores) is recorded with the old and new value of each changed field, so an unwanted Save can be
+  undone even after the app was closed: pick the change and click Restore Old Values. The history is the file
+  `mp3redactor_journal.jsonl` next to the settings file (beside the exe, or the project folder when run from
+  source); it keeps the newest 50,000 changes and nothing older than 90 days. Covers are not kept in it (only
+  the fact that a cover changed), and replaced or converted files are covered by the Recycle Bin instead. You
+  can switch it off again at any time; Preferences > History > Delete History removes the file. The command
+  line follows the same setting: with history off it records nothing.
 
 ## Opening files
 
@@ -107,7 +117,9 @@ Only fields with a value are listed. Exit code 1 if a file could not be read.
 `mp3redactor set PATH... -s FIELD=VALUE [-s ...] [--clear FIELD ...] [-n]`
 
 Sets or empties ID3 tag fields and saves each file in place (an empty value removes the tag). Fields and values
-are checked before any file is touched; a bad one stops the command with exit code 2.
+are checked before any file is touched; a bad one stops the command with exit code 2. When the app's change
+history is switched on (Tools > Preferences > History; opt-in, off by default), `set` and `redact` record their
+changes there like the app does, so Tools > History can restore the old values; with it off nothing is recorded.
 
 | Option | Meaning |
 | --- | --- |

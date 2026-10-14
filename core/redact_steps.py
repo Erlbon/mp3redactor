@@ -106,6 +106,7 @@ from core.musicbrainz_lookup import (
     match_release,
     rank_matches,
 )
+from core.history import KIND_REDACT, begin_save, end_save
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.scan_service import REDACT_SCRATCH_PREFIX, reload_from_disk
 from core.settings import DEFAULT_MOVE_PATTERN, Settings
@@ -1183,9 +1184,13 @@ def _save_working_copy(ctx: Mp3Ctx) -> StepResult | None:
     if not work.dirty:
         return None  # nothing to write (every step found nothing / was off)
     expected = ctx.mp3.duration_seconds
+    # One journal entry per file (core/history.py): the fields this run
+    # changed, old values from the row's on-disk baseline.
+    entry = begin_save(work, KIND_REDACT, path=ctx.mp3.path)
     error = apply_tags_to_file(work, ctx.temp)
     if error:
         ctx.save_failed = True
+        end_save(entry, False, error)
         return StepResult.failed(f"NOT SAVED, the original is untouched: {error}")
     try:
         result = commit_in_place(
@@ -1194,7 +1199,9 @@ def _save_working_copy(ctx: Mp3Ctx) -> StepResult | None:
         )
     except CommitError as exc:
         ctx.save_failed = True
+        end_save(entry, False, str(exc))
         return StepResult.failed(f"NOT SAVED, the original is untouched: {exc}")
+    end_save(entry, True)
     ctx.saved = True
     _adopt_saved_state(ctx)
     if result.backup_kept:

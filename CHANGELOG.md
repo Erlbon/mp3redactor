@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-14#04 -- Tools > History: undo a Save after the app was closed (opt-in)
+
+- **Opt-in, off by default**: nothing is recorded, and no history file is created, until you turn on **Tools > Preferences > History > "Keep a history of tag changes"** (or answer yes to the question Tools > History asks while it is off). The page says what is kept, how much and where, and has a **Delete History...** button. The command line follows the same setting. With history off but an older history file present, Tools > History opens it as "History (recording is off)": you can still restore, and nothing new is written.
+- Once on, **Tools > History** lists every tag change the app wrote to a file, newest first: plain Save and Save All, Redact, the command line's `set`, and restores. Pick one to see the old and new value of each changed field; **Restore Old Values** writes the old values back (through the normal save path, then reads the file back to check) and is recorded in the history too. Loaded files that were restored are re-read when the window closes.
+- The history is `mp3redactor_journal.jsonl` next to the settings file; it keeps the newest 50,000 changes, none older than 90 days. Covers are not kept in it (only that a cover changed); replaced or converted files are in the Recycle Bin as before. Scan stamps, BPM, key and loudness are not recorded.
+- A save that changes nothing records nothing. If the history cannot be written (full disk, read-only folder) saving goes on and the status bar (or the command line's stderr) says so once.
+- Requires redactor_common 2026-10-14-03.
+
 ## 2026-10-14#03 -- Filter List; Number Tracks is an Auto-Number preset; menu wording
 
 - **Edit > Filter List (Ctrl+F)**: type a text to show only the files whose Filename, Title, Artist, Album or Path contains it (case-insensitive); an empty text shows every file again. The status bar says "Showing N of M files (filter: text)". Hidden files are never a target: selected rows the filter hides are deselected, and Select All reaches only what is shown. The filter stays through edits, sorting and Refresh List; Clear List or opening new files clears it.

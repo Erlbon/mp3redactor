@@ -27,3 +27,8 @@ dist-linux/
 # File > Undo Last Rename's log (redactor_common's RenameLog) -- per-user data,
 # next to the settings like mp3redactor_settings.ini.
 mp3redactor_rename_log.json
+
+# Tools > History's operations journal (core/history.py) -- per-user data,
+# next to the settings.
+mp3redactor_journal.jsonl
+mp3redactor_journal.jsonl.tmp

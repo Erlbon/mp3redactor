@@ -112,6 +112,11 @@ BASELINE_KEYS = (
     "releasecountry", "lyrics", "integrity_stamp", "deep_check_stamp",
 )
 
+# The fields the operations journal (core/history.py, Tools > History)
+# records and can restore: the editable text fields of BASELINE_KEYS, not
+# the scan stamps (a record of a check, not something the user typed).
+JOURNAL_KEYS = tuple(key for key in BASELINE_KEYS if not key.endswith("_stamp"))
+
 
 @dataclass
 class MP3File:
@@ -248,6 +253,15 @@ class MP3File:
     def snapshot_tag_baseline(self) -> None:
         """Records the current text fields as "what's on disk"."""
         self.tag_baseline = {key: getattr(self, key, "") or "" for key in BASELINE_KEYS}
+
+    @property
+    def baseline(self) -> dict[str, str]:
+        """The journal fields (JOURNAL_KEYS) as the file on disk held them
+        at the last load / successful save or restore: the OLD values a
+        journal entry records, known without re-reading the file. Taken
+        from tag_baseline, which load_tags(), save_tags(), Redact and
+        reload_from_disk() keep current."""
+        return {key: self.tag_baseline.get(key, "") or "" for key in JOURNAL_KEYS}
 
     def tag_changed(self, key: str) -> bool:
         """True if `key` differs from what was last loaded/saved."""

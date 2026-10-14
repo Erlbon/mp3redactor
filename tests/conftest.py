@@ -27,6 +27,20 @@ def _isolated_duplicates_store(monkeypatch, tmp_path):
     )
 
 
+@pytest.fixture(autouse=True)
+def journal(tmp_path_factory):
+    """The operations journal (core/history.py) lives next to the settings;
+    every test gets its own in a separate temporary folder (not tmp_path,
+    whose contents some tests list), so no test writes the real one."""
+    from core import history
+    from redactor_common.core.journal import Journal
+
+    test_journal = Journal(str(tmp_path_factory.mktemp("journal") / "mp3redactor_journal.jsonl"))
+    history.set_journal_for_tests(test_journal, enabled=False)  # opt-in: off unless a test turns it on
+    yield test_journal
+    history.set_journal_for_tests(None)
+
+
 class FakeRecycleBin:
     """Stands in for the Recycle Bin in Redact tests: moves the file to a
     folder and remembers it, so nothing real is ever trashed."""

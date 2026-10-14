@@ -51,6 +51,7 @@ import tempfile
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
+from core.history import KIND_SAVE, begin_save, end_save
 from core.lock_retry import lock_hint, retry_on_lock
 from core.mp3_file import (
     ACOUSTID_FINGERPRINT_DESC,
@@ -105,7 +106,7 @@ _TXXX_DESCRIPTIONS = {
 }
 
 
-def save_tags(mp3: MP3File) -> bool:
+def save_tags(mp3: MP3File, *, journal_kind: str | None = KIND_SAVE) -> bool:
     """
     Writes mp3's current in-memory tag fields to its file on disk.
     Returns True on success. On any failure, sets mp3.save_error and
@@ -118,6 +119,11 @@ def save_tags(mp3: MP3File) -> bool:
     A field with an empty value has its frame removed entirely rather
     than written as an empty frame -- this is also how you clear a tag:
     blank the field in the bulk-edit panel, tick it, Apply, Save.
+
+    Every changed text field is recorded in the operations journal
+    (core/history.py) with its old and new value, as `journal_kind`
+    (None: not recorded -- Tools > History's restore, which the dialog
+    records itself). A journal failure never fails the save.
     """
     if mp3.load_error:
         # Its in-memory fields are blank defaults, not what's on disk --
@@ -125,6 +131,13 @@ def save_tags(mp3: MP3File) -> bool:
         mp3.save_error = f"not saved: the file could not be read ({mp3.load_error})"
         return False
 
+    entry = begin_save(mp3, journal_kind) if journal_kind else None
+    ok = _save_tags(mp3)
+    end_save(entry, ok, "" if ok else mp3.save_error)
+    return ok
+
+
+def _save_tags(mp3: MP3File) -> bool:
     target = os.path.realpath(mp3.path)  # save through a symlink, don't replace it
     tmp_path = ""
     try:

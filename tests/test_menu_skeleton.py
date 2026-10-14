@@ -76,7 +76,7 @@ def test_menu_contents_and_order(window):
     ]
     assert _menu_tree(menus["Tools"]) == [
         "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database Setup", "---",
-        "Columns", "Genres", "Languages",
+        "Columns", "Genres", "Languages", "---", "History",
     ]
     assert _menu_tree(menus["Help"]) == ["Changelog", "Credits", "---", f"About {mw.APP_NAME}"]
 
@@ -104,7 +104,7 @@ def test_old_action_keys_still_in_the_registry(window):
         "measure_loudness", "fetch_lyrics", "edit_lyrics", "cover_set", "cover_from_folder",
         "cover_remove", "cover_export", "parse_filename", "musicbrainz_lookup", "musicbrainz_local_lookup", "musicbrainz_settings", "discogs_lookup", "api_keys", "import_convert",
         "redact", "redact_recipe", "undo", "redo", "apply", "preferences", "external_tools",
-        "columns", "genres", "languages", "refresh_list", "rename_file", "rename_export_move",
+        "columns", "genres", "languages", "history", "refresh_list", "rename_file", "rename_export_move",
         "about", "changelog", "credits", "exit", "remove_from_list", "clear_list",
         "search_replace", "change_case", "auto_number", "filter_list", "save_all",
     ):

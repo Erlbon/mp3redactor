@@ -54,3 +54,4 @@ def test_command_palette_lists_commands_with_their_menu_path(window):
     assert by_title["Find Duplicates"].path == "Analyze"
     assert by_title["MusicBrainz"].path == "Metadata ▸ Look Up"
     assert by_title["Redact"].path == "Edit"
+    assert by_title["History"].path == "Tools"  # the operations journal (2026-10-14)

@@ -104,8 +104,18 @@ from core.scan_service import (
     run_key_detection,
     run_loudness_measurement,
     run_lyrics_fetch,
+    reload_from_disk,
     save_dirty_tags,
 )
+from core.history import (
+    apply_restore,
+    history_enabled,
+    journal_exists,
+    journal_for_dialog,
+    set_history_enabled,
+    take_journal_problem,
+)
+from redactor_common.gui.history_dialog import HistoryDialog
 from core.settings import (
     Settings,
     dedupe_and_trim_pattern_history,
@@ -570,6 +580,7 @@ class MainWindow(QMainWindow):
                 columns=self.open_column_settings_dialog,
                 genres=self.open_genre_settings_dialog,
                 languages=self.open_language_settings_dialog,
+                history=self.open_history_dialog,
             ),
             help=standard_help_items(
                 APP_NAME, self.open_changelog_dialog, self.open_credits_dialog, self.open_about_dialog,
@@ -674,6 +685,58 @@ class MainWindow(QMainWindow):
     def open_credits_dialog(self) -> None:
         dialog = CreditsDialog(str(asset_path("CREDITS.md")), parent=self)
         dialog.exec()
+
+    # -- Tools > History (the operations journal, core/history.py) ----------
+
+    def open_history_dialog(self) -> None:
+        """Every tag change this app made, with the old values; a restore
+        writes them back. The restore runs on a worker thread, so the
+        wrapper only notes the path; loaded rows of restored files are
+        re-read here, on the GUI thread, once the dialog is closed."""
+        title = "History"
+        if not history_enabled():
+            if not journal_exists():
+                # Opt-in (owner, 2026-10-14): nothing is recorded until asked.
+                answer = QMessageBox.question(
+                    self, "History",
+                    "History is off. Turn it on? From then on, tag changes this program saves are recorded "
+                    "here. Nothing has been recorded so far.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                self.settings.history_enabled = True
+                save_settings(self.settings)
+                set_history_enabled(True)
+            else:
+                title = "History (recording is off)"
+        restored: list[str] = []
+
+        def restore(path: str, values: dict[str, str]) -> str:
+            problem = apply_restore(path, values)
+            if not problem:
+                restored.append(path)
+            return problem
+
+        HistoryDialog(journal_for_dialog(), restore, self, title).exec()
+        self._reload_restored(restored)
+
+    def _reload_restored(self, paths: list[str]) -> None:
+        """Re-reads the loaded rows of files a History restore rewrote
+        (pending edits of other fields are kept, as after Fix Integrity)."""
+        wanted = {os.path.normcase(os.path.abspath(p)) for p in paths}
+        hits = [m for m in self.files if os.path.normcase(os.path.abspath(str(m.path))) in wanted]
+        for mp3 in hits:
+            reload_from_disk(mp3)
+        if hits:
+            self._rebuild_table()
+            self.statusBar().showMessage(f"Reloaded {len(hits)} restored file(s) from disk.", 8000)
+
+    def _show_journal_problem(self) -> None:
+        """A change-history write failure, shown once in the status bar."""
+        problem = take_journal_problem()
+        if problem:
+            self.statusBar().showMessage(problem, 15000)
 
     # -- loading ------------------------------------------------------------
 
@@ -1810,6 +1873,7 @@ class MainWindow(QMainWindow):
             label_for=lambda mp3: f"Saving: {mp3.filename}",
         )
         self._rebuild_table()
+        self._show_journal_problem()
 
         failed = [f"{mp3.filename}: {mp3.save_error}" for mp3 in dirty_files if mp3.save_error]
         if failed:
@@ -2205,6 +2269,7 @@ class MainWindow(QMainWindow):
         self._update_undo_action()
         self._update_redo_action()
         self._after_cover_change()  # table rebuild + lazily reloaded cover thumbnails
+        self._show_journal_problem()
         if report is not None:
             cleaned = (
                 [f"Removed {env.cleaned} leftover scratch file(s) of an earlier interrupted Redact."]
