@@ -159,7 +159,7 @@ def test_preferences_checkbox_round_trips_on_apply_and_ok(journal):
     assert settings.history_enabled is False and saved[-1] is False and history.history_enabled() is False
 
 
-def test_delete_history_asks_then_removes_the_file(journal, monkeypatch):
+def test_delete_history_asks_then_sends_the_file_to_the_recycle_bin(journal, monkeypatch, recycle_bin):
     history.set_history_enabled(True)
     journal.record("x.mp3", history.KIND_SAVE, {"title": ("a", "b")})
     assert os.path.exists(journal.path)
@@ -167,11 +167,21 @@ def test_delete_history_asks_then_removes_the_file(journal, monkeypatch):
     answers = [QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Yes]
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: answers.pop(0)))
     dialog = _prefs(Settings(history_enabled=True), [])
-    dialog.delete_history_button.click()
+    # a PrefAction on the History section (redactor_common), not a hand-made button
+    (button,) = [b for b in dialog.action_buttons if b.text() == "Delete History…"]
+    button.click()
     assert os.path.exists(journal.path)  # Cancel keeps it
-    dialog.delete_history_button.click()
+    button.click()
     assert not os.path.exists(journal.path)
+    assert recycle_bin.trashed == [journal.path]  # owner rule: deletes go to the Recycle Bin
     dialog.reject()
+
+
+def test_delete_history_is_a_pref_action_on_the_history_section():
+    from gui.preferences import preference_sections
+
+    (section,) = [s for s in preference_sections() if s.key == "history"]
+    assert [a.label for a in section.actions] == ["Delete History…"]
 
 
 # --- O3: Tools > History ----------------------------------------------------------------------------

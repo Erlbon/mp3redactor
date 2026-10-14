@@ -6,7 +6,8 @@ mp3cli/cmd_files.py
   convert PATH...   FLAC/WAV/OGG/M4A/... to MP3 beside the original (ffmpeg's libmp3lame)
 
 Rename and move are the shared implementations in redactor_common.cli.commands; this file only says how a
-file's fields and path are read. There is no undo for the command line (it is not recorded in the app's rename log).
+file's fields and path are read. There is no undo for the command line (it is not recorded in the app's rename log),
+but with history on (the opt-in journal, core/history.py) the journal's entries follow each renamed or moved file.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import os
 from pathlib import Path
 
 from core.fields import FIELDS, filename_values
+from core.history import record_file_moves
 from core.mp3_converter import (
     BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, IMPORTABLE_EXTENSIONS, convert_to_mp3, plan_conversions,
 )
@@ -70,6 +72,7 @@ def run_rename(args: argparse.Namespace, out: Output) -> int:
     failed = commands.rename_items(
         files, pattern=pattern, values_for=lambda m: _values_for(m, zero_pad), path_of=lambda m: str(m.path),
         skip_reason=skip_reason, out=out, dry_run=args.dry_run, ascii_only=_ascii(args),
+        on_renamed=lambda m, new_path: record_file_moves([(str(m.path), new_path)]),
     )
     return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, pattern=pattern)
 
@@ -95,10 +98,16 @@ def run_move(args: argparse.Namespace, out: Output) -> int:
     root = args.root or settings().library_root
     zero_pad = _zero_pad(args)
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
+    first_row = len(out.records)
     failed = commands.move_items(
         files, root=root, pattern=args.pattern, values_for=lambda m: _values_for(m, zero_pad),
         path_of=lambda m: str(m.path), skip_reason=skip_reason, out=out, dry_run=args.dry_run, copy=args.copy,
         ascii_only=_ascii(args),
+    )
+    # The journal's entries follow each moved file (a copy leaves the original, and its entries, where they are).
+    record_file_moves(
+        (row["path"], row["new_path"]) for row in out.records[first_row:]
+        if isinstance(row, dict) and row.get("status") == "moved" and row.get("new_path")
     )
     return commands.finish_run(out, failed, files=len(files), dry_run=args.dry_run, root=root)
 

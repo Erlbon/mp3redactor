@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-14#05 -- History follows renamed and moved files; Delete History uses the Recycle Bin; history in Export/Import Settings
+
+- **A renamed or moved file keeps its history.** With history on, File > Rename File, Search and Replace on the filename, Rename / Export / Move (rename and move into folders), File > Undo Last Rename, Redact's rename and move steps, and the command line's `rename`, `move` and `redact` now take the file's history entries along, so Tools > History lists them under the file's current name and Restore Old Values finds it. A Redact entry is written at the name the file had when it was saved, then follows the rename or move. A copy (Export, `move --copy`) leaves the entries with the original. With history off nothing is written.
+- **Preferences > History > Delete History...** is now the shared preferences action button (same label, same question) and sends the history file to the **Recycle Bin**; before, it deleted the file outright.
+- **File > Export Settings / Import Settings** now carry the history on/off switch (section "Change history on/off", `[history] enabled`). A settings file without it leaves your current choice alone; importing one with it on starts recording on this computer only because you ticked that section in the import preview, whose label says so.
+- Requires redactor_common 2026-10-14-04.
+
 ## 2026-10-14#04 -- Tools > History: undo a Save after the app was closed (opt-in)
 
 - **Opt-in, off by default**: nothing is recorded, and no history file is created, until you turn on **Tools > Preferences > History > "Keep a history of tag changes"** (or answer yes to the question Tools > History asks while it is off). The page says what is kept, how much and where, and has a **Delete History...** button. The command line follows the same setting. With history off but an older history file present, Tools > History opens it as "History (recording is off)": you can still restore, and nothing new is written.

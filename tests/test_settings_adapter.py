@@ -86,7 +86,7 @@ def test_read_section_covers_every_declared_key(tmp_path):
 def test_machine_specific_sections_unticked_by_default(tmp_path):
     _holder, adapter = _adapter(tmp_path)
     default = sb.default_selection(adapter)
-    assert default == {"recipe", "patterns", "columns", "field_defaults", "genres_languages"}
+    assert default == {"recipe", "patterns", "columns", "field_defaults", "genres_languages", "history"}
     machine = {s.key for s in adapter.sections() if not s.portable}
     assert machine == {"tools", "folders"}
     assert all("this computer only" in s.label for s in adapter.sections() if not s.portable)
@@ -140,6 +140,43 @@ def test_wrong_typed_values_are_skipped(tmp_path):
     assert s.ascii_filenames is True
     adapter.write_section("genres_languages", {"custom_languages": [["only-one"]], "custom_genres": ["A"]})
     assert s.custom_languages == [] and s.custom_genres == ["A"]
+
+
+def test_history_switch_round_trips_as_history_enabled(tmp_path, journal):
+    from core import history
+
+    _holder, adapter = _adapter(tmp_path, Settings(history_enabled=True))
+    exported = json.loads(_export(adapter))
+    assert exported["sections"]["history"]["items"] == {"enabled": True}  # [history] enabled, a portable bool
+
+    holder, adapter2 = _adapter(tmp_path, Settings())
+    assert history.history_enabled() is False
+    sb.apply_bundle(adapter2, sb.parse_bundle(json.dumps(exported), "mp3redactor"), {"history"})
+    assert holder["s"].history_enabled is True
+    assert load_settings(tmp_path).history_enabled is True
+    assert history.history_enabled() is True  # the running app follows the import at once
+
+    exported["sections"]["history"]["items"]["enabled"] = False
+    sb.apply_bundle(adapter2, sb.parse_bundle(json.dumps(exported), "mp3redactor"), {"history"})
+    assert holder["s"].history_enabled is False and history.history_enabled() is False
+
+
+def test_bundle_without_the_history_key_leaves_it(tmp_path, journal):
+    from core import history
+
+    history.set_history_enabled(True)
+    holder, adapter = _adapter(tmp_path, Settings(history_enabled=True))
+    for sections in ({"patterns": {"items": {"rename_pattern": "%title%"}}}, {"history": {"items": {}}},
+                     {"history": {"items": {"enabled": "yes"}}}):
+        doc = {"format": "redactor-settings", "version": 1, "app": "mp3redactor", "sections": sections}
+        sb.apply_bundle(adapter, sb.parse_bundle(json.dumps(doc), "mp3redactor"), {"patterns", "history"})
+        assert holder["s"].history_enabled is True and history.history_enabled() is True
+
+
+def test_history_section_label_says_importing_on_starts_recording(tmp_path):
+    _holder, adapter = _adapter(tmp_path)
+    (spec,) = [s for s in adapter.sections() if s.key == "history"]
+    assert spec.portable and "starts recording" in spec.label
 
 
 def test_file_from_another_app_is_rejected():

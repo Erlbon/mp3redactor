@@ -18,6 +18,8 @@ Tools > History asks): history_enabled() / set_history_enabled().
                            blocks or fails a save (see take_journal_problem())
   apply_restore(path, v)   the History dialog's writer: the app's own reader,
                            setters and save path, then a read-back check
+  record_file_moves(pairs) the rename/move hook: a file's entries follow it
+                           (make_rename_log() wires it into the RenameLog)
 
 Covers are not stored (only "cover changed"); replaced or converted files
 are covered by the Recycle Bin. Qt-free; safe on Redact's worker thread.
@@ -44,8 +46,8 @@ from core.mp3_file import JOURNAL_KEYS, MP3File
 
 __all__ = [
     "KIND_REDACT", "KIND_RESTORE", "KIND_SAVE", "apply_restore", "begin_save", "delete_journal", "end_save",
-    "fields_text", "get_journal", "history_enabled", "journal_exists", "journal_path", "set_history_enabled",
-    "set_journal_for_tests", "take_journal_problem",
+    "JournalMoveLog", "fields_text", "get_journal", "history_enabled", "journal_exists", "journal_path",
+    "make_rename_log", "record_file_moves", "set_history_enabled", "set_journal_for_tests", "take_journal_problem",
 ]
 
 _lock = threading.Lock()
@@ -99,16 +101,56 @@ def set_history_enabled(enabled: bool | None) -> None:
 
 
 def delete_journal() -> str:
-    """Removes the journal file (Preferences > History > Delete History...).
-    Returns "" or a plain-language problem."""
+    """Sends the journal file to the Recycle Bin (Preferences > History >
+    Delete History...; owner rule: deletes go to the Recycle Bin), and
+    removes a leftover prune temp file. Returns "" or a plain-language problem."""
     path = get_journal().path
     try:
-        for name in (path, path + ".tmp"):
-            if os.path.exists(name):
-                os.remove(name)
-    except OSError as exc:
+        if os.path.exists(path):
+            _trash(path)
+        if os.path.exists(path + ".tmp"):
+            os.remove(path + ".tmp")  # a half-written prune copy, not data
+    except Exception as exc:  # noqa: BLE001 -- TrashError, OSError: reported, not raised
         return f"the history file could not be deleted ({exc})"
     return ""
+
+
+def _trash(path: str) -> None:
+    """The Recycle Bin (redactor_common.core.trash); tests replace it."""
+    from redactor_common.core.trash import move_to_trash
+
+    move_to_trash(path)
+
+
+def record_file_moves(pairs) -> None:
+    """The rename/move hook (RenameLog's on_move, the command line's rename and
+    move): the journal's entries of each renamed or moved file follow it from
+    old to new path, so Restore finds the file where it is now. History off:
+    nothing is written. A journal failure never breaks the rename."""
+    if not history_enabled():
+        return
+    pairs = [(os.fspath(old), os.fspath(new)) for old, new in pairs]
+    if not pairs:
+        return
+    try:
+        get_journal().record_moves(pairs)
+    except Exception as exc:  # noqa: BLE001 -- the rename already happened
+        _report(exc)
+
+
+class JournalMoveLog:
+    """A stand-in for the RenameLog where there is none (Redact from the
+    command line): its record() only lets the journal follow the file."""
+
+    def record(self, _label, renames, **_move_details) -> None:
+        record_file_moves(renames)
+
+
+def make_rename_log(path: str):
+    """The app's RenameLog (File > Undo Last Rename) with the journal hook."""
+    from redactor_common.core.rename_log import RenameLog
+
+    return RenameLog(path, on_move=record_file_moves)
 
 
 def journal_exists() -> bool:

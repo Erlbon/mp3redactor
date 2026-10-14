@@ -63,6 +63,10 @@ SECTION_KEYS: dict[str, dict[str, str]] = {
         "custom_languages": "pairs",
         "hidden_default_languages": "strlist",
     },
+    # The opt-in change history switch (core/history.py), stored as [history] enabled in the ini and the
+    # bundle. Importing enabled=true turns recording on only because the user ticked this section in the
+    # import preview, whose label says so; a bundle without it leaves the current value.
+    "history": {"enabled": "bool"},
     "tools": {
         "mp3val_path": "str",
         "keyfinder_cli_path": "str",
@@ -80,6 +84,14 @@ SECTION_KEYS: dict[str, dict[str, str]] = {
     },
 }
 
+# (section, bundle key) -> Settings field, where the two names differ.
+_FIELD_BY_KEY = {("history", "enabled"): "history_enabled"}
+
+
+def _field(section: str, name: str) -> str:
+    return _FIELD_BY_KEY.get((section, name), name)
+
+
 # Keys whose value is a file on this computer: an import skips one that doesn't exist here.
 _EXISTING_FILE_KEYS = frozenset({"musicbrainz_database", "musicbrainz_dump"})
 
@@ -89,6 +101,7 @@ _LABEL_PORTABLE = [
     ("columns", "Column layout, visibility and order"),
     ("field_defaults", "Field defaults (ASCII, zero-padding, numbering, backups)"),
     ("genres_languages", "Custom genres and languages"),
+    ("history", "Change history on/off (importing 'on' starts recording tag changes on this computer)"),
 ]
 _LABEL_MACHINE = [
     ("tools", "External tool paths (mp3val, ffmpeg, keyfinder, fpcalc)"),
@@ -165,7 +178,7 @@ class Mp3SettingsAdapter(sb.SettingsAdapter):
     def read_section(self, key: str) -> dict[str, Any]:
         settings = self._get_settings()
         return {
-            name: _to_json(kind, getattr(settings, name))
+            name: _to_json(kind, getattr(settings, _field(key, name)))
             for name, kind in SECTION_KEYS[key].items()
         }
 
@@ -185,6 +198,10 @@ class Mp3SettingsAdapter(sb.SettingsAdapter):
             if name in _EXISTING_FILE_KEYS and not (coerced[name] and os.path.isfile(coerced[name])):
                 del coerced[name]  # empty or not on this computer: keep the current value
         for name, value in coerced.items():
-            setattr(settings, name, value)
+            setattr(settings, _field(key, name), value)
         if coerced:
             save_settings(settings, self._target_dir)
+        if key == "history" and "enabled" in coerced:
+            from core import history
+
+            history.set_history_enabled(settings.history_enabled)  # the running app follows at once

@@ -7,12 +7,16 @@ import pytest
 def _isolated_rename_log(monkeypatch, tmp_path):
     """File > Undo Last Rename's log (redactor_common's RenameLog) lives
     next to the settings -- the project folder when running from source.
-    Tests that rename files point it at a temporary folder instead."""
+    Tests that rename files point it at a temporary folder instead (built
+    like the app's: with the journal's on_move hook). Returns the app's real
+    _rename_log, for a test that checks how the app builds it."""
     import gui.main_window as main_window
-    from redactor_common.core.rename_log import RenameLog
+    from core.history import make_rename_log
 
-    log = RenameLog(str(tmp_path / "rename_log.json"))
+    real = main_window._rename_log
+    log = make_rename_log(str(tmp_path / "rename_log.json"))
     monkeypatch.setattr(main_window, "_rename_log", lambda: log)
+    return real
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +76,9 @@ def recycle_bin(monkeypatch, tmp_path):
     from mp3cli import cmd_m4b  # the command line's m4b --replace sends the old audiobook to the bin too
 
     monkeypatch.setattr(cmd_m4b, "move_to_trash", bin_)
+    from core import history  # Preferences > History > Delete History... sends the journal to the bin
+
+    monkeypatch.setattr(history, "_trash", bin_)
     return bin_
 
 

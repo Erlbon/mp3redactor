@@ -44,8 +44,12 @@ time.
   `mp3redactor_journal.jsonl` next to the settings file (beside the exe, or the project folder when run from
   source); it keeps the newest 50,000 changes and nothing older than 90 days. Covers are not kept in it (only
   the fact that a cover changed), and replaced or converted files are covered by the Recycle Bin instead. You
-  can switch it off again at any time; Preferences > History > Delete History removes the file. The command
-  line follows the same setting: with history off it records nothing.
+  can switch it off again at any time; Preferences > History > Delete History sends the file to the Recycle
+  Bin. The command line follows the same setting: with history off it records nothing. A renamed or moved file
+  keeps its history: Rename File, Search and Replace on the filename, Rename / Export / Move, Undo Last Rename,
+  Redact's rename and move steps and the command line's `rename`, `move` and `redact` all take its entries
+  along, so Restore finds the file where it is now. File > Export Settings / Import Settings carry the
+  on/off switch ("Change history on/off"); importing a file with it on starts recording on this computer.
 
 ## Opening files
 

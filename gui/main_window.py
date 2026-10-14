@@ -112,6 +112,7 @@ from core.history import (
     history_enabled,
     journal_exists,
     journal_for_dialog,
+    make_rename_log,
     set_history_enabled,
     take_journal_problem,
 )
@@ -362,8 +363,10 @@ def open_paths_at_start(window, args: list[str]) -> None:
 
 def _rename_log() -> RenameLog:
     """The persistent log behind File > Undo Last Rename (redactor_common's
-    core/rename_log.py), next to this app's settings."""
-    return RenameLog(os.path.join(str(base_dir()), "mp3redactor_rename_log.json"))
+    core/rename_log.py), next to this app's settings. Its on_move hook lets
+    the operations journal's entries follow every renamed or moved file
+    (core/history.py record_file_moves; nothing is written while history is off)."""
+    return make_rename_log(os.path.join(str(base_dir()), "mp3redactor_rename_log.json"))
 
 def _duplicates_store() -> JsonDismissStore:
     """The "Not duplicates" decisions of Analyze > Find Duplicates, next to

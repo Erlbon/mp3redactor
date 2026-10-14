@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 
 from core import redact_steps
+from core.history import JournalMoveLog
 from core.redact_steps import (
     FINALIZE_LABEL, Mp3Ctx, RedactEnv, build_catalogue, recipe_from_setting, save_stage,
 )
@@ -52,8 +53,10 @@ def run_redact(args: argparse.Namespace, out: Output) -> int:
         raise CliError("give the MP3 files to redact (or --list-steps)")
 
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
+    # No Undo Last Rename from the command line, but the journal's entries follow a renamed/moved file
+    # (history on only); the Redact entry itself is written at the path the save happened at.
     env = RedactEnv(
-        app_settings, rename_log=None, trash=trash_to(args.trash_dir) if args.trash_dir else trash_with_retries(lambda path: redact_steps.move_to_trash(path)),
+        app_settings, rename_log=JournalMoveLog(), trash=trash_to(args.trash_dir) if args.trash_dir else trash_with_retries(lambda path: redact_steps.move_to_trash(path)),
     )
     env.begin(files)
     return redact_items(
