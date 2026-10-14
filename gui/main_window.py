@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
                 extra_open=[
                     MenuAction("create_m4b", "Create M4B Audio&book…", self.create_m4b_dialog),
                     # Read-only player window for the one selected file (never Ctrl+Alt: AltGr).
-                    MenuAction("preview", "Previe&w…", self.preview_selected_file, shortcut="Ctrl+P"),
+                    MenuAction("play", "Pla&y", self.play_selected_file, shortcut="Ctrl+P"),
                 ],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
@@ -629,6 +629,7 @@ class MainWindow(QMainWindow):
         self.action_undo = actions["undo"]
         self.action_undo.setEnabled(False)
         self.action_redo = actions["redo"]
+        self.action_play = actions["play"]
         self.action_redo.setEnabled(False)
 
         # The View menu owns the zoom shortcuts; the zoom controller's own
@@ -646,6 +647,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         toolbar.addAction(self.action_load_files)
         toolbar.addAction(self.action_load_folder)
+        toolbar.addAction(self.action_play)
         toolbar.addSeparator()
         toolbar.addAction(self.action_save_all)
         toolbar.addSeparator()
@@ -1791,19 +1793,19 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(rename_file_refusal(len(files), bool(files and files[0].load_error)), 6000)
 
-    def preview_selected_file(self) -> None:
-        """File > Preview (Ctrl+P) and the right-click "Preview": a separate,
+    def play_selected_file(self) -> None:
+        """File > Play (Ctrl+P), the toolbar Play button and the right-click "Play": a separate,
         read-only player window (redactor_common's media_preview) for the one
         selected file. Opens the file for playback only; nothing is written."""
         files = self._selected_files()
         if len(files) != 1:
             self.statusBar().showMessage(
-                "Preview plays one file; select exactly one." if files else "Select a file to preview.", 6000,
+                "Play plays one file; select exactly one." if files else "Select a file to play.", 6000,
             )
             return
         from redactor_common.gui.media_preview import show_media_preview
 
-        show_media_preview(self, files[0].path, video=False)
+        show_media_preview(self, str(files[0].path), video=False)
 
     # -- tag editing ------------------------------------------------------
 
@@ -2934,7 +2936,7 @@ class MainWindow(QMainWindow):
             # it. Only offered for a single file -- renaming several to
             # the same name doesn't make sense.
             if len(files) == 1:
-                items.append(self.action_registry["preview"])
+                items.append(self.action_registry["play"])
             if len(files) == 1 and not files[0].load_error:
                 items.extend([self.action_rename_file, Separator()])
             items.extend([

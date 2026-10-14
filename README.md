@@ -43,7 +43,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | File | Include Subfolders (ticked: Open Folder, drops and Refresh List search subfolders) | |
 | File | Import and Convert… (FLAC/WAV/OGG/M4A/... to MP3 beside the original) | |
 | File | Create M4B Audiobook… | |
-| File | Preview… (plays the one selected file in a separate read-only window) | Ctrl+P |
+| File | Play (plays the one selected file in a separate window; also a Play button on the toolbar) | Ctrl+P |
 | File | Save All | Ctrl+Shift+A |
 | File | Rename File… (the one selected file) | F2 |
 | File | Undo Last Rename | |

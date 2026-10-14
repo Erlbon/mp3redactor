@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-14#09 -- Play
+
+- **Play** is now a real Play button on the toolbar (next to Open Folder), plus **File > Play (Ctrl+P)** and a **Play** row in the right-click menu. It opens a small player window for the one selected file and starts playing at once; it replaces the "Preview" wording. Select exactly one file, otherwise the status bar says so. Double-clicking a row is unchanged.
+- Fixed a crash when playing (a file path was handed to the player in the wrong form).
+- Fixed a "Scanning for MP3 files..." box that could stay on screen forever when a scan took about 0.3 s or more (shared fix in redactor_common 2026-10-14-08).
+- Requires redactor_common 2026-10-14-09.
+
 ## 2026-10-14#08 -- File > Preview
 
 - **File > Preview... (Ctrl+P)** and a **Preview** row in the right-click menu: opens a small separate player window for the one selected file (play/pause, seek bar, volume) so you can check that it plays and the tail is intact without leaving the app. Read-only: the file is only opened for playback, nothing is written. Select exactly one file, otherwise the status bar says so. The main window stays usable while the preview is open.
