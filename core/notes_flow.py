@@ -39,7 +39,7 @@ from core.notes_level import (
 )
 from core.notes_local import (
     ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE, KINDS, LocalAlbum, LocalGenre, read_genre, LocalArtist, ScanResult, Skipped, Target, album_children, classify,
-    fold_name, is_generic_name, read_album, read_artist, scan, sidecar_for, split_year, Loader,
+    album_folder_of, fold_name, is_collection_name, is_generic_name, read_album, read_artist, scan, sidecar_for, split_year, Loader,
 )
 from core.notes_match import (
     Confidence, Evaluation, album_key, decide_artist, discography_hits, era_conflict, name_similarity,
@@ -52,6 +52,7 @@ from redactor_common.core.notes import (
 )
 
 __all__ = [
+    "selection_scope", "artist_folder_of_file", "artist_folder_above",
     "ALL_KINDS", "Confidence", "Candidate", "Fetchers", "KIND_ALBUM", "KIND_ARTIST", "KIND_GENRE", "KINDS", "NotesEngine", "NotesSummary",
     "Proposal", "ScanResult", "Skipped", "Target", "build_proposals", "live_fetchers", "scan", "summarize",
     "undo_note_entry", "write_proposal", "STATUS_SKIPPED",
@@ -321,6 +322,22 @@ class NotesEngine:
         if proposal.kind == KIND_ALBUM:
             return candidate.source == "musicbrainz"
         return proposal.kind in (KIND_ARTIST,) and candidate.source in ("musicbrainz", "discogs")
+
+    def best_guess(self, proposal: Proposal) -> Optional[Candidate]:
+        """The candidate to use for an UNCERTAIN proposal when the person wants the engine's best guess: its top
+        candidate the engine can build a note around. None (no guess) for a confident or nothing-found proposal,
+        for a genre / collection folder, when the level is unclear (an artist folder whose level is not 'artist'),
+        or when there is no usable candidate."""
+        if proposal.confidence != Confidence.UNCERTAIN or proposal.kind not in (KIND_ARTIST, KIND_ALBUM):
+            return None
+        if proposal.kind == KIND_ARTIST and proposal.level != LEVEL_ARTIST:
+            return None
+        if proposal.kind == KIND_ALBUM and proposal.level not in (LEVEL_ALBUM, ""):
+            return None
+        for candidate in proposal.candidates:
+            if self.can_choose(proposal, candidate):
+                return candidate
+        return None
 
     def rebuild(self, proposal: Proposal, candidate: Optional[Candidate] = None, level: str = "") -> Proposal:
         """The proposal again after a PERSON decided: `candidate` (one of proposal.candidates) is the artist /
@@ -881,6 +898,51 @@ def _pick_release(releases: list[nmb.ReleaseSummary], local_count: int, first_da
 # ---------------------------------------------------------------------------
 # Running it
 # ---------------------------------------------------------------------------
+
+def selection_scope(files: Iterable[str | os.PathLike], loader: Optional[Loader] = None) -> list[Path]:
+    """The folders that get a note proposal for these selected MP3 files: each file's ALBUM folder and the ARTIST
+    folder above it. The artist folder is included only when it is an artist level by the engine's own test
+    (core/notes_level.py: it holds album folders and they are tagged as that artist's); a genre or collection
+    folder, 'Various Artists', a folder that is not named like an artist and an unclear level never get an
+    artist note from here. Tracks sitting directly in an artist folder give that artist folder. Order of first
+    appearance, each folder once."""
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def add(folder: Path) -> None:
+        key = os.path.normcase(str(folder))
+        if key not in seen:
+            seen.add(key)
+            out.append(folder)
+
+    for file in files:
+        album = album_folder_of(file)
+        add(album)
+        parent = artist_folder_above(album, loader)
+        if parent is not None:
+            add(parent)
+    return out
+
+
+def artist_folder_above(album_folder: Path, loader: Optional[Loader] = None) -> Optional[Path]:
+    """The artist folder directly above `album_folder`, or None when the folder above is not an artist level."""
+    parent = album_folder.parent
+    if not parent.name or parent == album_folder or is_collection_name(parent.name) or is_generic_name(parent.name):
+        return None
+    if classify(parent) != KIND_ARTIST:
+        return None
+    local = read_artist(parent, loader)
+    return parent if artist_level(local.name, local.albums).level == LEVEL_ARTIST else None
+
+
+def artist_folder_of_file(file: str | os.PathLike, loader: Optional[Loader] = None) -> Path:
+    """The folder to offer as 'the artist folder of this file': the artist level above its album folder, an
+    artist folder the file sits in directly, else the album folder itself."""
+    album = album_folder_of(file)
+    if classify(album) == KIND_ARTIST:
+        return album
+    return artist_folder_above(album, loader) or album
+
 
 def build_proposals(
     targets: list[Target], fetchers: Optional[Fetchers] = None, progress: Optional[Progress] = None,

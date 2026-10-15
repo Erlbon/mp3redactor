@@ -138,6 +138,13 @@ def album_children(folder: Path) -> list[Path]:
     return [d for d in _entries(folder)[1] if not _DISC_FOLDER.match(d.name) and _is_album_like(d)]
 
 
+def album_folder_of(file: str | os.PathLike) -> Path:
+    """The album folder an MP3 file belongs to: its folder, or the folder above when that is a 'Disc 2' style
+    sub-folder."""
+    parent = Path(file).parent
+    return parent.parent if _DISC_FOLDER.match(parent.name) else parent
+
+
 def classify(folder: Path) -> str:
     """'artist', 'album' or '' (see the module text)."""
     if album_children(folder):

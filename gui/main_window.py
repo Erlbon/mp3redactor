@@ -130,9 +130,9 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
 from gui.m4b_batch_dialog import M4bBatchDialog
 from gui.m4b_dialog import M4bDialog
-from gui.notes_dialog import ask_folder as ask_notes_folder
+from gui.notes_dialog import ask_scope as ask_notes_scope
 from gui.notes_dialog import create_notes
-from core.notes_flow import live_fetchers
+from core.notes_flow import artist_folder_of_file, live_fetchers, selection_scope
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
@@ -1003,31 +1003,50 @@ class MainWindow(QMainWindow):
     # -- create notes ------------------------------------------------------
 
     def create_notes_dialog(self) -> None:
-        """Tools > Create Notes...: with files selected, the folders of the selected files; otherwise a folder
-        (a library root, an artist or an album folder) is asked for, starting where it was last, and File >
-        Include Subfolders is honoured. The review page is gui/notes_dialog.py."""
-        if self._selected_files():
-            self.create_notes_for_selection()
+        """Tools > Create Notes...: ALWAYS asks which folder first (a library root, an artist or an album folder;
+        File > Include Subfolders is honoured and the question says so). The selected files are never used
+        silently: when files are selected their artist folder is offered as a one-click suggestion. The review
+        page is gui/notes_dialog.py."""
+        suggestions: list[str] = []
+        for mp3 in self._selected_files():
+            folder = str(artist_folder_of_file(mp3.path))
+            if folder not in suggestions:
+                suggestions.append(folder)
+        folders, browsed = ask_notes_scope(
+            self, resolve_start_directory(self._notes_start_folder()), suggestions, self.settings.include_subfolders)
+        if not folders:
             return
-        start = self.settings.notes_last_folder or self.settings.library_root or self.settings.last_directory
-        folder = ask_notes_folder(self, resolve_start_directory(start))
-        if not folder:
-            return
-        self.settings.notes_last_folder = folder
-        save_settings(self.settings)
-        self._run_create_notes([folder], self.settings.include_subfolders)
+        if browsed:
+            self.settings.notes_last_folder = folders[0]
+            save_settings(self.settings)
+        self._run_create_notes(folders, self.settings.include_subfolders)
+
+    def _notes_start_folder(self) -> str:
+        """Where the folder question starts: the last notes folder, the library root, the folder above the
+        loaded files, the last folder used."""
+        if self.settings.notes_last_folder:
+            return self.settings.notes_last_folder
+        if self.settings.library_root:
+            return self.settings.library_root
+        folders = {str(Path(mp3.path).parent) for mp3 in self.files}
+        if folders:
+            try:
+                common = os.path.commonpath(list(folders))
+            except ValueError:
+                common = ""
+            if common:
+                return common if len(folders) > 1 else str(Path(common).parent)
+        return self.settings.last_directory
 
     def create_notes_for_selection(self) -> None:
-        """Right-click "Create Notes for This Folder...": the folders of the selected files (the engine's scan
-        decides for each whether it is an artist or an album level)."""
-        folders: list[str] = []
-        for mp3 in self._selected_files():
-            folder = str(Path(mp3.path).parent)
-            if folder not in folders:
-                folders.append(folder)
-        if not folders:
-            self.statusBar().showMessage("Select a file first, or use Tools > Create Notes with nothing selected.", 6000)
+        """Right-click "Create Notes for This Folder...": for each selected file its ALBUM folder and the ARTIST
+        folder above it (when that is an artist level by the engine's own test; never a collection), whichever
+        single album was selected. Only those folders themselves are looked at, whatever Include Subfolders says."""
+        files = self._selected_files()
+        if not files:
+            self.statusBar().showMessage("Select a file first, or use Tools > Create Notes.", 6000)
             return
+        folders = [str(f) for f in selection_scope(mp3.path for mp3 in files)]
         self._run_create_notes(folders, False)
 
     def _run_create_notes(self, paths: list, include_subfolders: bool) -> None:

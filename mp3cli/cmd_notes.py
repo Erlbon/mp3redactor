@@ -5,6 +5,11 @@ mp3cli/cmd_notes.py
                   Pluteus shows beside the folder, from what the folders hold and what MusicBrainz, Wikipedia and
                   (with the Discogs token saved in the app, or DISCOGS_TOKEN) Discogs say.
 
+Creating notes for a whole library: `mp3redactor notes <library root> --kind artist --write` writes the confident
+artist notes; add `--include-uncertain` to also write the uncertain ones from the engine's best candidate (drafts,
+marked "from an uncertain match" in the report, never over an existing note, never for nothing found or an unclear
+level).
+
 A REPORT by default: every target folder is looked up and listed with how sure the match is and what would be
 written, and nothing is written. --write writes the drafts (status: draft in the front matter) of the CONFIDENT
 matches only -- a match is confident when at least one of the folder's own album titles is found in the candidate's
@@ -20,7 +25,7 @@ from __future__ import annotations
 import argparse
 
 from core.notes_flow import (
-    STATUS_SKIPPED, Confidence, Fetchers, NotesSummary, Proposal, build_proposals, live_fetchers, scan, summarize,
+    STATUS_SKIPPED, Confidence, Fetchers, NotesEngine, NotesSummary, Proposal, build_proposals, live_fetchers, scan, summarize,
     write_proposal,
 )
 from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
@@ -50,6 +55,11 @@ def add_notes_parser(sub) -> None:
     parser.add_argument("--kind", choices=KIND_CHOICES, default="both", help="which notes: artist, album, genre (about.md of a genre or collection folder), both = artist + album "
                                                              "(default) or all = all three")
     parser.add_argument("--write", action="store_true", help="write the drafts of the confident matches (default: report only)")
+    parser.add_argument(
+        "--include-uncertain", action="store_true",
+        help="with --write: ALSO write the uncertain matches, using the engine's best candidate, as drafts "
+             "(status: draft; never over an existing note, never for 'nothing found', never when the level is "
+             "unclear). The report marks them 'from an uncertain match' so they can be reviewed afterwards")
     parser.add_argument("-n", "--dry-run", action="store_true", help="never write, even with --write: show what would be written")
     parser.add_argument("--no-discogs", action="store_true", help="do not use Discogs even when a token is saved")
     parser.add_argument("--show-drafts", action="store_true", help="print each draft note (text mode) / include it (JSON)")
@@ -98,17 +108,36 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
 
     results = {}
     proposals: list[Proposal] = []
+    guessed = 0  # notes written (or that would be) from an uncertain match
     failed = 0
     cancelled = False
 
+    engine = NotesEngine(make_fetchers(not args.no_discogs))
+
     def handle(proposal: Proposal) -> None:
-        nonlocal failed
+        nonlocal failed, guessed
+        guess = None
+        unwritten = ""
+        if args.include_uncertain and proposal.confidence == Confidence.UNCERTAIN:
+            guess = engine.best_guess(proposal)
+            if guess is None:
+                unwritten = ("the level is unclear" if proposal.level in ("unclear", "collection", "genre")
+                             or proposal.kind == KIND_GENRE else "no usable candidate")
+            else:
+                reasons = list(proposal.reasons)
+                proposal = engine.rebuild(proposal, candidate=guess)
+                proposal.reasons = [f"best guess from an UNCERTAIN match: {guess.name} ({guess.source})", *reasons[:3]]
         proposals.append(proposal)
+        if guess is not None and not proposal.writable:
+            guess = None  # the rebuild did not give a note: it is reported like any other uncertain one
         if proposal.writable:
             result = write_proposal(proposal, dry_run=dry)
             results[proposal.path] = result
             if result.ok:
                 status, message = ("would-write", ", ".join(proposal.sources)) if dry else ("written", proposal.path)
+                if guess is not None:
+                    guessed += 1
+                    message += f"  [from an uncertain match: {guess.name} ({guess.source}) - review it]"
             elif result.status == "exists":
                 status, message = "has-note", result.message
             else:
@@ -120,8 +149,9 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
             if proposal.problems:
                 failed += 1
         else:
-            status, message = "review", "uncertain: not written"
+            status, message = "review", "uncertain: not written" + (f" ({unwritten})" if unwritten else "")
         out.record(_row(proposal, status, message, args.show_drafts))
+        out.records[-1]["from_uncertain"] = guess is not None
         _print(out, out.records[-1])
 
     def progress(done: int, total: int, label: str) -> None:
@@ -129,23 +159,25 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
             out.progress(done + 1, total, label)
 
     try:
-        build_proposals(
-            found.targets, make_fetchers(not args.no_discogs), progress=progress, on_proposal=handle,
-        )
+        build_proposals(found.targets, progress=progress, on_proposal=handle, engine=engine)
     except KeyboardInterrupt:
         cancelled = True
         out.warn("interrupted: the folders not yet looked at were left alone")
 
     summary: NotesSummary = summarize(proposals, results, cancelled=cancelled)
     summary_dict = summary.to_dict()
-    summary_dict.update({"has_note": len(found.skipped), "dry_run": dry, "failed": failed})
+    summary_dict.update({"has_note": len(found.skipped), "dry_run": dry, "failed": failed, "from_uncertain": guessed})
     out.line("")
     out.line(
         f"{summary.total} folder(s) looked up: {summary.confident} confident, {summary.uncertain} uncertain, "
         f"{summary.none} not found; {summary.written} written, {summary.would_write} would be written, "
         f"{len(found.skipped)} already had a note."
     )
-    if summary.uncertain or summary.none:
+    if guessed:
+        out.line(f"{guessed} note(s) {'would be ' if dry else 'were '}written from an UNCERTAIN match (best guess, still "
+                 "status: draft): look at them before you trust them.")
+    left = summary.uncertain + summary.none
+    if left > 0:
         out.line("Uncertain and unmatched folders were not written; review them (the candidates are listed above).")
     out.finish(summary_dict)
     if cancelled:

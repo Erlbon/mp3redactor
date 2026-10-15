@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-15#05 -- Create Notes: scope, artist notes from a file selection, bulk
+
+- Fixed: **Tools > Create Notes** no longer silently uses the selected files (a leftover selection of the previous artist won over the folder you meant). It always asks "Create notes for which folder?" first, starting at your last notes folder, the library root or the folder above the loaded files; the artist folder of the selected files is a one-click suggestion, **Choose another folder...** browses, and the question says whether Include Subfolders is on.
+- Fixed: right-click **Create Notes for This Folder...** on a file now proposes the **artist note as well as the album note** (it only looked at the album folder). For each selected file: its album folder and the artist folder above it, by the engine's own level test (never a collection, genre folder or unclear level; "Disc N" folders and tracks directly in an artist folder are handled; the artist note reads the whole artist folder).
+- New: **Tick best guesses** in the review list: ticks the uncertain matches that have a candidate and a clear level, rebuilt around the top candidate (progress dialog); still drafts, nothing is written until you click Write.
+- New: `mp3redactor notes ... --write --include-uncertain` also writes the uncertain matches from the engine's best candidate (drafts; never over an existing note, never for nothing found or an unclear level; the report marks them `from_uncertain`).
+- New: a "Creating notes for a whole library" recipe in ABOUT.md and the README. Regression tests: leftover selection, file selection, two runs in one process, best guesses, `--include-uncertain`.
+
 ## 2026-10-15#04 -- Tools > Create Notes: the review page
 
 - New **Tools > Create Notes...** (no shortcut) and a right-click **Create Notes for This Folder...**: drafts the folder notes (`artist.md`, `album.md`, `about.md`) for the Pluteus media server. With files selected it works on their folders; with nothing selected it asks for a library, artist or album folder (remembered, and File > Include Subfolders is honoured).

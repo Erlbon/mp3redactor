@@ -38,8 +38,9 @@ time.
   folder), with optional Audible / Open Library lookup and an Audiobookshelf-style library layout.
 - **Create Notes** (Tools > Create Notes, or right-click > Create Notes for This Folder) drafts the short Markdown notes
   the Pluteus media server shows beside a folder: `artist.md`, `album.md`, and `about.md` for a genre or collection
-  folder. With files selected it works on their folders; otherwise it asks for a library, artist or album folder (and
-  follows Include Subfolders). The lookups (MusicBrainz, Wikipedia and, with the Discogs token saved under Tools > API
+  folder. Tools > Create Notes always asks which folder first (a library, artist or album folder, following Include
+  Subfolders; the selected files' artist folder is offered as a one-click suggestion, never used silently); the right-click
+  entry takes each selected file's album folder AND the artist folder above it. The lookups (MusicBrainz, Wikipedia and, with the Discogs token saved under Tools > API
   Keys, Discogs) run under a progress dialog you can cancel; what was looked up so far is still reviewed. The review
   page has two views, chosen from what was found and switchable: one note at a time (one artist or album: Skip, Write
   note, Back, Write all remaining confident) or a list with tick boxes (several artists: Write N ticked notes).
@@ -91,7 +92,7 @@ mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [
                                [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
                                [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
                                [--lookup] [--region STORE] [--min-score N] [-n]
-mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [-n] [--no-discogs] [--show-drafts] [-R]
+mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--no-discogs] [--show-drafts] [-R]
 ```
 
 The command line uses the same code as the window, so the results are the same. It reads the same settings file
@@ -311,7 +312,7 @@ the match that was used and `filled`, the names of what it filled in.
 
 ### notes
 
-`mp3redactor notes PATH... [--kind KIND] [--write] [-n] [--no-discogs] [--show-drafts] [-R]`
+`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--no-discogs] [--show-drafts] [-R]`
 
 Drafts the short Markdown notes that the Pluteus media server shows beside a folder: `artist.md` in an artist
 folder, `album.md` in an album folder, and (with `--kind genre` or `all`) `about.md` in a genre or collection folder
@@ -332,6 +333,7 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 | --- | --- |
 | `--kind KIND` | `artist`, `album`, `genre` (the `about.md` of a genre or collection folder), `both` (artist + album, the default) or `all`. |
 | `--write` | Write the confident drafts. Without it the command only reports. |
+| `--include-uncertain` | With `--write`: also write the uncertain matches from the engine's best candidate, as drafts. Never over an existing note, never for "nothing found", never when the level is unclear (listed with the reason). Marked `from_uncertain` in the report and in `--json`. |
 | `-n`, `--dry-run` | Never write, even with `--write`: show what would be written. |
 | `--no-discogs` | Do not use Discogs even when a token is saved. |
 | `--show-drafts` | Print each draft note (with `--json`: include it in the row). |
@@ -340,6 +342,18 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 Exit code 0 when done, 1 when a note could not be written or a lookup failed, 130 when interrupted (what was written
 stays). With the opt-in history on, each written note is recorded and can be undone (moved to the Recycle Bin, only if
 it is unchanged).
+
+### Creating notes for a whole library
+
+- **In the app:** Tools > Create Notes..., then **Choose another folder...** and pick the library root (the question
+  starts at the library root or where you last looked; the selected files' artist folder is only offered as a
+  suggestion), with **Include Subfolders** on (toolbar). On the review page switch to the list view, check the
+  confident pre-ticks, optionally **Tick best guesses** (uncertain matches rebuilt around their top candidate: they
+  can be wrong, they are still drafts), then **Write N ticked notes**.
+- **On the command line:** `mp3redactor notes <library root> --kind artist --write` writes the confident artist notes;
+  add `--include-uncertain` to also write the uncertain ones from the engine's best candidate (drafts, never over an
+  existing note, never for "nothing found" or when the level is unclear; those are listed with the reason). The report
+  marks each note written from an uncertain match so you can review it afterwards.
 
 ### Exit codes
 

@@ -75,7 +75,18 @@ def run(window, monkeypatch, folder, fetchers, scenario, must_finish=True):
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(folder)))
     window.table.clearSelection()
     window.notes_fetchers = lambda: fetchers
-    script = Script(scenario())
+    def with_scope_step():
+        # Tools > Create Notes always asks which folder first; these scenarios browse for it
+        from gui.notes_dialog import NotesScopeDialog
+
+        def scope():
+            return next((w for w in QApplication.topLevelWidgets() if isinstance(w, NotesScopeDialog) and w.isVisible()), None)
+
+        yield from wait(lambda: scope() is not None, "the scope dialog")
+        click(scope().choose_button)
+        yield from scenario()
+
+    script = Script(with_scope_step())
     window.action_registry["create_notes"].trigger()
     script.timer.stop()
     assert script.error == "", script.error

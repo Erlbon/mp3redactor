@@ -348,9 +348,11 @@ class NotesReviewDialog(QDialog):
         banner: str = "", parent=None, size: Optional[tuple[int, int]] = None,
         on_size: Optional[Callable[[int, int], None]] = None,
         open_path: Callable[[str], None] = open_in_system, history_note: str = "",
+        best_guess: Optional[Callable[[Proposal], Optional[Candidate]]] = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Create Notes")
+        self._best_guess = best_guess or (lambda _proposal: None)
         self.session = session
         self.view = view
         self.index = 0
@@ -455,6 +457,12 @@ class NotesReviewDialog(QDialog):
         self.filter_check.toggled.connect(lambda _on: self._fill_tree())
         self.tick_all_button = _flat_button("Tick all confident")
         self.untick_all_button = _flat_button("Untick all")
+        self.tick_guesses_button = _flat_button("Tick best guesses")
+        self.tick_guesses_button.setToolTip(
+            "Uncertain matches that have a candidate and a clear level: use the top candidate and tick them. "
+            "RISK: the match was not confirmed by your albums, so a note may describe the wrong artist or album. "
+            "They are still written as drafts (status: draft) and nothing is written until you click Write.")
+        self.tick_guesses_button.clicked.connect(self._tick_best_guesses)
         self.tick_all_button.clicked.connect(self._tick_all)
         self.untick_all_button.clicked.connect(self._untick_all)
         left = QWidget()
@@ -481,6 +489,7 @@ class NotesReviewDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(self.tick_all_button)
         row.addWidget(self.untick_all_button)
+        row.addWidget(self.tick_guesses_button)
         row.addStretch(1)
         row.addWidget(self.write_ticked_button)
         row.addWidget(self.close_list_button)
@@ -661,6 +670,37 @@ class NotesReviewDialog(QDialog):
         self._fill_tree()
         self._select_tree_index(self.index)
 
+    def guess_indices(self) -> list[int]:
+        return [i for i, item in enumerate(self.session.items)
+                if item.state == PENDING and not item.proposal.writable and self._best_guess(item.proposal) is not None]
+
+    def _tick_best_guesses(self) -> None:
+        """Rebuilds every uncertain proposal that has a usable top candidate and a clear level around that
+        candidate (engine.rebuild), under a progress dialog; the rebuilt notes are ticked. Nothing is written."""
+        indices = self.guess_indices()
+        if not indices:
+            QMessageBox.information(self, "Create Notes", "No uncertain match has a candidate and a clear level to guess from.")
+            return
+        done: list[int] = []
+
+        def work(progress):
+            for n, i in enumerate(indices):
+                if progress.should_cancel():
+                    break
+                proposal = self.session.items[i].proposal
+                progress.set_value(n)
+                progress.set_label(f"Looking up {proposal.folder.name} ({n + 1} of {len(indices)})…")
+                guess = self._best_guess(proposal)
+                try:
+                    rebuilt = self._rebuild(proposal, guess, "")
+                except Exception:  # noqa: BLE001 -- that folder stays as it was
+                    continue
+                self.session.replace(i, rebuilt)
+                done.append(i)
+
+        run_work_with_progress(self, len(indices), "Looking up the best guesses…", work, cancellable=True, title="Create Notes")
+        self._refresh_all()
+
     def _untick_all(self) -> None:
         for i in range(len(self.session.items)):
             self.session.set_ticked(i, False)
@@ -825,7 +865,8 @@ def create_notes(
         session, choose_view(targets), _rebuild_with(engine), engine.can_choose,
         banner="  ".join(notes), parent=parent, size=parse_size(size_text),
         on_size=(lambda w, h: on_size(f"{w}x{h}")) if on_size else None, open_path=open_path,
-        history_note="Recorded in Tools > History (it is switched on)." if history_enabled() else "")
+        history_note="Recorded in Tools > History (it is switched on)." if history_enabled() else "",
+        best_guess=engine.best_guess)
     dialog.exec()
     return dialog
 
@@ -835,6 +876,73 @@ def _rebuild_with(engine: NotesEngine):
         return engine.rebuild(proposal, candidate=candidate, level=level)
 
     return rebuild
+
+
+class NotesScopeDialog(QDialog):
+    """The first step of Tools > Create Notes: which folder? The selection is only ever a SUGGESTION here (the
+    artist folder of the selected files), never used silently."""
+
+    def __init__(self, parent: QWidget, start: str, suggestions: list[str], include_subfolders: bool):
+        super().__init__(parent)
+        self.setWindowTitle("Create Notes: which folder?")
+        self.start = start
+        self.folders: list[str] = []
+        self.browsed = False
+        title = QLabel("Create notes for which folder?")
+        font = title.font()
+        font.setBold(True)
+        title.setFont(font)
+        how = ("Include Subfolders is on: everything below the folder is looked at (including subfolders)."
+               if include_subfolders else
+               "Include Subfolders is off: only the folder itself is looked at (switch it on in the toolbar "
+               "to cover a whole library).")
+        info = QLabel("Pick a library, artist or album folder. " + how)
+        info.setWordWrap(True)
+        self.suggestion_button: Optional[QPushButton] = None
+        layout = QVBoxLayout(self)
+        layout.addWidget(title)
+        layout.addWidget(info)
+        if suggestions:
+            if len(suggestions) == 1:
+                text = f"Use the artist folder of the selected files:\n{suggestions[0]}"
+            else:
+                text = (f"Use the {len(suggestions)} artist folders of the selected files:\n"
+                        + "\n".join(suggestions[:4]) + ("\n…" if len(suggestions) > 4 else ""))
+            self.suggestion_button = QPushButton(text)
+            self.suggestion_button.setAutoDefault(False)
+            self.suggestion_button.setStyleSheet("text-align:left; padding:6px 10px;")
+            self.suggestion_button.clicked.connect(lambda: self._use(list(suggestions), False))
+            layout.addWidget(self.suggestion_button)
+        self.choose_button = QPushButton("Choose another folder…")
+        self.choose_button.setAutoDefault(suggestions == [])
+        self.choose_button.clicked.connect(self._choose)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setAutoDefault(False)
+        self.cancel_button.clicked.connect(self.reject)
+        row = QHBoxLayout()
+        row.addWidget(self.choose_button)
+        row.addStretch(1)
+        row.addWidget(self.cancel_button)
+        layout.addLayout(row)
+        self.setMinimumWidth(520)
+
+    def _use(self, folders: list[str], browsed: bool) -> None:
+        self.folders, self.browsed = folders, browsed
+        self.accept()
+
+    def _choose(self) -> None:
+        folder = ask_folder(self, self.start)
+        if folder:
+            self._use([folder], True)
+
+
+def ask_scope(parent: QWidget, start: str, suggestions: list[str], include_subfolders: bool) -> tuple[list[str], bool]:
+    """(folders, browsed): the folders to create notes for ([] = cancelled) and whether the person browsed for
+    them (so the caller can remember that folder as the next starting point)."""
+    dialog = NotesScopeDialog(parent, start, suggestions, include_subfolders)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return [], False
+    return dialog.folders, dialog.browsed
 
 
 def ask_folder(parent: QWidget, start: str) -> str:
