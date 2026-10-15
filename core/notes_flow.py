@@ -45,7 +45,10 @@ from core.notes_match import (
     Confidence, Evaluation, album_key, decide_artist, discography_hits, era_conflict, name_similarity,
     score_release_group, titles_match, track_overlap,
 )
-from core.notes_render import TrackInfo, group_discography, render_album_note, render_artist_note, render_genre_note
+from core.notes_render import (
+    H_OTHER, LOCAL_ONLY_CREDIT, TrackInfo, discogs_facts_credit, group_discogs_discography, group_discography,
+    render_album_note, render_artist_note, render_genre_note,
+)
 from redactor_common.core import note_text
 from redactor_common.core.notes import (
     STATUS_ERROR, STATUS_WRITTEN, NoteWriteResult, normalize_note_text, note_path, write_note,
@@ -58,6 +61,9 @@ __all__ = [
     "undo_note_entry", "write_proposal", "STATUS_SKIPPED",
 ]
 
+LEVEL_LOCAL_TAGS = "local-tags"  # rebuild(level=...): the explicit minimal note from the tags (never automatic)
+DISCOGS_MISSING = "Discogs token not set: add it in Tools > API Keys... to build from Discogs candidates"
+WIKIPEDIA_OFF = "Wikipedia lookups are switched off for this run"
 STATUS_SKIPPED = "skipped"  # write_proposal's own status: an uncertain/none proposal is never written
 KIND_NOTE = "note"  # the journal's kind for a created note (not a tag change: never "restorable" as one)
 MAX_CANDIDATES = 4
@@ -306,6 +312,7 @@ class NotesEngine:
         self._all_groups: dict[str, list[nmb.ReleaseGroup]] = {}
         self._network_failures = 0
         self._seen_groups: dict[str, nmb.ReleaseGroup] = {}  # release groups offered as candidates, by id
+        self._d_entries: dict[int, list[dict]] = {}  # Discogs artist release lists, by artist id
 
     # -- public ------------------------------------------------------------------------------------------
 
@@ -317,12 +324,21 @@ class NotesEngine:
         return self._dispatch(target)
 
     def can_choose(self, proposal: Proposal, candidate: Candidate) -> bool:
-        """Can the proposal be rebuilt around this candidate? An artist note can use a MusicBrainz or a Discogs
-        artist; an album note needs a MusicBrainz release group (a Discogs-only album has no tracklist source
-        here)."""
-        if proposal.kind == KIND_ALBUM:
-            return candidate.source == "musicbrainz"
-        return proposal.kind in (KIND_ARTIST,) and candidate.source in ("musicbrainz", "discogs")
+        """Can the proposal be rebuilt around this candidate? Artist and album notes can be built from a
+        MusicBrainz, a Discogs (needs the token) or a Wikipedia candidate; genre / collection notes use none."""
+        return not self.why_cannot_choose(proposal, candidate)
+
+    def why_cannot_choose(self, proposal: Proposal, candidate: Candidate) -> str:
+        """'' when the candidate can be used, else the plain reason (which source is missing)."""
+        if proposal.kind not in (KIND_ARTIST, KIND_ALBUM):
+            return "A genre or collection note is built from Wikipedia only; there is no candidate to choose."
+        if candidate.source == "musicbrainz":
+            return ""
+        if candidate.source == "discogs":
+            return "" if self.fetchers.discogs is not None else DISCOGS_MISSING
+        if candidate.source == "wikipedia":
+            return "" if self.fetchers.wikipedia else WIKIPEDIA_OFF
+        return f"No note can be built from a {candidate.source} candidate."
 
     def best_guess(self, proposal: Proposal) -> Optional[Candidate]:
         """The candidate to use for an UNCERTAIN proposal when the person wants the engine's best guess: its top
@@ -350,6 +366,8 @@ class NotesEngine:
         self._network_failures = 0
         target = proposal.target
         kind = target.kind
+        if level == LEVEL_LOCAL_TAGS:
+            return self.local_note(proposal)
         if level == SUGGEST_ARTIST:
             kind = KIND_ARTIST
         elif level == SUGGEST_ALBUM:
@@ -370,6 +388,14 @@ class NotesEngine:
             proposal = Proposal(target, Confidence.NONE, reasons=["MusicBrainz failed"], problems=[str(exc)])
         except (wp.WikipediaError, DiscogsError) as exc:  # only reached when nothing was caught closer
             proposal = Proposal(target, Confidence.NONE, reasons=["a lookup failed"], problems=[str(exc)])
+        if (proposal.kind in (KIND_ARTIST, KIND_ALBUM) and proposal.confidence != Confidence.CONFIDENT
+                and not proposal.note_text and not proposal.candidates and proposal.level != LEVEL_UNCLEAR):
+            if self.fetchers.discogs is None:
+                proposal.reasons.append(
+                    "Discogs was not searched (no token set, or switched off): add the token in Tools > API Keys... "
+                    "to look there too")
+            if not self.fetchers.wikipedia:
+                proposal.reasons.append(WIKIPEDIA_OFF)
         if any(_is_network_down(p) for p in proposal.problems):
             self._network_failures += 1
         else:
@@ -385,6 +411,11 @@ class NotesEngine:
             except nmb.MusicBrainzError:
                 return fallback
         return self._all_groups[mbid]
+
+    def _discogs_entries(self, client: DiscogsClient, artist_id: int) -> list[dict]:
+        if artist_id not in self._d_entries:
+            self._d_entries[artist_id] = nd.artist_release_entries(client, artist_id)
+        return self._d_entries[artist_id]
 
     # -- artist resolution --------------------------------------------------------------------------------
 
@@ -451,8 +482,8 @@ class NotesEngine:
                     ((name_similarity(names, [h.name]), h) for h in dhits), key=lambda s: s[0], reverse=True)
                 devals: list[tuple[Evaluation, nd.DiscogsArtistHit]] = []
                 for sim, hit in [s for s in scored_d if s[0] >= 0.5][:3]:
-                    releases = nd.artist_releases(client, hit.id)
-                    found = discography_hits(local_titles, [title for title, _y in releases])
+                    entries = self._discogs_entries(client, hit.id)
+                    found = discography_hits(local_titles, [e["title"] for e in entries])
                     evaluation = Evaluation("discogs", str(hit.id), hit.name, hits=found, name_sim=sim,
                                             search_score=0, detail=f"Discogs {hit.id}")
                     devals.append((evaluation, hit))
@@ -512,6 +543,8 @@ class NotesEngine:
         collab = split_collab(local.name)
         partial = collab[:1] if len(collab) > 1 else []
         res = self.resolve_artist(local.names, titles, years, partial)
+        if force is not None and force.source == "wikipedia":
+            return self._wikipedia_artist(proposal, local, res, force, titles)
         if force is not None:
             res = self._forced_resolution(res, force)
         proposal.candidates = list(res.candidates)
@@ -521,6 +554,8 @@ class NotesEngine:
         if res.confidence != Confidence.CONFIDENT:
             if not res.candidates and not res.problems:
                 proposal.reasons.append("no artist of that name was found")
+            if not res.candidates and not res.problems:
+                self._offer_wikipedia(proposal, "artist", local.name, "", [t for names_ in titles for t in names_])
             return proposal
 
         mb = res.mb_ok
@@ -594,13 +629,24 @@ class NotesEngine:
             ("Active", active),
             ("Members", ", ".join(members[:MAX_MEMBERS])),
             ("Real name", info.real_name if info else ""),
+            ("Also known as", ", ".join(info.aliases[:6]) if info and mb is None else ""),
         ]
         # -- links: homepage, Wikipedia (the page actually used), AllMusic, Discogs, Last.fm
         found_links = nmb.relation_links(detail) if detail else {}
-        links = [found_links.get("official homepage", ""), wiki_url or found_links.get("wikipedia", ""),
+        info_wiki = next((u for u in (info.urls if info else []) if "wikipedia.org/wiki/" in u), "")
+        links = [found_links.get("official homepage", ""), wiki_url or found_links.get("wikipedia", "") or info_wiki,
                  found_links.get("allmusic", ""), found_links.get("discogs", "") or (info.uri if info else ""),
                  found_links.get("last.fm", "")]
-        discography = group_discography(self._full_discography(mb.evaluation.id, mb.groups)) if mb else []
+        if mb:  # the verified MusicBrainz discography wins; Discogs then gives members / profile only
+            discography = group_discography(self._full_discography(mb.evaluation.id, mb.groups))
+        elif info is not None and self.fetchers.discogs is not None:
+            try:
+                discography = group_discogs_discography(self._discogs_entries(self.fetchers.discogs, info.id))
+            except DiscogsError as exc:
+                discography = []
+                proposal.problems.append(str(exc))
+        else:
+            discography = []
         years = _years_text(life.get("begin") or "", life.get("end") or "", bool(life.get("ended"))) if detail else ""
         proposal.note_text = render_artist_note(
             name=name, years=years, genres=nmb.genres_of(detail) if detail else nfo_genres, links=[l for l in links if l],
@@ -648,6 +694,190 @@ class NotesEngine:
             name=name, intro=wp.trim_extract(page.extract), links=[page.url] if page.url else [],
             footer=[note_text.wikipedia_credit(page.title)])
         return proposal
+
+    # -- other sources: Discogs albums, Wikipedia-only notes, the explicit local-only note -----------------------
+
+    def _album_candidates_from_discogs(self, proposal: Proposal, hits: list, info: Optional["nd.DiscogsAlbumInfo"]) -> None:
+        """The Discogs releases that may be this album, as candidates (the best three that fit at all)."""
+        have = {c.id for c in proposal.candidates if c.source == "discogs"}
+        for hit in [h for h in hits if h.score >= 0.6][:3]:
+            if str(hit.id) in have:
+                continue
+            detail = ", ".join(x for x in (hit.year, hit.country, " ".join(y for y in (hit.label, hit.catno) if y),
+                                           hit.formats) if x)
+            proposal.candidates.append(Candidate(
+                "discogs", str(hit.id), f"{hit.artist} - {hit.album}" if hit.artist else hit.album, detail, [], hit.score,
+                f"Discogs search match: artist, title and year compared with the folder ({hit.score:.2f})"))
+            have.add(str(hit.id))
+        if info is not None and str(info.release.id) not in have:
+            proposal.candidates.append(Candidate(
+                "discogs", str(info.release.id), f"{info.release.artist} - {info.release.title}", info.release.year, [],
+                info.score))
+        if proposal.candidates and proposal.confidence == Confidence.NONE:
+            proposal.confidence = Confidence.UNCERTAIN
+
+    def _offer_wikipedia(self, proposal: Proposal, kind: str, name: str, artist: str, context: list[str],
+                         soundtrack: bool = False) -> None:
+        """Nothing at MusicBrainz or Discogs: a Wikipedia article about the artist / album that passes the
+        verification becomes the one candidate (a thin note can be built from it when a person picks it; never in
+        a batch run, the proposal stays 'uncertain')."""
+        page = self._wiki_intro(proposal, kind, name, artist, context, soundtrack)
+        if page is None:
+            return
+        proposal.candidates.append(Candidate(
+            "wikipedia", page.title, page.title, page.description or "Wikipedia article", [], 0.5,
+            "a Wikipedia article that passed the check; a thin note (introduction and what the summary says)"))
+        proposal.confidence = Confidence.UNCERTAIN
+        proposal.reasons.append(
+            f"only Wikipedia has a verified article ('{page.title}'): pick it to build a thin draft from it")
+
+    def _wiki_intro(self, proposal: Proposal, kind: str, name: str, artist: str, context: list[str],
+                    soundtrack: bool = False) -> Optional["wp.Page"]:
+        if not self.fetchers.wikipedia:
+            return None
+        try:
+            return wp.find_page("soundtrack" if soundtrack else kind, work_title(name) if soundtrack else name,
+                                artist=artist, context_terms=context, fetch=self.fetchers.wiki, notes=proposal.reasons)
+        except wp.WikipediaError as exc:
+            proposal.problems.append(str(exc))
+            return None
+
+    def _discogs_album(self, proposal: Proposal, local: LocalAlbum, force: Candidate, names: list[str],
+                       soundtrack: bool) -> Proposal:
+        """An album note from a Discogs release (or master -> its main release) a person chose: the tracklist
+        (side positions A1 / B2 are dropped: tracks are numbered 1..n down the release, one disc per Discogs disc),
+        label and catalogue number, country, released, structured credits (producer, written by, musicians,
+        sleeve design and photography; never the free-text release notes), genres and styles, a verified
+        Wikipedia introduction, and a Discogs credit. A chosen candidate is believed; the overlap with the local
+        files is reported."""
+        client = self.fetchers.discogs
+        if client is None:
+            proposal.confidence = Confidence.UNCERTAIN
+            proposal.problems.append(DISCOGS_MISSING)
+            return proposal
+        try:
+            info = nd.release_info(client, force.id, force.score, include_design=True)
+        except DiscogsError as exc:
+            proposal.confidence = Confidence.UNCERTAIN
+            proposal.problems.append(str(exc))
+            proposal.reasons.append("Discogs failed while the release was fetched: not written, try again later")
+            return proposal
+        release = info.release
+        tracks = [TrackInfo(t.disc, t.number, t.title, _seconds(t.duration)) for t in release.tracks]
+        proposal.reasons.append(f"chosen by you: {force.name} (Discogs release {release.id})")
+        local_titles = [t.title for t in local.tracks if t.title]
+        if tracks and len(local_titles) >= 3:
+            overlap = track_overlap(local_titles, [t.title for t in tracks])
+            proposal.reasons.append(f"{round(overlap * 100)}% of the local track titles are on the release")
+        if release.year and local.year and release.year != local.year:
+            proposal.reasons.append(f"Discogs says {release.year}, the folder says {local.year}")
+        artist_name = release.artist or (names[0] if names else "")
+        title = release.title
+        if fold_name(title) == fold_name(local.title):
+            title = local.title
+        sources = ["discogs"]
+        footer = [discogs_facts_credit("release", release.id)]
+        intro, wiki_url = "", ""
+        page = self._wiki_intro(proposal, "album", title, artist_name, [], soundtrack)
+        if page is not None:
+            intro, wiki_url = wp.trim_extract(page.extract), page.url or ""
+            footer.append(note_text.wikipedia_credit(page.title))
+            sources.append("wikipedia")
+            proposal.reasons.append(f"Wikipedia: '{page.title}' (found by {page.via})")
+        genres = [g.lower() for g in release.genres + release.styles][:6]
+        if soundtrack and "soundtrack" not in genres:
+            genres.append("soundtrack")
+        released = info.released or release.year
+        facts = [
+            ("Artist", artist_name), ("Released", released),
+            ("Label", f"{release.label} ({release.catno})" if release.label and release.catno else release.label),
+            ("Country", release.country),
+        ]
+        links = [wiki_url, release.uri or f"https://www.discogs.com/release/{release.id}"]
+        proposal.confidence = Confidence.CONFIDENT
+        proposal.note_text = render_album_note(
+            title=title, album=local, years=release.year or local.year, genres=genres, links=[l for l in links if l],
+            intro=intro, facts=facts, credits=None if info.credits.empty else info.credits, tracks=tracks,
+            footer=footer)
+        proposal.title = title
+        proposal.sources = sources
+        return proposal
+
+    def _wikipedia_album(self, proposal: Proposal, local: LocalAlbum, force: Candidate, names: list[str],
+                         soundtrack: bool) -> Proposal:
+        page = self._linked_page(force)
+        return self._thin_wikipedia(proposal, local, page, force, names[0] if names else "", local.year)
+
+    def _wikipedia_artist(self, proposal: Proposal, local: LocalArtist, res: _Resolution, force: Candidate,
+                          titles: list[list[str]]) -> Proposal:
+        proposal.candidates = [*res.candidates, force]
+        proposal.problems = list(res.problems)
+        return self._thin_wikipedia(proposal, local, self._linked_page(force), force, "", "")
+
+    def _linked_page(self, force: Candidate) -> Optional["wp.Page"]:
+        """The Wikipedia article a candidate stands for (its id is the article title), fetched and checked again
+        (a disambiguation page is never used)."""
+        if not self.fetchers.wikipedia:
+            return None
+        try:
+            return wp.find_page("page", force.id, linked_title=force.id, fetch=self.fetchers.wiki)
+        except wp.WikipediaError:
+            return None
+
+    def _thin_wikipedia(self, proposal: Proposal, local, page: Optional["wp.Page"], force: Candidate,
+                        artist: str, year: str) -> Proposal:
+        if page is None:
+            proposal.confidence = Confidence.UNCERTAIN
+            proposal.reasons.append(f"the Wikipedia article '{force.name}' could not be fetched again: try later")
+            return proposal
+        is_album = isinstance(local, LocalAlbum)
+        name = (local.title if is_album else local.name) or page.title
+        facts = [("Artist", artist), ("Released", year)] if is_album else []
+        facts.append(("Wikipedia describes it as", page.description))
+        proposal.reasons.append(f"chosen by you: Wikipedia article '{page.title}' (thin draft: introduction only)")
+        proposal.confidence = Confidence.CONFIDENT
+        proposal.sources = ["wikipedia"]
+        proposal.title = name
+        links = [page.url] if page.url else []
+        intro = wp.trim_extract(page.extract)
+        footer = [note_text.wikipedia_credit(page.title)]
+        if is_album:
+            proposal.note_text = render_album_note(
+                title=name, album=local, years=year, links=links, intro=intro, facts=facts, tracks=_local_tracks(local),
+                footer=footer)
+        else:
+            proposal.note_text = render_artist_note(name=name, links=links, intro=intro, facts=facts, footer=footer)
+        return proposal
+
+    def local_note(self, proposal: Proposal) -> Proposal:
+        """The minimal note built from the file tags and folder names only (no network), written as a draft whose
+        footer says so. Only ever asked for explicitly (the review page's button): never automatic, never in a
+        batch. An album: its title, year, artist and the tracklist read from the files. An artist: its name and the
+        albums' titles (from the folder names) as plain '## Releases' lines, so Pluteus can still show badges."""
+        target = proposal.target
+        out = Proposal(target, local=proposal.local, level=proposal.level, level_reasons=list(proposal.level_reasons),
+                       suggested_levels=list(proposal.suggested_levels), candidates=list(proposal.candidates),
+                       problems=list(proposal.problems), kind_override=proposal.kind_override)
+        footer = [LOCAL_ONLY_CREDIT]
+        if target.kind == KIND_ARTIST:
+            local = proposal.local if isinstance(proposal.local, LocalArtist) else read_artist(target.folder, self.loader)
+            releases = sorted([(a.title, a.year) for a in local.albums if a.title],
+                              key=lambda ty: (ty[1] or "9999", ty[0].casefold()))
+            out.note_text = render_artist_note(
+                name=local.name, discography=[(H_OTHER, releases)] if releases else [], footer=footer)
+            out.title = local.name
+        else:
+            local = proposal.local if isinstance(proposal.local, LocalAlbum) else read_album(target.folder, self.loader)
+            facts = [("Artist", local.album_artist or local.artist)]
+            genres = [g.lower() for g in local.genres[:4]]
+            out.note_text = render_album_note(
+                title=local.title or target.folder.name, album=local, years=local.year, genres=genres, facts=facts,
+                tracks=_local_tracks(local), footer=footer)
+            out.title = local.title or target.folder.name
+        out.confidence = Confidence.CONFIDENT
+        out.sources = ["tags"]
+        out.reasons = ["minimal note from the file tags only (you asked for it): no online source"]
+        return out
 
     def _sibling_titles(self, target: Target, local: LocalAlbum) -> tuple[list[list[str]], list[str]]:
         """(titles, years) of the album folders next to this one when the parent is an artist folder: more
@@ -731,12 +961,20 @@ class NotesEngine:
 
         best = scored[0] if scored else None
         discogs_info: Optional[nd.DiscogsAlbumInfo] = None
+        discogs_hits: list = []
         client = self.fetchers.discogs
         if client is not None and not client.rate_limited and names:
             try:
-                discogs_info = nd.find_release(client, names[0], local.titles[0], local.year, local.track_count)
+                discogs_hits = nd.search_album(client, names[0], local.titles[0], local.year, limit=8)
+                if discogs_hits and discogs_hits[0].score >= 0.9:
+                    discogs_info = nd.release_info(client, discogs_hits[0].id, discogs_hits[0].score)
             except DiscogsError as exc:
                 proposal.problems.append(str(exc))
+        if force is not None and force.source in ("discogs", "wikipedia"):
+            self._album_candidates_from_discogs(proposal, discogs_hits, discogs_info)
+            if force.source == "discogs":
+                return self._discogs_album(proposal, local, force, names, soundtrack)
+            return self._wikipedia_album(proposal, local, force, names, soundtrack)
 
         confident_group = None
         chosen_group = self._seen_groups.get(force.id) if force is not None and force.source == "musicbrainz" else None
@@ -763,10 +1001,9 @@ class NotesEngine:
             proposal.reasons.append(f"only Discogs knows this album ({discogs_info.release.title})")
         if confident_group is None:
             proposal.confidence = Confidence.UNCERTAIN if (proposal.candidates or discogs_info) else Confidence.NONE
-            if discogs_info is not None:
-                proposal.candidates.append(Candidate(
-                    "discogs", str(discogs_info.release.id), f"{discogs_info.release.artist} - {discogs_info.release.title}",
-                    discogs_info.release.year, [], discogs_info.score))
+            self._album_candidates_from_discogs(proposal, discogs_hits, discogs_info)
+            if not proposal.candidates and not proposal.problems:
+                self._offer_wikipedia(proposal, "album", local.title, names[0] if names else "", [], soundtrack)
             return proposal
 
         return self._finish_album(proposal, local, confident_group, mb_artist, discogs_info, names, soundtrack,
@@ -881,6 +1118,30 @@ class NotesEngine:
         proposal.title = title
         proposal.sources = sources
         return proposal
+
+
+def _seconds(text: str) -> Optional[float]:
+    """'3:45' / '1:02:03' as seconds, None for anything else."""
+    parts = text.strip().split(":") if text else []
+    if not parts or not all(p.isdigit() for p in parts) or len(parts) > 3:
+        return None
+    total = 0
+    for p in parts:
+        total = total * 60 + int(p)
+    return float(total) or None
+
+
+def _local_tracks(local: LocalAlbum) -> list[TrackInfo]:
+    """The tracklist read from the files: tag title (else the file name), number and disc from the tags, in
+    disc / track order; a file with no number is numbered after the numbered ones."""
+    ordered = sorted(local.tracks, key=lambda t: (t.disc or 1, t.track if t.track else 9999, t.path.name.casefold()))
+    out, counter = [], {}
+    for t in ordered:
+        disc = t.disc or 1
+        counter[disc] = counter.get(disc, 0) + 1
+        out.append(TrackInfo(disc, t.track or counter[disc], t.title or t.path.stem,
+                             t.seconds if t.seconds and t.seconds >= 1 else None))
+    return out
 
 
 _COUNTRY_RANK = {"GB": 0, "US": 1, "XW": 2, "XE": 2}  # the usual home releases before a regional pressing

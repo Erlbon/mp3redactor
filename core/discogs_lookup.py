@@ -406,6 +406,7 @@ class DiscogsTrack:
     number: int
     title: str
     artist: str
+    duration: str = ""  # as Discogs writes it ("3:45"), "" when not given
 
 
 @dataclass
@@ -423,6 +424,7 @@ class DiscogsRelease:
     cover_url: str = ""
     cover_fallbacks: list[str] = field(default_factory=list)  # other sizes of the same image, tried if the first fails
     uri: str = ""
+    released: str = ""  # Discogs' own release date text ("1980-07-25", "1980-07", "1980")
 
     @property
     def track_count(self) -> int:
@@ -502,6 +504,7 @@ def parse_release(data: dict, release_id: int = 0) -> DiscogsRelease:
         genres=_str_list(data.get("genres")),
         styles=_str_list(data.get("styles")),
         uri=_str(data.get("uri")),
+        released=_str(data.get("released")),
     )
     images = [i for i in data.get("images", []) if isinstance(i, dict)] if isinstance(data.get("images"), list) else []
     images.sort(key=lambda i: i.get("type") != "primary")  # the primary image first (stable)
@@ -516,6 +519,7 @@ def parse_release(data: dict, release_id: int = 0) -> DiscogsRelease:
         release.tracks.append(DiscogsTrack(
             position=_str(raw.get("position")), disc=disc or 1, number=number,
             title=_str(raw.get("title")), artist=join_artists(raw.get("artists")) or artist,
+            duration=_str(raw.get("duration")),
         ))
     return release
 

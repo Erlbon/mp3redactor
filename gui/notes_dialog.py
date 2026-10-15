@@ -32,7 +32,9 @@ from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from core.notes_flow import Candidate, Confidence, Fetchers, NotesEngine, Proposal, build_proposals, scan
+from core.notes_flow import (
+    LEVEL_LOCAL_TAGS, Candidate, Confidence, Fetchers, NotesEngine, Proposal, build_proposals, scan,
+)
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
 from core.notes_scope import ScopeChoice
@@ -60,7 +62,9 @@ LEVEL_LABELS = {
     SUGGEST_COLLECTION: "Genre or collection (about.md)",
     SUGGEST_ALBUM: "Album folder (album.md)",
     SUGGEST_SKIP: "Skip this folder",
+    LEVEL_LOCAL_TAGS: "a minimal note from the tags",
 }
+LOCAL_BUTTON_TEXT = "Create a minimal note from the tags"
 _CURRENT_LEVEL_KEY = {"collection": SUGGEST_COLLECTION, "genre": SUGGEST_COLLECTION, "artist": SUGGEST_ARTIST, "album": SUGGEST_ALBUM}
 
 
@@ -109,9 +113,11 @@ class ProposalPanel(QWidget):
     openNoteRequested = pyqtSignal()
     showFolderRequested = pyqtSignal()
 
-    def __init__(self, can_choose: Callable[[Proposal, Candidate], bool], parent=None):
+    def __init__(self, can_choose: Callable[[Proposal, Candidate], bool], parent=None,
+                 why_not: Optional[Callable[[Proposal, Candidate], str]] = None):
         super().__init__(parent)
         self._can_choose = can_choose
+        self._why_not = why_not
         self._item: Optional[ReviewItem] = None
         self._candidates: list[Candidate] = []
 
@@ -183,6 +189,17 @@ class ProposalPanel(QWidget):
         cand_row.addWidget(self.candidate_note, 1)
         cand_layout.addLayout(cand_row)
 
+        # the explicit local-only note (never automatic, never in a batch)
+        self.local_box = QWidget()
+        local_row = QHBoxLayout(self.local_box)
+        local_row.setContentsMargins(0, 0, 0, 0)
+        self.local_button = _flat_button(LOCAL_BUTTON_TEXT)
+        self.local_button.setToolTip("Title, year and tracklist read from the files (an artist: the album folder names), "
+                                     "written as a draft that says it has no online source. Nothing is looked up.")
+        self.local_button.clicked.connect(lambda: self.levelChosen.emit(LEVEL_LOCAL_TAGS))
+        local_row.addWidget(self.local_button)
+        local_row.addStretch(1)
+
         # the preview (rendered) and the raw text; read-only
         self.preview = QTextBrowser()
         self.preview.setOpenExternalLinks(True)
@@ -214,6 +231,7 @@ class ProposalPanel(QWidget):
         layout.addWidget(self.problems_label)
         layout.addWidget(self.level_box)
         layout.addWidget(self.candidate_box)
+        layout.addWidget(self.local_box)
         layout.addWidget(self.tabs, 1)
         layout.addLayout(foot)
         _shrinkable(self.path_label, self.kind_label, self.reasons_label, self.problems_label, self.sources_label,
@@ -240,6 +258,7 @@ class ProposalPanel(QWidget):
             self.badge.setStyleSheet("")
             self.level_box.hide()
             self.candidate_box.hide()
+            self.local_box.hide()
             self.preview.clear()
             self.raw.clear()
             self.open_note_button.hide()
@@ -277,6 +296,8 @@ class ProposalPanel(QWidget):
         show_candidates = bool(self._candidates) and item.state == PENDING and (
             p.confidence != Confidence.CONFIDENT or item.user_resolved)
         self.candidate_box.setVisible(show_candidates)
+        self.local_box.setVisible(item.state == PENDING and p.kind in ("artist", "album") and not p.writable
+                                  and p.note_kind in ("artist", "album"))
         self._fill_candidates(p)
 
         self.raw.setPlainText(p.note_text)
@@ -287,7 +308,10 @@ class ProposalPanel(QWidget):
         else:
             self.preview.document().setMarkdown(
                 "*No draft yet.* " + ("Pick one of the candidates above, or a level, to build a note."
-                                      if (self._candidates or alternatives) else "Nothing could be found for this folder."),
+                                      if (self._candidates or alternatives) else
+                                      "Nothing was found online for this folder (see the reasons above)."
+                                      + (" You can still create a minimal note from the tags with the button above."
+                                         if self.local_box.isVisibleTo(self) else "")),
                 QTextDocument.MarkdownFeature.MarkdownDialectGitHub | QTextDocument.MarkdownFeature.MarkdownNoHTML)
         self.sources_label.setText("Sources: " + ", ".join(p.sources) if p.sources else "Sources: none (no draft)")
         written = item.state == WRITTEN
@@ -323,8 +347,11 @@ class ProposalPanel(QWidget):
         cand = self.selected_candidate()
         ok = bool(cand and self._item and self._can_choose(self._item.proposal, cand))
         self.candidate_button.setEnabled(ok)
-        self.candidate_note.setText(
-            "" if ok or cand is None else "A note cannot be built from this candidate (only MusicBrainz albums can).")
+        if ok or cand is None or self._item is None:
+            self.candidate_note.setText("")
+        else:
+            why = self._why_not(self._item.proposal, cand) if self._why_not else ""
+            self.candidate_note.setText(why or "A note cannot be built from this candidate.")
 
     def _candidate_clicked(self) -> None:
         cand = self.selected_candidate()
@@ -350,6 +377,7 @@ class NotesReviewDialog(QDialog):
         on_size: Optional[Callable[[int, int], None]] = None,
         open_path: Callable[[str], None] = open_in_system, history_note: str = "",
         best_guess: Optional[Callable[[Proposal], Optional[Candidate]]] = None,
+        why_not: Optional[Callable[[Proposal, Candidate], str]] = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Create Notes")
@@ -360,6 +388,7 @@ class NotesReviewDialog(QDialog):
         self.last_summary = ""
         self._rebuild = rebuild
         self._can_choose = can_choose
+        self._why_not = why_not
         self._on_size = on_size
         self._open_path = open_path
         self._history_note = history_note
@@ -403,7 +432,7 @@ class NotesReviewDialog(QDialog):
     # -- building --------------------------------------------------------------------------------------------
 
     def _make_panel(self) -> ProposalPanel:
-        panel = ProposalPanel(self._can_choose)
+        panel = ProposalPanel(self._can_choose, why_not=self._why_not)
         panel.candidateChosen.connect(self._choose_candidate)
         panel.levelChosen.connect(self._choose_level)
         panel.openNoteRequested.connect(self.open_current_note)
@@ -867,7 +896,7 @@ def create_notes(
         banner="  ".join(notes), parent=parent, size=parse_size(size_text),
         on_size=(lambda w, h: on_size(f"{w}x{h}")) if on_size else None, open_path=open_path,
         history_note="Recorded in Tools > History (it is switched on)." if history_enabled() else "",
-        best_guess=engine.best_guess)
+        best_guess=engine.best_guess, why_not=engine.why_cannot_choose)
     dialog.exec()
     return dialog
 

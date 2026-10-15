@@ -222,6 +222,51 @@ def group_discography(groups: Iterable) -> list[tuple[str, list[tuple[str, str]]
             for h in DISCOGRAPHY_HEADINGS if buckets[h]]
 
 
+def discogs_heading(format_text: str) -> str:
+    """The heading a Discogs entry is listed under, from its format text ('LP, Album', '12", EP', 'CD, Single'...).
+    Masters carry no format in an artist's release list: they are listed under 'Releases' (we do not fetch every
+    master just to classify it)."""
+    words = {w.strip(" .").casefold() for w in re.split(r"[,/]", format_text or "") if w.strip()}
+    text = " ".join(words)
+    if "compilation" in words:
+        return H_COMPILATIONS
+    if "remix" in text:
+        return H_REMIXES
+    if "ep" in words or "mini-album" in words:
+        return H_EPS
+    if "single" in text or "maxi-single" in words:
+        return H_SINGLES
+    if "album" in words:
+        return H_STUDIO
+    return H_OTHER
+
+
+def group_discogs_discography(entries: Iterable[dict]) -> list[tuple[str, list[tuple[str, str]]]]:
+    """[(heading, [(title, year)])] for the entries of Discogs' artist release list (dicts with title, year,
+    format; the caller keeps only role Main): the same shape as group_discography(), a title and year once."""
+    buckets: dict[str, dict[tuple[str, str], tuple[str, str]]] = {h: {} for h in DISCOGRAPHY_HEADINGS}
+    for e in entries:
+        title = " ".join(str(e.get("title") or "").split())
+        if not title:
+            continue
+        year = str(e.get("year") or "")
+        year = year if year.isdigit() and year != "0" else ""
+        buckets[discogs_heading(str(e.get("format") or ""))].setdefault((title.casefold(), year), (title, year))
+    for key in [k for k in buckets[H_OTHER] if any(k in buckets[h] for h in DISCOGRAPHY_HEADINGS if h != H_OTHER)]:
+        del buckets[H_OTHER][key]  # a master (no format) of a title that a classified release already lists
+    return [(h, sorted(buckets[h].values(), key=lambda ty: (ty[1] or "9999", ty[0].casefold())))
+            for h in DISCOGRAPHY_HEADINGS if buckets[h]]
+
+
+def discogs_facts_credit(kind: str, ident) -> str:
+    """'Facts from [Discogs](https://www.discogs.com/release/N) (user-contributed)'."""
+    kind = re.sub(r"[^a-z]", "", str(kind).lower()) or "release"
+    return f"Facts from [Discogs](https://www.discogs.com/{kind}/{ident}) (user-contributed)"
+
+
+LOCAL_ONLY_CREDIT = "Built from the file tags only, no online source"
+
+
 def render_artist_note(
     *, name: str, years: str = "", genres: Iterable[str] = (), links: Iterable[str] = (), intro: str = "",
     facts: Iterable[tuple[str, str]] = (), discography: Iterable[tuple[str, list[tuple[str, str]]]] = (),

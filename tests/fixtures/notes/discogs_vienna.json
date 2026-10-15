@@ -1,0 +1,51 @@
+{
+  "_comment": "Hand-made (not recorded) Discogs replies in the real API's shape: an album search, one vinyl release with side positions, its master, and an artist release list with formats.",
+  "search_vienna": {
+    "results": [
+      {"id": 1111, "title": "Ultravox - Vienna", "year": "1980", "country": "UK", "label": ["Chrysalis"], "catno": "CDL 1296", "format": ["Vinyl", "LP", "Album"]},
+      {"id": 1112, "title": "Ultravox - Vienna (Remastered)", "year": "2000", "country": "Europe", "label": ["EMI"], "catno": "7243", "format": ["CD", "Album"]}
+    ]
+  },
+  "master_vienna": {"id": 555, "title": "Vienna", "main_release": 1111, "year": 1980},
+  "release_vienna": {
+    "id": 1111,
+    "title": "Vienna",
+    "year": 1980,
+    "released": "1980-07-25",
+    "country": "UK",
+    "uri": "https://www.discogs.com/release/1111-Ultravox-Vienna",
+    "artists": [{"name": "Ultravox", "id": 1}],
+    "labels": [{"name": "Chrysalis", "catno": "CDL 1296"}],
+    "genres": ["Electronic", "Rock"],
+    "styles": ["New Wave", "Synth-pop"],
+    "notes": "Pressed at a plant in Hayes. Matrix runout scratched. SHIPPING REMARK: never copied.",
+    "tracklist": [
+      {"position": "A1", "type_": "track", "title": "Astradyne", "duration": "6:09"},
+      {"position": "A2", "type_": "track", "title": "New Europeans", "duration": "4:03"},
+      {"position": "B1", "type_": "track", "title": "Private Lives", "duration": "4:58"}
+    ],
+    "extraartists": [
+      {"name": "Conny Plank", "role": "Producer"},
+      {"name": "Midge Ure", "role": "Written-By, Guitar, Vocals"},
+      {"name": "Peter Saville (2)", "role": "Design, Photography By [Cover]"},
+      {"name": "Eddie Hallin", "role": "Photography By"}
+    ]
+  },
+  "releases_ultravox": {
+    "releases": [
+      {"title": "Ha!-Ha!-Ha!", "year": 1977, "role": "Main", "type": "release", "format": "LP, Album"},
+      {"title": "Vienna", "year": 1980, "role": "Main", "type": "release", "format": "LP, Album"},
+      {"title": "Vienna", "year": 1980, "role": "Main", "type": "master"},
+      {"title": "Sleepwalk", "year": 1980, "role": "Main", "type": "release", "format": "7\", Single"},
+      {"title": "Quartet EP", "year": 1982, "role": "Main", "type": "release", "format": "12\", EP"},
+      {"title": "The Collection", "year": 1984, "role": "Main", "type": "release", "format": "LP, Compilation"},
+      {"title": "Appears on something", "year": 1990, "role": "Appearance", "type": "release", "format": "CD, Album"}
+    ]
+  },
+  "artist_ultravox": {
+    "id": 777, "name": "Ultravox", "profile": "British [a=Midge Ure] fronted band. See [url=https://example.org/uv]the site[/url].",
+    "realname": "", "members": [{"name": "Midge Ure", "active": true}, {"name": "Billy Currie", "active": true}],
+    "aliases": [{"name": "Tiger Lily (2)"}], "urls": ["https://en.wikipedia.org/wiki/Ultravox"],
+    "uri": "https://www.discogs.com/artist/777-Ultravox"
+  }
+}
