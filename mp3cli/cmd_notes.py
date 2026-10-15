@@ -23,12 +23,14 @@ core/notes_local.py.
 from __future__ import annotations
 
 import argparse
+import time
 
 from core.notes_flow import (
     STATUS_SKIPPED, Confidence, Fetchers, NotesEngine, NotesSummary, Proposal, build_proposals, live_fetchers, scan, summarize,
     write_proposal,
 )
 from core.notes_cache import default_cache
+from core.notes_timing import lookup_sentence
 from mp3cli import files as cli_files
 from redactor_common.core.notes import STATE_LEGACY
 from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
@@ -148,6 +150,7 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     cancelled = False
 
     engine = NotesEngine(make_fetchers(not args.no_discogs), cache=make_cache(args))
+    started = time.perf_counter()
 
     def handle(proposal: Proposal) -> None:
         nonlocal failed, guessed
@@ -237,9 +240,14 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
         summary_dict["left_alone"] = len(left)
         summary_dict["already_current"] = len(current)
         summary_dict["updates"] = summary.updates
-    out.line(f"Requests: {engine.stats.summary()}.")
+    elapsed = time.perf_counter() - started
+    sentence = lookup_sentence(len(proposals), elapsed, engine.stats.requests, engine.stats.from_cache)
+    out.line(sentence)
+    if out.json_mode:
+        out.info(sentence)  # stderr: the JSON document on stdout stays clean
     summary_dict["requests"] = engine.stats.requests
     summary_dict["from_cache"] = engine.stats.from_cache
+    summary_dict["elapsed_seconds"] = round(elapsed, 2)
     out.finish(summary_dict)
     if cancelled:
         return EXIT_INTERRUPTED

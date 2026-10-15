@@ -310,7 +310,7 @@ the match that was used and `filled`, the names of what it filled in.
 | `redact` | `file`, `path`, `status`, `applied`, `needs_review` (step, value, confidence, reason), `failures`, `notes`, `skipped`, `not_saved` | `files`, `failed`, `needs_review`, `cancelled`, `confidence_threshold`, `run_notes` |
 | `redact --list-steps` | `step`, `label`, `enabled` | `confidence_threshold` |
 | `analyze` | `path`, `status`, `problem`, `checks` (per check: `status`, `message` and its values), `save_error` | `files`, `problems`, `checks`, `saved` |
-| `notes` | `folder`, `kind`, `note`, `status` (`would-write`, `written`, `review`, `no-match`, `has-note`, `failed`), `message`, `confidence`, `level`, `level_reasons`, `suggested_levels`, `title`, `reasons`, `sources`, `candidates`, `problems`, `draft` (with `--show-drafts`) | `total`, `confident`, `uncertain`, `none`, `written`, `would_write`, `has_note`, `failed`, `dry_run`, `cancelled` |
+| `notes` | `folder`, `kind`, `note`, `status` (`would-write`, `written`, `review`, `no-match`, `has-note`, `failed`), `message`, `confidence`, `level`, `level_reasons`, `suggested_levels`, `title`, `reasons`, `sources`, `candidates`, `problems`, `draft` (with `--show-drafts`) | `total`, `confident`, `uncertain`, `none`, `written`, `would_write`, `has_note`, `failed`, `dry_run`, `cancelled`, `requests`, `from_cache`, `elapsed_seconds` |
 | `m4b` | `folder`, `title`, `output`, `status`, `message`, `chapters`, `minutes`, `match`, `notes` | `books`, `failed`, `dry_run`, `bitrate_kbps` |
 
 ### notes
@@ -364,7 +364,7 @@ never pre-ticked, and updating asks first and sends the old note to the Recycle 
 about) are kept for 30 days (one day for "not found" and empty results, errors never) in `mp3redactor_notes_cache.sqlite` next to the
 settings file, at most 200 MB, so a repeated, cancelled or resumed run is answered from disk. Preferences > Create Notes
 switches it off and has **Clear the notes lookup cache**; the same URL is never asked twice within one run either way. The
-last line of a run says how many requests were made and how many came from the cache.
+last line of a run says "Looked up N folders in H:MM:SS (R requests, C from the cache)" (also on the review page and in the summary; on the command line on stderr and in the `--json` result as `elapsed_seconds`, `requests`, `from_cache`). While it runs, the progress dialog shows the elapsed time and an estimate of the time left once three folders are done, and the folder question warns, as a hint, when album notes for a big scope will take long.
 
 Exit code 0 when done, 1 when a note could not be written or a lookup failed, 130 when interrupted (what was written
 stays). With the opt-in history on, each written note is recorded and can be undone (moved to the Recycle Bin, only if

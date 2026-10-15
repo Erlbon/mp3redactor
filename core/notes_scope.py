@@ -31,6 +31,16 @@ MAX_CHOICES = 5
 KINDS_OF_CHOICE = {"artist": (KIND_ARTIST,), "both": (KIND_ARTIST, KIND_ALBUM), "all": ALL_KINDS}
 
 
+def count_targets(folder: str, include_subfolders: bool = True) -> tuple[int, int, int]:
+    """(artist, album, genre) folders under `folder` that would be looked up (no note yet): what the scope dialog's time
+    hint is based on. A quick directory walk (no tags are read); it can take a moment on a very large library."""
+    from core.notes_local import KIND_GENRE, scan
+
+    found = scan([folder], include_subfolders=include_subfolders, kinds=ALL_KINDS)
+    kinds = [t.kind for t in found.targets]
+    return kinds.count(KIND_ARTIST), kinds.count(KIND_ALBUM), kinds.count(KIND_GENRE)
+
+
 def kinds_sentence(kinds) -> str:
     """The review page's header sentence: which kinds of notes were looked up."""
     kinds = tuple(kinds)

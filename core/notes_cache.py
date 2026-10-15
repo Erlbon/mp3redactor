@@ -32,6 +32,7 @@ from urllib.parse import urlencode
 TTL_SECONDS = 30 * 24 * 3600
 NEGATIVE_TTL_SECONDS = 24 * 3600
 MAX_BYTES = 200 * 1024 * 1024
+USED_REFRESH_SECONDS = 3600  # a hit refreshes the entry's 'used' stamp at most this often (one write, not one per read)
 CACHE_FILE_NAME = "mp3redactor_notes_cache.sqlite"
 
 __all__ = ["CachedDiscogs", "CachedFetch", "RequestStats", "ResponseCache", "cache_path", "default_cache",
@@ -77,6 +78,7 @@ class ResponseCache:
                  max_bytes: int = MAX_BYTES, clock: Callable[[], float] = time.time):
         self.path = Path(path)
         self.ttl, self.negative_ttl, self.max_bytes, self._clock = ttl, negative_ttl, max_bytes, clock
+        self.used_refresh = USED_REFRESH_SECONDS
         self._lock = threading.Lock()
         self._db: Optional[sqlite3.Connection] = None
         self._broken = False
@@ -96,6 +98,11 @@ class ResponseCache:
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 db = sqlite3.connect(str(self.path), timeout=10, check_same_thread=False)
+                # WAL + synchronous NORMAL: a write is an append to the log, not an fsync of the database file (the
+                # default journal costs about 3 ms per request on Windows); a crash can lose the last few answers,
+                # which only means asking the service again.
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("PRAGMA synchronous=NORMAL")
                 db.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, status INTEGER NOT NULL, "
                            "body BLOB, expires REAL NOT NULL, used REAL NOT NULL, size INTEGER NOT NULL)")
                 db.execute("SELECT COUNT(*) FROM cache").fetchone()  # a damaged file fails here
@@ -145,15 +152,16 @@ class ResponseCache:
         now = self._clock()
 
         def work(db):
-            row = db.execute("SELECT status, body, expires FROM cache WHERE key=?", (key,)).fetchone()
+            row = db.execute("SELECT status, body, expires, used FROM cache WHERE key=?", (key,)).fetchone()
             if row is None:
                 return None
             if row[2] <= now:
                 db.execute("DELETE FROM cache WHERE key=?", (key,))
                 db.commit()
                 return None
-            db.execute("UPDATE cache SET used=? WHERE key=?", (now, key))
-            db.commit()
+            if now - row[3] > self.used_refresh:  # least-recently-used bookkeeping, not on every single read
+                db.execute("UPDATE cache SET used=? WHERE key=?", (now, key))
+                db.commit()
             return int(row[0]), bytes(row[1] or b"")
 
         found = self._guard(work)

@@ -68,6 +68,7 @@ def test_not_found_and_empty_results_live_one_day_errors_never(cache):
 def test_eviction_drops_the_least_recently_used_and_keeps_under_the_cap(tmp_path):
     clock = Clock()
     c = ResponseCache(tmp_path / "small.sqlite", max_bytes=2000, clock=clock)
+    c.used_refresh = 0  # every read refreshes the entry, so the test can show what a read does to the eviction order
     for i in range(10):
         clock.now += 1
         c.put(f"key{i}", b"x" * 300)

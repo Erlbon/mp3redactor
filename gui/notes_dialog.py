@@ -21,10 +21,11 @@ is rebuilt by the engine and, if a note could be made, is confident).
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QDesktopServices, QTextDocument
 from PyQt6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel,
@@ -37,7 +38,8 @@ from core.notes_flow import (
 )
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
-from core.notes_scope import ScopeChoice, kinds_sentence
+from core.notes_scope import ScopeChoice, count_targets, kinds_sentence
+from core.notes_timing import lookup_sentence, progress_suffix, scope_hint
 from core.notes_local import KIND_ALBUM, KIND_ARTIST
 from redactor_common.core.notes import STATE_LEGACY
 from core.notes_review import (
@@ -443,9 +445,11 @@ class NotesReviewDialog(QDialog):
         open_path: Callable[[str], None] = open_in_system, history_note: str = "",
         best_guess: Optional[Callable[[Proposal], Optional[Candidate]]] = None,
         why_not: Optional[Callable[[Proposal, Candidate], str]] = None, offer_albums: bool = False,
+        lookup_note: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle("Create Notes")
+        self._lookup_note = lookup_note  # 'Looked up N folders in H:MM:SS (R requests, C from the cache).'
         self.followup: list[str] = []  # the artist folders whose album notes the person asked for next
         self._best_guess = best_guess or (lambda _proposal: None)
         self.session = session
@@ -549,6 +553,13 @@ class NotesReviewDialog(QDialog):
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        # A STABLE geometry (a person saw the rows jump up and down on a selection): both scroll bars are always
+        # there (one appearing or disappearing changes the viewport by a scroll bar's width / height and moves every
+        # row), scrolling is per pixel (a partly visible row is never snapped by a whole row), long paths are elided.
+        self.tree.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.tree.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self._tree_columns_set = False
         self.tree.currentItemChanged.connect(self._on_tree_current)
         self.tree.itemChanged.connect(self._on_tree_check)
@@ -572,11 +583,17 @@ class NotesReviewDialog(QDialog):
         left_layout.addWidget(self.filter_check)
         left_layout.addWidget(self.tree, 1)
 
-        from PyQt6.QtWidgets import QSplitter
+        from PyQt6.QtWidgets import QScrollArea, QSplitter
 
+        # The panel's content changes with every row (candidate table, level box, local button, update badge, diff tab):
+        # in a scroll area its size hints can never push the splitter or the whole dialog around.
+        self.list_scroll = QScrollArea()
+        self.list_scroll.setWidgetResizable(True)
+        self.list_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.list_scroll.setWidget(self.list_panel)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
-        splitter.addWidget(self.list_panel)
+        splitter.addWidget(self.list_scroll)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
         splitter.setSizes([430, 640])
@@ -747,7 +764,8 @@ class NotesReviewDialog(QDialog):
 
     def _summary_box(self) -> None:
         totals = self.session.totals()
-        self.last_summary = totals.text() + (f"\n\n{self._history_note}" if self._history_note and totals.written else "")
+        self.last_summary = (totals.text() + (f"\n\n{self._lookup_note}" if self._lookup_note else "")
+                             + (f"\n\n{self._history_note}" if self._history_note and totals.written else ""))
         QMessageBox.information(self, "Create Notes: summary", self.last_summary)
 
     # -- the list --------------------------------------------------------------------------------------------
@@ -755,6 +773,7 @@ class NotesReviewDialog(QDialog):
     def _fill_tree(self) -> None:
         tree = self.tree
         selected = self.index
+        scroll_y, scroll_x = tree.verticalScrollBar().value(), tree.horizontalScrollBar().value()
         tree.blockSignals(True)
         tree.clear()
         only_open = self.filter_check.isChecked()
@@ -780,6 +799,9 @@ class NotesReviewDialog(QDialog):
             row.setToolTip(0, p.path + ("\nNot tickable: pick a candidate or a level first" if blocked else ""))
             tree.addTopLevelItem(row)
         tree.blockSignals(False)
+        tree.doItemsLayout()  # the scroll range is only updated by a layout
+        tree.verticalScrollBar().setValue(scroll_y)  # clear() resets the view to the top: put it back where it was
+        tree.horizontalScrollBar().setValue(scroll_x)
         if not self._tree_columns_set:  # once, with the first fill: a person's dragged widths stay on later refills
             self._tree_columns_set = True
             columns_resizable(tree, 0)
@@ -983,13 +1005,21 @@ def create_notes(
     built: list[Proposal] = []
     failure: list[str] = []
 
+    started = time.perf_counter()
+    marks: list[float] = []  # when each folder was started: the gaps are how long the folders took
+
     def work(progress):
+        # Runs on the worker thread: it only talks to the progress object (which marshals to the GUI thread).
         def report(done: int, total: int, _label: str) -> None:
             if done < total:
                 folder = targets[done].folder
                 name = f"{folder.parent.name} / {folder.name}" if targets[done].kind == "album" else folder.name
+                now = time.perf_counter()
+                marks.append(now)
+                durations = [b - a for a, b in zip(marks, marks[1:])]
                 progress.set_value(done)
-                progress.set_label(f"Looking up {name} ({done + 1} of {total})…")
+                progress.set_label(f"Looking up {name} ({done + 1} of {total})…"
+                                   + progress_suffix(done, total, now - started, durations))
 
         try:
             build_proposals(targets, fetchers, progress=report, cancel=progress.should_cancel,
@@ -1022,7 +1052,9 @@ def create_notes(
     unreachable = [p for p in session.problems() if p.lower().startswith("could not reach")]
     if unreachable:
         notes.append(f"The internet services could not be reached: {unreachable[0]}")
-    notes.append(f"Lookups: {engine.stats.summary()}.")
+    lookup_note = lookup_sentence(len(built), time.perf_counter() - started, engine.stats.requests,
+                                  engine.stats.from_cache)
+    notes.append(lookup_note)
     from core.history import history_enabled
 
     dialog = NotesReviewDialog(
@@ -1030,7 +1062,8 @@ def create_notes(
         banner="  ".join(notes), parent=parent, size=parse_size(size_text),
         on_size=(lambda w, h: on_size(f"{w}x{h}")) if on_size else None, open_path=open_path,
         history_note="Recorded in Tools > History (it is switched on)." if history_enabled() else "",
-        best_guess=engine.best_guess, why_not=engine.why_cannot_choose, offer_albums=kinds == (KIND_ARTIST,))
+        best_guess=engine.best_guess, why_not=engine.why_cannot_choose, offer_albums=kinds == (KIND_ARTIST,),
+        lookup_note=lookup_note)
     dialog.exec()
     if dialog.followup:  # 'Create the album notes for these artists too': only those artists' albums
         return create_notes(parent, dialog.followup, True, make_fetchers, size_text, on_size, open_path,
@@ -1043,6 +1076,26 @@ def _rebuild_with(engine: NotesEngine):
         return engine.rebuild(proposal, candidate=candidate, level=level)
 
     return rebuild
+
+
+_running_counts: set = set()  # count threads still running when their dialog is gone: kept alive until they end
+
+
+class _CountThread(QThread):
+    """Counts the folders a scope would look up, off the GUI thread (a walk of a big library takes a moment)."""
+
+    counted = pyqtSignal(object, object)  # (folder, include_subfolders), (artists, albums, genres)
+
+    def __init__(self, folder: str, include_subfolders: bool):
+        super().__init__()
+        self.key = (folder, include_subfolders)
+
+    def run(self) -> None:
+        try:
+            counts = count_targets(*self.key)
+        except Exception:  # noqa: BLE001 -- only a hint: no counts, no warning
+            counts = None
+        self.counted.emit(self.key, counts)
 
 
 class NotesScopeDialog(QDialog):
@@ -1134,6 +1187,11 @@ class NotesScopeDialog(QDialog):
 
         # Notes made by an older version of this app: never on by itself, never remembered
         layout.addSpacing(6)
+        self.hint_label = QLabel()  # a one-line time warning for a big scope with album notes: only a hint
+        self.hint_label.setWordWrap(True)
+        self.hint_label.setStyleSheet("background:#fff6d6; color:#4d3600; border:1px solid #e6cf85; padding:3px 8px;")
+        self.hint_label.setVisible(False)
+        layout.insertWidget(layout.indexOf(self.kind_radios["all"]) + 1, self.hint_label)
         self.outdated_box = QCheckBox(OUTDATED_CHECK_TEXT)
         self.outdated_box.setChecked(False)
         self.outdated_box.setToolTip("Lists the notes this app wrote in an older shape that nobody edited, and the notes "
@@ -1162,6 +1220,16 @@ class NotesScopeDialog(QDialog):
         layout.addSpacing(6)
         layout.addLayout(buttons)
 
+        self.counts: Optional[tuple[int, int, int]] = None  # (artists, albums, genres) of the chosen folder, once known
+        self._count_key: Optional[tuple] = None
+        self._count_threads: list = []
+        self._count_timer = QTimer(self)
+        self._count_timer.setSingleShot(True)
+        self._count_timer.timeout.connect(self._start_count)
+        self.kind_group.buttonToggled.connect(lambda *_: self._update_hint())
+        self.group.buttonToggled.connect(lambda *_: self._count_timer.start(150))
+        self.include_box.toggled.connect(lambda *_: self._count_timer.start(150))
+        self._count_timer.start(0)
         self.group.buttonToggled.connect(self._radio_toggled)
         self.browse_button.clicked.connect(self._browse)
         self.include_box.toggled.connect(self._include_toggled)
@@ -1187,6 +1255,33 @@ class NotesScopeDialog(QDialog):
             if radio is button:
                 return path
         return ""
+
+    def _start_count(self) -> None:
+        folder = self.chosen_folder()
+        if not folder:
+            return
+        key = (folder, self.include_box.isChecked())
+        if key == self._count_key and self.counts is not None:
+            return
+        self._count_key = key
+        self.counts = None
+        self._update_hint()
+        thread = _CountThread(*key)
+        thread.counted.connect(self._counted)
+        thread.finished.connect(lambda t=thread: (_running_counts.discard(t), t.deleteLater()))
+        _running_counts.add(thread)
+        thread.start()
+
+    def _counted(self, key, counts) -> None:
+        if key != self._count_key:  # an answer for a folder that is no longer the chosen one
+            return
+        self.counts = counts
+        self._update_hint()
+
+    def _update_hint(self) -> None:
+        text = scope_hint(*self.counts, self.chosen_kinds()) if self.counts else ""
+        self.hint_label.setText(text)
+        self.hint_label.setVisible(bool(text))
 
     def chosen_kinds(self) -> str:
         """'artist', 'both' or 'all'."""

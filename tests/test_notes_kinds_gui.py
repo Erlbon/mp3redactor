@@ -49,7 +49,7 @@ def test_artist_notes_only_is_the_default_and_looks_no_albums_up(window, tmp_pat
     assert seen["labels"] == ["Artist notes only (recommended, fast)", "Artist and album notes (slower)",
                               "Everything, including genre folders"]
     assert seen["checked"] == "artist" and seen["kinds"] == ["artist"]
-    assert kinds_sentence(("artist",)) in seen["banner"] and "request(s)" in seen["banner"]
+    assert kinds_sentence(("artist",)) in seen["banner"] and "5 requests" in seen["banner"] and "Looked up 1 folder in" in seen["banner"]
     assert not [u for u in fetchers.mb.urls if "release-group/rg-" in u or "ws/2/release/" in u]
     assert window.settings.notes_kinds == "artist"
 
