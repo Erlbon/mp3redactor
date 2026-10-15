@@ -95,7 +95,7 @@ mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [
                                [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
                                [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
                                [--lookup] [--region STORE] [--min-score N] [-n]
-mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--no-discogs] [--no-cache] [--show-drafts] [-R]
+mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--no-discogs] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]
 ```
 
 The command line uses the same code as the window, so the results are the same. It reads the same settings file
@@ -315,7 +315,7 @@ the match that was used and `filled`, the names of what it filled in.
 
 ### notes
 
-`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--no-discogs] [--no-cache] [--show-drafts] [-R]`
+`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--no-discogs] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]`
 
 Drafts the short Markdown notes that the Pluteus media server shows beside a folder: `artist.md` in an artist
 folder, `album.md` in an album folder, and (with `--kind genre` or `all`) `about.md` in a genre or collection folder
@@ -346,9 +346,19 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 | `--include-uncertain` | With `--write`: also write the uncertain matches from the engine's best candidate, as drafts. Never over an existing note, never for "nothing found", never when the level is unclear (listed with the reason). Marked `from_uncertain` in the report and in `--json`. |
 | `-n`, `--dry-run` | Never write, even with `--write`: show what would be written. |
 | `--no-discogs` | Do not use Discogs even when a token is saved. |
+| `--update` | Also list the notes made by an older version of this app (stamped, an older note format, nobody edited them) as updates, and with `--write` replace ONLY those: the old note goes to the Recycle Bin. A note edited by a person, a note this app did not write and a note that is already current are never touched (the summary says how many were left alone). |
+| `--update-legacy` | With `--update --write`: also replace the notes of the first versions (no stamp, so it cannot be known whether they were edited; still the Recycle Bin, still never an edited or foreign note). |
 | `--no-cache` | Do not use the disk cache of earlier answers (see below): every lookup is asked again. |
 | `--show-drafts` | Print each draft note (with `--json`: include it in the row). |
 | `-R`, `--no-recurse` | Look only at the folders named, not at the folders below them. |
+
+**Stamps and updating old notes.** Every note this app writes carries three plain front matter lines Pluteus ignores:
+`generator: mp3redactor <version>`, `note-format: 2` and `body-sha: <hash of the note as written>`. A later version can then tell a note
+of an older shape that nobody edited (`--update` replaces it) from one you edited (even just changing `status: draft` counts), from a note of
+the first versions (no stamp: only with `--update-legacy`, because nobody can tell whether it was edited) and from a note somebody else
+wrote (never touched). In the app, Tools > Create Notes has the checkbox **Also review notes made by an older version** (off every time):
+the old notes show up as updates with an *Update* badge, a *Before / after* diff and, for the first versions' notes, a warning; they are
+never pre-ticked, and updating asks first and sends the old note to the Recycle Bin (you can restore it from there).
 
 **The lookup cache.** The answers of MusicBrainz, Wikipedia and Discogs (public data, plus the artist and album names asked
 about) are kept for 30 days (one day for "not found" and empty results, errors never) in `mp3redactor_notes_cache.sqlite` next to the

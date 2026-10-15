@@ -30,7 +30,18 @@ from core.musicbrainz_lookup import FileFacts, Release, ReleaseTrack, match_rele
 from core.notes_local import LocalAlbum, LocalTrack, fold_name
 from core.notes_musicbrainz import Credits
 from redactor_common.core.note_text import credit_footer
+from core.version import APP_VERSION
 from redactor_common.core.notes import NoteFrontMatter, render_note
+
+# The shape of the notes this module writes, stamped into every note (with the app version and a hash, see
+# redactor_common core/notes.py note_hash) so a later run can tell an old note of ours that nobody edited from one a
+# person edited. The first released shapes are format 1 (no stamp); stamped notes start at 2. BUMP it when the shape of
+# a note changes in a way worth refreshing old notes for.
+CURRENT_NOTE_FORMAT = 2
+
+
+def generator_text() -> str:
+    return f"mp3redactor {APP_VERSION}"
 
 
 @dataclass
@@ -278,7 +289,8 @@ def render_artist_note(
     folders next to the note and shows the badges live (docs/notes-format.md). `footer` are the source sentences."""
     sections = ["## " + heading + "\n\n" + "\n".join(release_line(t, y) for t, y in releases)
                 for heading, releases in discography]
-    front = NoteFrontMatter(title=name, years=years, genres=list(genres), links=list(links))
+    front = NoteFrontMatter(title=name, years=years, genres=list(genres), links=list(links),
+                            generator=generator_text(), note_format=CURRENT_NOTE_FORMAT)
     body = _block(f"# {name}", intro, _lines(facts), *sections, credit_footer(list(footer)))
     return render_note(front, body)
 
@@ -288,7 +300,7 @@ def render_genre_note(
 ) -> str:
     """The about.md of a genre or collection folder: a short introduction (Wikipedia) and the credit footer. No
     list of what is below and no [[links]]: the folders are the structure, Pluteus shows them."""
-    front = NoteFrontMatter(title=name, links=list(links))
+    front = NoteFrontMatter(title=name, links=list(links), generator=generator_text(), note_format=CURRENT_NOTE_FORMAT)
     return render_note(front, _block(f"# {name}", intro, credit_footer(list(footer))))
 
 
@@ -307,7 +319,8 @@ def render_album_note(
             listing.append(f"\n### Disc {track.disc}\n")
             last_disc = track.disc
         listing.append(f"{track.position}. {track.title}" + (f" {mmss(track.seconds)}" if track.seconds else ""))
-    front = NoteFrontMatter(title=title, years=years, genres=list(genres), links=list(links))
+    front = NoteFrontMatter(title=title, years=years, genres=list(genres), links=list(links),
+                            generator=generator_text(), note_format=CURRENT_NOTE_FORMAT)
     body = _block(
         f"# {title}", intro, _lines(facts),
         ("## Credits\n\n" + credit_text) if credit_text else "",

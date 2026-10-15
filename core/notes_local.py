@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from core.mp3_file import MP3File
-from redactor_common.core.notes import existing_note, existing_sidecar
+from redactor_common.core.notes import NoteState, existing_note, existing_sidecar, note_status
 from redactor_common.core.temp_names import is_app_temp_name
 
 KIND_ARTIST = "artist"
@@ -183,6 +183,7 @@ class Target:
     folder: Path
     kind: str  # KIND_ARTIST / KIND_ALBUM
     parent_name: str = ""  # the folder above (the artist, in the library layout), a hint for an album
+    update: Optional["NoteState"] = None  # set when the folder has an older note of ours to refresh (scan include_outdated)
 
     @property
     def note_kind(self) -> str:
@@ -203,6 +204,7 @@ class Skipped:
     folder: Path
     kind: str
     reason: str
+    state: str = ""  # with scan(include_outdated=True): the existing note's state (core: redactor_common STATE_*)
 
 
 @dataclass
@@ -270,6 +272,7 @@ def classify_level(folder: Path, is_root: bool = False, include_subfolders: bool
 
 def scan(
     paths: Iterable[str | os.PathLike], include_subfolders: bool = True, kinds: Iterable[str] = KINDS,
+    include_outdated: bool = False,
 ) -> ScanResult:
     """The folders under `paths` (folders, MP3 files, wildcards) that are at the artist or album level and
     have no note of our own yet.
@@ -277,7 +280,14 @@ def scan(
     A folder with an artist.md / author.md / series.md / album.md / about.md of ANY letter case is skipped
     (`skipped`, with the file's name): Pluteus shows the first of those, so a new one would hide the person's
     own. .nfo / .opf sidecars do not count. With `include_subfolders` False only the named folders themselves
-    are looked at (their children are still examined to tell an artist folder from an album folder)."""
+    are looked at (their children are still examined to tell an artist folder from an album folder).
+
+    `include_outdated` (default OFF): a folder whose existing note is OUR note of the right kind in the state
+    'outdated-untouched' (stamped, an older format, nobody edited it) or 'legacy' (written by the first releases, no
+    stamp) becomes a target with `update` set, to be refreshed on request. 'edited', 'foreign' and 'current' notes are
+    never targets: they are in `skipped` with their state, so the summary can say they were left alone."""
+    from core.notes_render import CURRENT_NOTE_FORMAT
+
     wanted = set(kinds)
     result = ScanResult()
     roots, result.missing = _resolve_roots(paths)
@@ -302,6 +312,13 @@ def scan(
             return
         found = existing_note(folder)
         if found:
+            if include_outdated and Path(found).name.lower() == f"{NOTE_KIND_OF[kind]}.md":
+                state = note_status(found, CURRENT_NOTE_FORMAT)
+                if state.replaceable:
+                    result.targets.append(Target(folder, kind, parent_name=folder.parent.name, update=state))
+                    return
+                result.skipped.append(Skipped(folder, kind, f"already has {Path(found).name} ({state.kind})", state.kind))
+                return
             result.skipped.append(Skipped(folder, kind, f"already has {Path(found).name}"))
             return
         result.targets.append(Target(folder, kind, parent_name=folder.parent.name))

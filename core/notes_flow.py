@@ -52,7 +52,7 @@ from core.notes_render import (
 )
 from redactor_common.core import note_text
 from redactor_common.core.notes import (
-    STATUS_ERROR, STATUS_WRITTEN, NoteWriteResult, normalize_note_text, note_path, write_note,
+    STATUS_ERROR, STATUS_WRITTEN, NoteState, NoteWriteResult, normalize_note_text, note_path, replace_note, write_note,
 )
 
 __all__ = [
@@ -129,6 +129,17 @@ class Proposal:
     level_reasons: list[str] = field(default_factory=list)
     suggested_levels: list[str] = field(default_factory=list)
     kind_override: str = ""  # the note kind when the level differs from the scan's guess (collection -> about)
+    # An UPDATE proposal: the folder already has an older note of ours (state outdated-untouched or legacy, read by
+    # scan(include_outdated=True)); `note_text` is the new draft, this is what the old note was when it was looked at.
+    old_state: Optional[NoteState] = None
+
+    @property
+    def is_update(self) -> bool:
+        return self.old_state is not None
+
+    @property
+    def old_text(self) -> str:
+        return self.old_state.text if self.old_state else ""
 
     @property
     def folder(self) -> Path:
@@ -158,7 +169,11 @@ class Proposal:
             "level": self.level, "level_reasons": list(self.level_reasons),
             "suggested_levels": list(self.suggested_levels), "note_kind": self.note_kind,
             "candidates": [c.to_dict() for c in self.candidates], "problems": list(self.problems),
+            "action": "update" if self.is_update else "create",
         }
+        if self.old_state is not None:
+            out["old_state"] = self.old_state.kind
+            out["old_generator"] = self.old_state.generator
         if with_text:
             out["draft"] = self.note_text
         return out
@@ -175,6 +190,7 @@ class NotesSummary:
     exists: int = 0
     failed: int = 0
     not_written: int = 0  # uncertain / none: left for review
+    updates: int = 0  # proposals that would refresh an older note of ours
     cancelled: bool = False
     problems: list[str] = field(default_factory=list)
 
@@ -189,6 +205,7 @@ def summarize(
     'would_write')."""
     summary = NotesSummary(total=len(proposals), cancelled=cancelled)
     for proposal in proposals:
+        summary.updates += 1 if proposal.is_update else 0
         setattr(summary, proposal.confidence.value, getattr(summary, proposal.confidence.value) + 1)
         for problem in proposal.problems:
             if problem not in summary.problems:
@@ -381,7 +398,7 @@ class NotesEngine:
         elif level == SUGGEST_ALBUM:
             kind = KIND_ALBUM
         if kind != target.kind:
-            target = Target(target.folder, kind, target.parent_name)
+            target = Target(target.folder, kind, target.parent_name)  # another level: no older note to refresh
         return self._dispatch(target, candidate, level)
 
     def _dispatch(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
@@ -396,6 +413,7 @@ class NotesEngine:
             proposal = Proposal(target, Confidence.NONE, reasons=["MusicBrainz failed"], problems=[str(exc)])
         except (wp.WikipediaError, DiscogsError) as exc:  # only reached when nothing was caught closer
             proposal = Proposal(target, Confidence.NONE, reasons=["a lookup failed"], problems=[str(exc)])
+        proposal.old_state = target.update
         if (proposal.kind in (KIND_ARTIST, KIND_ALBUM) and proposal.confidence != Confidence.CONFIDENT
                 and not proposal.note_text and not proposal.candidates and proposal.level != LEVEL_UNCLEAR):
             if self.fetchers.discogs is None:
@@ -869,7 +887,8 @@ class NotesEngine:
         target = proposal.target
         out = Proposal(target, local=proposal.local, level=proposal.level, level_reasons=list(proposal.level_reasons),
                        suggested_levels=list(proposal.suggested_levels), candidates=list(proposal.candidates),
-                       problems=list(proposal.problems), kind_override=proposal.kind_override)
+                       problems=list(proposal.problems), kind_override=proposal.kind_override,
+                       old_state=proposal.old_state)
         footer = [LOCAL_ONLY_CREDIT]
         if target.kind == KIND_ARTIST:
             local = proposal.local if isinstance(proposal.local, LocalArtist) else read_artist(target.folder, self.loader)
@@ -1270,13 +1289,17 @@ def write_proposal(proposal: Proposal, dry_run: bool = False, allow_uncertain: b
             STATUS_SKIPPED, proposal.path, f"not written: the match is {proposal.confidence.value}", dry_run)
     if not proposal.note_text:
         return NoteWriteResult(STATUS_SKIPPED, proposal.path, "there is no draft to write", dry_run)
-    result = write_note(proposal.folder, proposal.note_kind, proposal.note_text, dry_run=dry_run)
+    if proposal.is_update:  # refresh an older note of ours: only while it is still what was looked at, old one to the Recycle Bin
+        result = replace_note(proposal.folder, proposal.note_kind, proposal.note_text, expect=proposal.old_state,
+                              dry_run=dry_run)
+    else:
+        result = write_note(proposal.folder, proposal.note_kind, proposal.note_text, dry_run=dry_run)
     if result.ok and not dry_run:
-        record_note_created(result.path, proposal.note_text)
+        record_note_created(result.path, proposal.note_text, replaced=bool(result.replaced))
     return result
 
 
-def record_note_created(path: str, text: str) -> None:
+def record_note_created(path: str, text: str, replaced: bool = False) -> None:
     """Journal entry for a created note when the opt-in history is on (otherwise nothing is touched). The entry
     keeps the SHA-256 of what was written so an undo can tell whether the person edited it since."""
     from core.history import _report, get_journal, history_enabled
@@ -1284,7 +1307,8 @@ def record_note_created(path: str, text: str) -> None:
     if not history_enabled():
         return
     try:
-        get_journal().record(path, KIND_NOTE, {"note": ("", Path(path).name)}, note=f"sha256:{_sha(text)}")
+        before = "an older note, now in the Recycle Bin" if replaced else ""
+        get_journal().record(path, KIND_NOTE, {"note": (before, Path(path).name)}, note=f"sha256:{_sha(text)}")
     except Exception as exc:  # noqa: BLE001 -- the note is already written; a journal failure never undoes it
         _report(exc)
 

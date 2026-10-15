@@ -82,6 +82,9 @@ def recycle_bin(monkeypatch, tmp_path):
     from core import notes_flow  # undoing a created note (opt-in history) goes to the bin too
 
     monkeypatch.setattr(notes_flow, "_trash", bin_)
+    from redactor_common.core import trash  # replacing an older note (replace_note) trashes the old one through here
+
+    monkeypatch.setattr(trash, "move_to_trash", bin_)
     return bin_
 
 

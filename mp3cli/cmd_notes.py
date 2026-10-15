@@ -30,6 +30,7 @@ from core.notes_flow import (
 )
 from core.notes_cache import default_cache
 from mp3cli import files as cli_files
+from redactor_common.core.notes import STATE_LEGACY
 from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
 from redactor_common.cli import EXIT_INTERRUPTED, EXIT_OK, EXIT_PARTIAL, CliError, Output, add_common_options
 
@@ -69,6 +70,14 @@ def add_notes_parser(sub) -> None:
     parser.add_argument("--kind", choices=KIND_CHOICES, default=KIND_ARTIST, help="which notes: artist (the default: "
                                                              "fast, no album lookups at all), album, genre (about.md of a genre or collection folder), "
                                                              "both = artist + album or all = all three")
+    parser.add_argument("--update", action="store_true",
+                        help="also list the notes made by an older version of this app (stamped, an older format, "
+                             "nobody edited them) and, with --write, replace ONLY those (the old note goes to the "
+                             "Recycle Bin). Notes edited by a person or not made by this app are never touched")
+    parser.add_argument("--update-legacy", action="store_true",
+                        help="with --update --write: ALSO replace the notes of the first versions (no stamp, so it "
+                             "cannot be known whether they were edited; still the Recycle Bin, still never an edited "
+                             "or foreign note)")
     parser.add_argument("--no-cache", action="store_true",
                         help="do not use the disk cache of earlier answers (the lookups are all asked again)")
     parser.add_argument("--write", action="store_true", help="write the drafts of the confident matches (default: report only)")
@@ -111,14 +120,16 @@ def _print(out: Output, row: dict) -> None:
 
 def run_notes(args: argparse.Namespace, out: Output) -> int:
     kinds = {"both": (KIND_ARTIST, KIND_ALBUM), "all": ALL_KINDS}.get(args.kind, (args.kind,))
-    found = scan(args.paths, include_subfolders=not args.no_recurse, kinds=kinds)
+    update = args.update or args.update_legacy
+    found = scan(args.paths, include_subfolders=not args.no_recurse, kinds=kinds, include_outdated=update)
     for argument in found.missing:
         out.error(f"nothing found for {argument}")
     if not found.targets and not found.skipped and not found.groupings:
         raise CliError("no artist or album folders found")
     dry = args.dry_run or not args.write
     for skipped in found.skipped:
-        row = {"status": "has-note", "kind": skipped.kind, "folder": str(skipped.folder), "message": skipped.reason,
+        row = {"status": "left-alone" if skipped.state else "has-note", "kind": skipped.kind,
+               "folder": str(skipped.folder), "message": skipped.reason,
                "reasons": [], "candidates": [], "problems": [], "confidence": "", "path": "", "sources": []}
         out.record(row)
         _print(out, row)
@@ -154,15 +165,29 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
         proposals.append(proposal)
         if guess is not None and not proposal.writable:
             guess = None  # the rebuild did not give a note: it is reported like any other uncertain one
-        if proposal.writable:
-            result = write_proposal(proposal, dry_run=dry)
+        legacy_held = (proposal.is_update and proposal.old_state.kind == STATE_LEGACY and not args.update_legacy)
+        if proposal.writable and legacy_held and not dry:
+            status = "legacy"
+            message = ("made by the first versions (no stamp), so it cannot be known whether it was edited: "
+                       "not replaced (add --update-legacy to replace it)")
+        elif proposal.writable:
+            result = write_proposal(proposal, dry_run=dry or legacy_held)
             results[proposal.path] = result
+            verb = "update" if proposal.is_update else "write"
             if result.ok:
-                status, message = ("would-write", ", ".join(proposal.sources)) if dry else ("written", proposal.path)
+                if dry:
+                    status = f"would-{verb}"
+                    message = ", ".join(proposal.sources) + (f"  [{proposal.old_state.kind}]" if proposal.is_update else "")
+                    if legacy_held:
+                        message += "  (not replaced without --update-legacy)"
+                else:
+                    status, message = ("updated" if proposal.is_update else "written"), proposal.path
+                    if proposal.is_update:
+                        message += "  (the old note is in the Recycle Bin)"
                 if guess is not None:
                     guessed += 1
                     message += f"  [from an uncertain match: {guess.name} ({guess.source}) - review it]"
-            elif result.status == "exists":
+            elif result.status in ("exists", "changed"):
                 status, message = "has-note", result.message
             else:
                 status, message = "failed", result.message
@@ -204,6 +229,14 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     left = summary.uncertain + summary.none
     if left > 0:
         out.line("Uncertain and unmatched folders were not written; review them (the candidates are listed above).")
+    if update:
+        left = [x for x in found.skipped if x.state in ("edited", "foreign")]
+        current = [x for x in found.skipped if x.state == "current"]
+        out.line(f"{len(left)} notes were left alone: edited by a person or not ours."
+                 + (f" {len(current)} are already current." if current else ""))
+        summary_dict["left_alone"] = len(left)
+        summary_dict["already_current"] = len(current)
+        summary_dict["updates"] = summary.updates
     out.line(f"Requests: {engine.stats.summary()}.")
     summary_dict["requests"] = engine.stats.requests
     summary_dict["from_cache"] = engine.stats.from_cache

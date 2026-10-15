@@ -18,6 +18,7 @@ level, which rebuilds it through the engine: NotesEngine.rebuild) and the rebuil
 
 from __future__ import annotations
 
+import difflib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,7 +26,7 @@ from typing import Callable, Iterable, Optional
 
 from core.notes_flow import STATUS_SKIPPED, Confidence, Proposal, summarize, write_proposal
 from core.notes_local import KIND_ALBUM, KIND_ARTIST, KIND_GENRE
-from redactor_common.core.notes import STATUS_ERROR, STATUS_EXISTS, STATUS_TOO_LARGE, STATUS_WRITTEN, NoteWriteResult
+from redactor_common.core.notes import STATUS_CHANGED, STATUS_ERROR, STATUS_EXISTS, STATUS_TOO_LARGE, STATUS_WRITTEN, NoteWriteResult
 
 VIEW_ONE = "one"
 VIEW_LIST = "list"
@@ -39,6 +40,13 @@ ERROR = "error"
 
 CONFIDENCE_WORDS = {Confidence.CONFIDENT: "Confident", Confidence.UNCERTAIN: "Uncertain", Confidence.NONE: "Nothing found"}
 STATE_WORDS = {PENDING: "", WRITTEN: "Written", SKIPPED: "Skipped", EXISTS: "Note exists", TOO_LARGE: "Too large", ERROR: "Error"}
+
+
+def note_diff(old_text: str, new_text: str, context: int = 3) -> str:
+    """A unified diff of an older note and the new draft ('' when they are the same): the before / after of an update."""
+    lines = difflib.unified_diff(
+        old_text.splitlines(), new_text.splitlines(), fromfile="the note now", tofile="the new note", lineterm="", n=context)
+    return "\n".join(lines)
 
 
 def _key(folder) -> str:
@@ -114,9 +122,10 @@ class ReviewSession:
     # -- ticks -----------------------------------------------------------------------------------------------
 
     def tick_confident(self) -> None:
-        """Confident proposals are pre-ticked; uncertain and nothing-found ones never are."""
+        """Confident proposals are pre-ticked; uncertain and nothing-found ones never are, and neither is an UPDATE
+        of an older note (it replaces something that exists: only an explicit tick or Write note does that)."""
         for item in self.items:
-            item.ticked = item.tickable
+            item.ticked = item.tickable and not item.proposal.is_update
 
     def set_ticked(self, index: int, ticked: bool) -> bool:
         """Ticks / unticks one item. Returns False (and changes nothing) when it may not be ticked: an uncertain
@@ -148,7 +157,7 @@ class ReviewSession:
         item.message = result.message or result.path
         if result.status == STATUS_WRITTEN:
             item.state, item.written_path = WRITTEN, result.path or item.proposal.path
-        elif result.status == STATUS_EXISTS:
+        elif result.status in (STATUS_EXISTS, STATUS_CHANGED):  # a note in the way, or one edited since it was looked at
             item.state = EXISTS
             item.message = result.message or f"{result.path} already exists"
         elif result.status == STATUS_TOO_LARGE:
@@ -162,7 +171,9 @@ class ReviewSession:
         return [self.write(i) for i in self.ticked_pending()]
 
     def write_remaining_confident(self) -> list[NoteWriteResult]:
-        return [self.write(i) for i, item in enumerate(self.items) if item.tickable]
+        """Every confident NEW note not yet written. An update of an older note is only written when it was ticked."""
+        return [self.write(i) for i, item in enumerate(self.items)
+                if item.tickable and (not item.proposal.is_update or item.ticked)]
 
     def replace(self, index: int, proposal: Proposal, user_resolved: bool = True) -> ReviewItem:
         """The proposal rebuilt after a person's choice. A confident result is ticked (the person just asked
@@ -170,7 +181,7 @@ class ReviewSession:
         item = self.items[index]
         item.proposal, item.user_resolved = proposal, user_resolved
         item.state, item.message = PENDING, ""
-        item.ticked = item.tickable
+        item.ticked = item.tickable and not proposal.is_update
         return item
 
     # -- reading ---------------------------------------------------------------------------------------------

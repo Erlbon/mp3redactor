@@ -39,7 +39,9 @@ from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, 
 from core.notes_local import ALL_KINDS
 from core.notes_scope import ScopeChoice, kinds_sentence
 from core.notes_local import KIND_ALBUM, KIND_ARTIST
+from redactor_common.core.notes import STATE_LEGACY
 from core.notes_review import (
+    note_diff,
     CONFIDENCE_WORDS, ERROR, EXISTS, PENDING, SKIPPED, TOO_LARGE, VIEW_LIST, VIEW_ONE, WRITTEN, ReviewItem,
     ReviewSession, choose_view,
 )
@@ -58,6 +60,30 @@ BADGE_STYLES = {
     Confidence.NONE: "background:#dcdcdc; color:#333333;",
 }
 TEXT_COLOURS = {Confidence.CONFIDENT: "#1b7f3b", Confidence.UNCERTAIN: "#a86a00", Confidence.NONE: "#707070"}
+
+OUTDATED_CHECK_TEXT = "Also review notes made by an older version"
+UPDATE_BADGE_TEXT = "Update"
+UPDATE_BADGE_STYLE = "background:#cfe0f7; color:#10325c; border-radius:4px; padding:3px 8px; font-weight:bold;"
+LEGACY_WARNING = "Made by the first versions: cannot tell whether you edited it. Look at Before / after before you update it."
+RECYCLE_NOTE = "The old note goes to the Recycle Bin. You can restore it from the Recycle Bin."
+
+
+def diff_html(old_text: str, new_text: str) -> str:
+    """The unified diff of the note now against the new draft as HTML: removed lines red, added lines green."""
+    from html import escape
+
+    diff = note_diff(old_text, new_text)
+    if not diff:
+        return "<p>The new note is the same as the note now.</p>"
+    rows = []
+    for line in diff.split("\n"):
+        colour = ("#9b1c1c" if line.startswith("-") and not line.startswith("---")
+                  else "#17622b" if line.startswith("+") and not line.startswith("+++")
+                  else "#555555" if line.startswith(("@@", "---", "+++")) else "")
+        style = f' style="color:{colour}"' if colour else ""
+        rows.append(f"<span{style}>{escape(line) or '&nbsp;'}</span>")
+    return "<pre style='font-family:Consolas,monospace'>" + "<br>".join(rows) + "</pre>"
+
 
 LEVEL_LABELS = {
     SUGGEST_ARTIST: "Artist folder (artist.md)",
@@ -95,6 +121,14 @@ def _shrinkable(*labels: QLabel) -> None:
         label.setWordWrap(True)
         label.setMinimumWidth(0)
         label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+
+def left_alone_sentence(found) -> str:
+    """'N notes were left alone: edited by a person or not ours.' (and how many are already current)."""
+    left = sum(1 for x in found.skipped if x.state in ("edited", "foreign"))
+    current = sum(1 for x in found.skipped if x.state == "current")
+    return (f"{left} notes were left alone: edited by a person or not ours."
+            + (f" {current} are already current." if current else ""))
 
 
 def _plural_n(n: int, word: str) -> str:
@@ -138,6 +172,10 @@ class ProposalPanel(QWidget):
         self.badge = QLabel()
         self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge.setMinimumWidth(110)
+        self.update_badge = QLabel(UPDATE_BADGE_TEXT)
+        self.update_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_badge.setStyleSheet(UPDATE_BADGE_STYLE)
+        self.update_badge.setVisible(False)
         self.state_label = QLabel()
         head = QHBoxLayout()
         title_box = QVBoxLayout()
@@ -145,7 +183,12 @@ class ProposalPanel(QWidget):
         title_box.addWidget(self.kind_label)
         head.addLayout(title_box, 1)
         head.addWidget(self.state_label)
+        head.addWidget(self.update_badge, 0, Qt.AlignmentFlag.AlignTop)
         head.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignTop)
+        self.legacy_label = QLabel(LEGACY_WARNING)
+        self.legacy_label.setWordWrap(True)
+        self.legacy_label.setStyleSheet("background:#fff0c2; color:#4d3600; border:1px solid #e0c36a; padding:4px 8px;")
+        self.legacy_label.setVisible(False)
 
         self.reasons_label = QLabel()
         self.reasons_label.setWordWrap(True)
@@ -217,6 +260,9 @@ class ProposalPanel(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.preview, "Preview")
         self.tabs.addTab(self.raw, "Raw text")
+        self.diff_view = QTextBrowser()  # an UPDATE: the note now (red) against the new draft (green), as a diff
+        self.diff_tab = self.tabs.addTab(self.diff_view, "Before / after")
+        self.tabs.setTabVisible(self.diff_tab, False)
 
         self.sources_label = QLabel()
         self.sources_label.setWordWrap(True)
@@ -232,6 +278,7 @@ class ProposalPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(head)
+        layout.addWidget(self.legacy_label)
         layout.addWidget(self.reasons_label)
         layout.addWidget(self.problems_label)
         layout.addWidget(self.level_box)
@@ -261,6 +308,10 @@ class ProposalPanel(QWidget):
                       self.sources_label):
                 w.clear()
             self.badge.setStyleSheet("")
+            self.update_badge.hide()
+            self.legacy_label.hide()
+            self.tabs.setTabVisible(self.diff_tab, False)
+            self.diff_view.clear()
             self.level_box.hide()
             self.candidate_box.hide()
             self.local_box.hide()
@@ -273,6 +324,13 @@ class ProposalPanel(QWidget):
         self.path_label.setText(p.path)
         level = f"  |  level: {p.level}" if p.level else ""
         self.kind_label.setText(f"Note kind: {p.note_kind}{level}")
+        self.update_badge.setVisible(p.is_update)
+        self.legacy_label.setVisible(p.is_update and p.old_state.kind == STATE_LEGACY)
+        self.tabs.setTabVisible(self.diff_tab, p.is_update and bool(p.note_text))
+        if p.is_update and p.note_text:
+            self.diff_view.setHtml(diff_html(p.old_text, p.note_text))
+        else:
+            self.diff_view.clear()
         self.badge.setText(CONFIDENCE_WORDS[p.confidence])
         self.badge.setStyleSheet(BADGE_STYLES[p.confidence] + " border-radius:4px; padding:3px 8px; font-weight:bold;")
         self.state_label.setText(item.state_word)
@@ -605,6 +663,7 @@ class NotesReviewDialog(QDialog):
         self.back_button.setEnabled(self.index > 0)
         self.skip_button.setEnabled(item.state == PENDING)
         self.write_button.setEnabled(item.tickable)
+        self.write_button.setText("Update note" if item.proposal.is_update else "Write note")
         if item.tickable:
             self.write_button.setFocus()
         remaining = sum(1 for i in items if i.tickable)
@@ -629,11 +688,33 @@ class NotesReviewDialog(QDialog):
         self.session.skip(self.index)
         self._advance()
 
+    def _confirm_updates(self, indices: list[int]) -> bool:
+        """An UPDATE replaces an existing note: ask once, say where the old one goes. True = go on."""
+        n = sum(1 for i in indices if self.session.items[i].proposal.is_update)
+        if not n:
+            return True
+        legacy = sum(1 for i in indices if self.session.items[i].proposal.is_update
+                     and self.session.items[i].proposal.old_state.kind == STATE_LEGACY)
+        text = f"Replace {_plural_n(n, 'note')} made by an older version?\n\n{RECYCLE_NOTE}"
+        if legacy:
+            text += (f"\n\n{legacy} of them {'was' if legacy == 1 else 'were'} made by the first versions: "
+                     "it cannot be told whether you edited " + ("it." if legacy == 1 else "them."))
+        answer = QMessageBox.question(self, "Create Notes", text,
+                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                      QMessageBox.StandardButton.No)
+        return answer == QMessageBox.StandardButton.Yes
+
     def write_current(self) -> None:
+        if not self._confirm_updates([self.index]):
+            return
         self._write_index(self.index)
         self._advance()
 
     def write_remaining(self) -> None:
+        wanted = [i for i, item in enumerate(self.session.items)
+                  if item.tickable and (not item.proposal.is_update or item.ticked)]
+        if not self._confirm_updates(wanted):
+            return
         results = self.session.write_remaining_confident()
         self._report_problems(results)
         if self.view == VIEW_ONE and self.session.next_pending(-1) is None:
@@ -647,7 +728,7 @@ class NotesReviewDialog(QDialog):
         self._report_problems([result])
 
     def _report_problems(self, results) -> None:
-        bad = [r for r in results if r.status in ("exists", "too_large", "error")]
+        bad = [r for r in results if r.status in ("exists", "too_large", "error", "changed")]
         if bad and len(results) == 1:  # one note asked for: say at once why it was not written
             QMessageBox.warning(self, "Create Notes", f"The note was not written.\n\n{bad[0].message or bad[0].status}\n{bad[0].path}")
 
@@ -681,7 +762,8 @@ class NotesReviewDialog(QDialog):
             p = item.proposal
             if only_open and p.confidence == Confidence.CONFIDENT:
                 continue
-            row = QTreeWidgetItem([short_path(p.folder, self._root), p.level or p.kind, item.confidence_word, item.state_word])
+            level_text = (p.level or p.kind) + (" - update" if p.is_update else "")
+            row = QTreeWidgetItem([short_path(p.folder, self._root), level_text, item.confidence_word, item.state_word])
             row.setData(0, Qt.ItemDataRole.UserRole, i)
             flags = row.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
             if item.tickable:
@@ -788,6 +870,8 @@ class NotesReviewDialog(QDialog):
         self.write_ticked_button.setEnabled(n > 0)
 
     def write_ticked(self) -> None:
+        if not self._confirm_updates(self.session.ticked_pending()):
+            return
         results = self.session.write_ticked()
         self._report_problems(results)
         self._summary_box()
@@ -868,12 +952,13 @@ def create_notes(
     parent: QWidget, paths: list, include_subfolders: bool, make_fetchers: Callable[[], Fetchers],
     size_text: str = "", on_size: Optional[Callable[[str], None]] = None,
     open_path: Callable[[str], None] = open_in_system, kinds: tuple = ALL_KINDS, cache=None,
+    include_outdated: bool = False,
 ) -> Optional[NotesReviewDialog]:
     """Scan `paths`, look every folder up under a cancellable progress dialog, then open the review page. Returns
     the (closed) dialog, or None when there was nothing to review."""
     title = "Create Notes"
     try:
-        found = run_busy(parent, "Looking at the folders…", lambda: scan(paths, include_subfolders, kinds=kinds), title=title)
+        found = run_busy(parent, "Looking at the folders…", lambda: scan(paths, include_subfolders, kinds=kinds, include_outdated=include_outdated), title=title)
     except Exception as exc:  # noqa: BLE001
         QMessageBox.warning(parent, title, f"The folders could not be read: {exc}")
         return None
@@ -885,6 +970,8 @@ def create_notes(
             why.append(f"{len(found.groupings)} alphabetical grouping folder(s) were skipped.")
         if found.missing:
             why.append("Not found: " + ", ".join(str(m) for m in found.missing))
+        if include_outdated:
+            why.append(left_alone_sentence(found))
         QMessageBox.information(
             parent, title, "No artist or album folders without a note were found.\n\n" + "\n".join(why) if why
             else "No artist or album folders without a note were found.")
@@ -929,6 +1016,9 @@ def create_notes(
         notes.append(f"{len(found.skipped)} folder(s) already have a note and are not listed.")
     if found.groupings:
         notes.append(f"{len(found.groupings)} alphabetical grouping folder(s) (A, B-C, 0-9...) skipped: no note, no proposal.")
+    if include_outdated:
+        updates = sum(1 for t in found.targets if t.update is not None)
+        notes.append(f"Notes made by an older version: {updates} can be updated (never pre-ticked). " + left_alone_sentence(found))
     unreachable = [p for p in session.problems() if p.lower().startswith("could not reach")]
     if unreachable:
         notes.append(f"The internet services could not be reached: {unreachable[0]}")
@@ -944,7 +1034,7 @@ def create_notes(
     dialog.exec()
     if dialog.followup:  # 'Create the album notes for these artists too': only those artists' albums
         return create_notes(parent, dialog.followup, True, make_fetchers, size_text, on_size, open_path,
-                            kinds=(KIND_ALBUM,), cache=cache)
+                            kinds=(KIND_ALBUM,), cache=cache, include_outdated=include_outdated)
     return dialog
 
 
@@ -975,6 +1065,7 @@ class NotesScopeDialog(QDialog):
     def __init__(self, parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
                  on_include_changed: Optional[Callable[[bool], None]] = None, start: str = "", kinds: str = "artist"):
         super().__init__(parent)
+        self.outdated = False
         self.setWindowTitle("Create Notes: which folder?")
         self.start = start
         self._on_include_changed = on_include_changed
@@ -1041,6 +1132,15 @@ class NotesScopeDialog(QDialog):
             self.kind_radios[key] = radio
             layout.addWidget(radio)
 
+        # Notes made by an older version of this app: never on by itself, never remembered
+        layout.addSpacing(6)
+        self.outdated_box = QCheckBox(OUTDATED_CHECK_TEXT)
+        self.outdated_box.setChecked(False)
+        self.outdated_box.setToolTip("Lists the notes this app wrote in an older shape that nobody edited, and the notes "
+                                     "of the first versions (no stamp: it cannot be known whether you edited them), "
+                                     "as updates you can compare and replace one by one. A note you edited, or one "
+                                     "this app did not write, is never listed.")
+        layout.addWidget(self.outdated_box)
         self.include_box = QCheckBox("Include subfolders")
         self.include_box.setChecked(include_subfolders)
         self.include_note = QLabel()
@@ -1140,19 +1240,20 @@ class NotesScopeDialog(QDialog):
     def _continue(self) -> None:
         self.folder = self.chosen_folder()
         self.kinds = self.chosen_kinds()
+        self.outdated = self.outdated_box.isChecked()
         if self.folder:
             self.accept()
 
 
 def ask_scope(parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
               on_include_changed: Optional[Callable[[bool], None]] = None, start: str = "",
-              kinds: str = "artist") -> tuple[str, str]:
-    """(folder, kinds): the folder to create notes for ("" = cancelled) and what to create ('artist' / 'both' /
-    'all')."""
+              kinds: str = "artist") -> tuple[str, str, bool]:
+    """(folder, kinds, include_outdated): the folder to create notes for ("" = cancelled), what to create ('artist'
+    / 'both' / 'all') and whether to also review notes made by an older version (always off at first)."""
     dialog = NotesScopeDialog(parent, choices, include_subfolders, on_include_changed, start, kinds)
     if dialog.exec() != QDialog.DialogCode.Accepted:
-        return "", kinds
-    return dialog.folder, dialog.kinds
+        return "", kinds, False
+    return dialog.folder, dialog.kinds, dialog.outdated
 
 
 def ask_folder(parent: QWidget, start: str) -> str:
