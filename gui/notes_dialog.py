@@ -371,6 +371,9 @@ class ProposalPanel(QWidget):
             self.link_box.hide()
             self.preview.clear()
             self.raw.clear()
+            self._edits_row = None  # nothing shown: the typed link / genres belong to no row any more
+            self.link_edit.clear()
+            self.set_link_error("")
             self.open_note_button.hide()
             self.show_folder_button.hide()
             return
@@ -414,9 +417,18 @@ class ProposalPanel(QWidget):
             p.confidence != Confidence.CONFIDENT or item.user_resolved)
         self.candidate_box.setVisible(show_candidates)
         self.link_box.setVisible(p.kind in ("artist", "album") and item.state == PENDING and p.note_kind != "about")
+        # What was typed into the link / genres fields belongs to ONE folder: a different row starts with empty
+        # link text and its own genres (a pasted link for the previous band must never be offered for this one).
+        # The same row shown again (after a rebuild in place, a state change) keeps what the person typed.
+        row_key = str(p.folder)
+        new_row = row_key != getattr(self, "_edits_row", None)
+        if new_row:
+            self._edits_row = row_key
+            self.link_edit.clear()
+            self.set_link_error("")
         about = p.note_kind == "about" and item.state == PENDING
         self.genres_box.setVisible(about)
-        if about and not self.genres_edit.hasFocus():
+        if about and (new_row or not self.genres_edit.hasFocus()):
             self.genres_edit.setText(", ".join(p.genres) if p.genres else p.title or p.folder.name)
         self.local_box.setVisible(item.state == PENDING and p.kind in ("artist", "album") and not p.writable
                                   and p.note_kind in ("artist", "album"))

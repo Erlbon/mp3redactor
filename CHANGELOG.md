@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-15#23 -- Create Notes: a pasted link no longer follows you to the next row
+
+- Fixed: on the review page the text typed into **Look up by link** (and the red error under it) stayed in the box when you selected another row, so a link pasted for one band was offered for the next one. Each row now starts with an empty link field and its own **Genres covered** text. Showing the same row again (after a rebuild in place) keeps what you typed.
+
 ## 2026-10-15#22 -- Create Notes: bands the name search cannot find (the Leningrad case)
 
 A Latin folder `Leningrad` with Cyrillic tags and albums: a MusicBrainz name search for "Leningrad" returns Leningrad Cowboys first and not the band (MusicBrainz names it `Ленинград`, sort name and alias `Leningrad`); Discogs does not list it in the top 8 either.
