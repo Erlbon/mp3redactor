@@ -32,3 +32,6 @@ mp3redactor_rename_log.json
 # next to the settings.
 mp3redactor_journal.jsonl
 mp3redactor_journal.jsonl.tmp
+
+# the notes lookup cache is created next to the settings file (or the working folder by a stray run): never commit it
+mp3redactor_notes_cache.sqlite*
