@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-15#01 -- Play button in the side panel
+
+- A large **Play** button under the cover in the side panel: the same as File > Play (Ctrl+P). It is enabled only while exactly one file is selected.
+
 ## 2026-10-14#09 -- Play
 
 - **Play** is now a real Play button on the toolbar (next to Open Folder), plus **File > Play (Ctrl+P)** and a **Play** row in the right-click menu. It opens a small player window for the one selected file and starts playing at once; it replaces the "Preview" wording. Select exactly one file, otherwise the status bar says so. Double-clicking a row is unchanged.

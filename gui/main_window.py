@@ -455,6 +455,7 @@ class MainWindow(QMainWindow):
         self.tag_panel.selectionCountChanged.connect(self._on_tag_panel_selection_count_changed)
         self.tag_panel.collapseToggleRequested.connect(self._toggle_tag_panel)
         self.tag_panel.quickPickRequested.connect(self._on_quick_pick_requested)
+        self.tag_panel.play_btn.clicked.connect(lambda _checked=False: self.action_play.trigger())
         self.tag_panel.coverSetRequested.connect(self.set_cover_from_file)
         self.tag_panel.coverFromFolderRequested.connect(self.set_cover_from_folder_images)
         self.tag_panel.coverRemoveRequested.connect(self.remove_cover)
@@ -2622,6 +2623,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Export Cover", f"Could not write the image: {exc}")
 
     def _update_cover_panel(self) -> None:
+        # The panel's big Play button follows the same single-selection rule as File > Play.
+        self.tag_panel.play_btn.setEnabled(len(self._selected_files()) == 1)
         selected = [mp3 for mp3 in self._selected_files() if not mp3.load_error]
         self.tag_panel.set_cover_actions_enabled(
             any_selected=bool(selected),

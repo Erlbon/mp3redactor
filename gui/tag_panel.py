@@ -38,7 +38,7 @@ set_picked_value() back to apply the result.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QSize, pyqtSignal
 from PyQt6.QtGui import QImage
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -48,6 +48,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
+    QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -194,6 +196,19 @@ class TagPanel(QWidget):
         (redactor_common's AsyncPreviewLoader) -- this only displays it."""
         self.cover_box = ImagePreviewBox("Cover")
         self.cover_label = self.cover_box.image_label
+
+        # A large Play button directly under the cover: the same action as
+        # File > Play (MainWindow wires clicked to it and keeps it enabled
+        # only while exactly one file is selected).
+        self.play_btn = QPushButton("Play")
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.play_btn.setIconSize(QSize(24, 24))
+        self.play_btn.setMinimumHeight(40)
+        self.play_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.play_btn.setStyleSheet("font-size: 15px; font-weight: bold;")
+        self.play_btn.setToolTip("Play the selected file (Ctrl+P)")
+        self.play_btn.setEnabled(False)
+        self.cover_box.add_widget(self.play_btn)
 
         self.cover_note = QLabel("")
         self.cover_note.setStyleSheet("color: gray; font-size: 11px;")

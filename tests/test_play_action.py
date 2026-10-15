@@ -56,3 +56,19 @@ def test_toolbar_has_a_play_button(window, tmp_path, monkeypatch):
     window.table.selectRow(0)
     bar.widgetForAction(window.action_play).click()
     assert len(calls) == 1 and isinstance(calls[0][0], str)
+
+
+def test_panel_play_button_follows_single_selection_and_triggers_play(window, tmp_path, monkeypatch):
+    _load(window, tmp_path, ["a.mp3", "b.mp3"])
+    calls = _capture(monkeypatch)
+    btn = window.tag_panel.play_btn
+    assert "Ctrl+P" in btn.toolTip()
+    assert btn.minimumHeight() >= 40
+    window.table.clearSelection()
+    assert not btn.isEnabled()
+    window.table.selectRow(0)
+    assert btn.isEnabled()
+    btn.click()
+    assert len(calls) == 1
+    window.table.selectAll()
+    assert not btn.isEnabled()
