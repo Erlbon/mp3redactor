@@ -132,7 +132,8 @@ from gui.m4b_batch_dialog import M4bBatchDialog
 from gui.m4b_dialog import M4bDialog
 from gui.notes_dialog import ask_scope as ask_notes_scope
 from gui.notes_dialog import create_notes
-from core.notes_flow import artist_folder_of_file, live_fetchers, selection_scope
+from core.notes_flow import live_fetchers, selection_scope
+from core.notes_scope import scope_choices
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
@@ -1003,40 +1004,22 @@ class MainWindow(QMainWindow):
     # -- create notes ------------------------------------------------------
 
     def create_notes_dialog(self) -> None:
-        """Tools > Create Notes...: ALWAYS asks which folder first (a library root, an artist or an album folder;
-        File > Include Subfolders is honoured and the question says so). The selected files are never used
-        silently: when files are selected their artist folder is offered as a one-click suggestion. The review
-        page is gui/notes_dialog.py."""
-        suggestions: list[str] = []
-        for mp3 in self._selected_files():
-            folder = str(artist_folder_of_file(mp3.path))
-            if folder not in suggestions:
-                suggestions.append(folder)
-        folders, browsed = ask_notes_scope(
-            self, resolve_start_directory(self._notes_start_folder()), suggestions, self.settings.include_subfolders)
-        if not folders:
+        """Tools > Create Notes...: ALWAYS asks which folder first, as a short list (the folder you opened, the
+        artist / album of the selected files, one level up, the last notes folder, the library folder, Another
+        folder...). The selected files are never used silently: their artist folder is only the pre-ticked choice
+        until Continue. Include subfolders in the dialog is File > Include Subfolders (one saved setting). The
+        review page is gui/notes_dialog.py."""
+        choices = scope_choices(
+            [mp3.path for mp3 in self.files], [mp3.path for mp3 in self._selected_files()],
+            self.settings.last_directory, self.settings.notes_last_folder, self.settings.library_root)
+        folder = ask_notes_scope(
+            self, choices, self.settings.include_subfolders, self.action_include_subfolders.setChecked,
+            resolve_start_directory(self.settings.notes_last_folder or self.settings.last_directory))
+        if not folder:
             return
-        if browsed:
-            self.settings.notes_last_folder = folders[0]
-            save_settings(self.settings)
-        self._run_create_notes(folders, self.settings.include_subfolders)
-
-    def _notes_start_folder(self) -> str:
-        """Where the folder question starts: the last notes folder, the library root, the folder above the
-        loaded files, the last folder used."""
-        if self.settings.notes_last_folder:
-            return self.settings.notes_last_folder
-        if self.settings.library_root:
-            return self.settings.library_root
-        folders = {str(Path(mp3.path).parent) for mp3 in self.files}
-        if folders:
-            try:
-                common = os.path.commonpath(list(folders))
-            except ValueError:
-                common = ""
-            if common:
-                return common if len(folders) > 1 else str(Path(common).parent)
-        return self.settings.last_directory
+        self.settings.notes_last_folder = folder
+        save_settings(self.settings)
+        self._run_create_notes([folder], self.settings.include_subfolders)
 
     def create_notes_for_selection(self) -> None:
         """Right-click "Create Notes for This Folder...": for each selected file its ALBUM folder and the ARTIST

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-15#08 -- Create Notes: the folder question is a short list
+
+- Changed: **Tools > Create Notes...** asks "which folder?" as a list of radio buttons, each with its full path and a plain caption: the folder you opened, the artist / album of the selected files, one level up (also the other artists next to it), the folder you used last time and the Preferences library folder, plus "Another folder..." (opens the folder picker). The first useful one is ticked (the selected files' artist folder when files are selected, else the folder you opened) and **Continue** is the default button, so Enter just works. Before, with nothing selected there was only "Choose another folder..." and Cancel. The selection is still never used without Continue.
+- **Include subfolders** is now in the dialog too, with a sentence saying what it does; it is the same setting as File > Include Subfolders and the toolbar box (they stay in step). The last chosen folder is remembered.
+
 ## 2026-10-15#07 -- Album notes no longer carry the present / missing comparison
 
 - Removed: the `## In this folder` section (present / missing / extra tracks) of an album note. It was a copy of what the folder held on the day the note was written, which goes stale; Pluteus shows what is in a folder itself. The tracklist and credits stay. (The code is still there behind `INCLUDE_FOLDER_COMPARISON` in `core/notes_render.py`, off.)

@@ -24,17 +24,18 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QSize, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QDesktopServices, QTextDocument
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel,
-    QMessageBox, QPushButton, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QTextEdit,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel,
+    QMessageBox, QPushButton, QRadioButton, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QTextEdit,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.notes_flow import Candidate, Confidence, Fetchers, NotesEngine, Proposal, build_proposals, scan
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
+from core.notes_scope import ScopeChoice
 from core.notes_review import (
     CONFIDENCE_WORDS, ERROR, EXISTS, PENDING, SKIPPED, TOO_LARGE, VIEW_LIST, VIEW_ONE, WRITTEN, ReviewItem,
     ReviewSession, choose_view,
@@ -879,70 +880,173 @@ def _rebuild_with(engine: NotesEngine):
 
 
 class NotesScopeDialog(QDialog):
-    """The first step of Tools > Create Notes: which folder? The selection is only ever a SUGGESTION here (the
-    artist folder of the selected files), never used silently."""
+    """The first step of Tools > Create Notes: which folder? A short list of radio buttons (the folder you opened,
+    the artist / album of the selected files, one level up, the last folder, the library folder) and "Another
+    folder...". The first useful one is ticked, so Enter just works. The selected files are only ever one of the
+    choices (and the ticked one when there is a selection), never used without Continue.
 
-    def __init__(self, parent: QWidget, start: str, suggestions: list[str], include_subfolders: bool):
+    Include subfolders mirrors File > Include Subfolders: `on_include_changed(bool)` is called at every tick, the
+    caller passes the shared action's setChecked, so there is still exactly one saved value."""
+
+    MAX_PATH_CHARS = 70
+
+    def __init__(self, parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
+                 on_include_changed: Optional[Callable[[bool], None]] = None, start: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Create Notes: which folder?")
         self.start = start
-        self.folders: list[str] = []
-        self.browsed = False
-        title = QLabel("Create notes for which folder?")
+        self._on_include_changed = on_include_changed
+        self.folder = ""
+        self.picked = ""
+        self._previous: Optional[QRadioButton] = None
+        self._browsing = False
+        self.radios: list[tuple[QRadioButton, str]] = []
+        self.captions: list[QLabel] = []
+
+        title = QLabel("Create notes: which folder?")
         font = title.font()
         font.setBold(True)
         title.setFont(font)
-        how = ("Include Subfolders is on: everything below the folder is looked at (including subfolders)."
-               if include_subfolders else
-               "Include Subfolders is off: only the folder itself is looked at (switch it on in the toolbar "
-               "to cover a whole library).")
-        info = QLabel("Pick a library, artist or album folder. " + how)
-        info.setWordWrap(True)
-        self.suggestion_button: Optional[QPushButton] = None
         layout = QVBoxLayout(self)
         layout.addWidget(title)
-        layout.addWidget(info)
-        if suggestions:
-            if len(suggestions) == 1:
-                text = f"Use the artist folder of the selected files:\n{suggestions[0]}"
-            else:
-                text = (f"Use the {len(suggestions)} artist folders of the selected files:\n"
-                        + "\n".join(suggestions[:4]) + ("\n…" if len(suggestions) > 4 else ""))
-            self.suggestion_button = QPushButton(text)
-            self.suggestion_button.setAutoDefault(False)
-            self.suggestion_button.setStyleSheet("text-align:left; padding:6px 10px;")
-            self.suggestion_button.clicked.connect(lambda: self._use(list(suggestions), False))
-            layout.addWidget(self.suggestion_button)
-        self.choose_button = QPushButton("Choose another folder…")
-        self.choose_button.setAutoDefault(suggestions == [])
-        self.choose_button.clicked.connect(self._choose)
+        self.group = QButtonGroup(self)
+        for choice in choices:
+            radio = QRadioButton(self._elide(choice.path))
+            radio.setToolTip(choice.path)
+            caption = QLabel(choice.caption[:1].upper() + choice.caption[1:])
+            caption.setToolTip(choice.path)
+            caption.setContentsMargins(22, 0, 0, 6)
+            _shrinkable(caption)
+            self.group.addButton(radio)
+            self.radios.append((radio, choice.path))
+            self.captions.append(caption)
+            layout.addWidget(radio)
+            layout.addWidget(caption)
+            if choice.default:
+                radio.setChecked(True)
+        # Another folder...
+        self.other_radio = QRadioButton("Another folder…")
+        self.group.addButton(self.other_radio)
+        self.browse_button = QPushButton("Browse…")
+        self.browse_button.setAutoDefault(False)
+        row = QHBoxLayout()
+        row.addWidget(self.other_radio)
+        row.addWidget(self.browse_button)
+        row.addStretch(1)
+        layout.addLayout(row)
+        self.other_label = QLabel("")
+        self.other_label.setContentsMargins(22, 0, 0, 6)
+        _shrinkable(self.other_label)
+        layout.addWidget(self.other_label)
+        if not choices:
+            self.other_radio.setChecked(True)
+        self._previous = self.group.checkedButton()
+
+        self.include_box = QCheckBox("Include subfolders")
+        self.include_box.setChecked(include_subfolders)
+        self.include_note = QLabel()
+        self.include_note.setContentsMargins(22, 0, 0, 0)
+        _shrinkable(self.include_note)
+        layout.addSpacing(6)
+        layout.addWidget(self.include_box)
+        layout.addWidget(self.include_note)
+        self._update_include_note()
+
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setDefault(True)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setAutoDefault(False)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.continue_button)
+        layout.addSpacing(6)
+        layout.addLayout(buttons)
+
+        self.group.buttonToggled.connect(self._radio_toggled)
+        self.browse_button.clicked.connect(self._browse)
+        self.include_box.toggled.connect(self._include_toggled)
+        self.continue_button.clicked.connect(self._continue)
         self.cancel_button.clicked.connect(self.reject)
-        row = QHBoxLayout()
-        row.addWidget(self.choose_button)
-        row.addStretch(1)
-        row.addWidget(self.cancel_button)
-        layout.addLayout(row)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
+        self._update_continue()
+        if not choices:
+            QTimer.singleShot(0, self._browse)
 
-    def _use(self, folders: list[str], browsed: bool) -> None:
-        self.folders, self.browsed = folders, browsed
-        self.accept()
+    def _elide(self, path: str) -> str:
+        if len(path) <= self.MAX_PATH_CHARS:
+            return path
+        head = self.MAX_PATH_CHARS // 3
+        return path[:head] + "…" + path[-(self.MAX_PATH_CHARS - head - 1):]
 
-    def _choose(self) -> None:
-        folder = ask_folder(self, self.start)
-        if folder:
-            self._use([folder], True)
+    def chosen_folder(self) -> str:
+        """The folder the ticked radio stands for ("" when 'Another folder...' has none yet)."""
+        button = self.group.checkedButton()
+        if button is self.other_radio:
+            return self.picked
+        for radio, path in self.radios:
+            if radio is button:
+                return path
+        return ""
+
+    def _update_continue(self) -> None:
+        self.continue_button.setEnabled(bool(self.chosen_folder()))
+
+    def _update_include_note(self) -> None:
+        self.include_note.setText("Everything below the folder is looked at."
+                                  if self.include_box.isChecked() else "Only this folder is looked at.")
+
+    def _include_toggled(self, on: bool) -> None:
+        self._update_include_note()
+        if self._on_include_changed is not None:
+            self._on_include_changed(bool(on))
+
+    def _radio_toggled(self, button, checked: bool) -> None:
+        if not checked:
+            return
+        if self._browsing:
+            return
+        if button is self.other_radio:
+            if not self._browse():  # cancelled: back to where it was (or stay empty when nothing came before)
+                if self._previous is not None and self._previous is not self.other_radio:
+                    self._previous.setChecked(True)
+                    return
+        else:
+            self._previous = button
+        self._update_continue()
+
+    def _browse(self) -> bool:
+        self._browsing = True
+        try:
+            folder = ask_folder(self, self.picked or self.start)
+        finally:
+            self._browsing = False
+        if not folder:
+            self._update_continue()
+            return False
+        self.picked = folder
+        self.other_label.setText(folder)
+        self.other_label.setToolTip(folder)
+        self._browsing = True
+        self.other_radio.setChecked(True)
+        self._browsing = False
+        self._previous = self.other_radio
+        self._update_continue()
+        return True
+
+    def _continue(self) -> None:
+        self.folder = self.chosen_folder()
+        if self.folder:
+            self.accept()
 
 
-def ask_scope(parent: QWidget, start: str, suggestions: list[str], include_subfolders: bool) -> tuple[list[str], bool]:
-    """(folders, browsed): the folders to create notes for ([] = cancelled) and whether the person browsed for
-    them (so the caller can remember that folder as the next starting point)."""
-    dialog = NotesScopeDialog(parent, start, suggestions, include_subfolders)
+def ask_scope(parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
+              on_include_changed: Optional[Callable[[bool], None]] = None, start: str = "") -> str:
+    """The folder to create notes for ("" = cancelled)."""
+    dialog = NotesScopeDialog(parent, choices, include_subfolders, on_include_changed, start)
     if dialog.exec() != QDialog.DialogCode.Accepted:
-        return [], False
-    return dialog.folders, dialog.browsed
+        return ""
+    return dialog.folder
 
 
 def ask_folder(parent: QWidget, start: str) -> str:

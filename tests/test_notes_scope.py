@@ -4,6 +4,7 @@ a file selection proposes the artist note AND the album note, one run never leak
 
 import json
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -59,8 +60,46 @@ def drive(scenario, trigger):
 
 # -- Tools > Create Notes asks for the scope ---------------------------------------------------------------
 
-def test_tools_menu_never_uses_a_leftover_selection_it_asks_the_scope_first(window, tmp_path, boxes):
+def radio_paths(dlg):
+    return [path for _radio, path in dlg.radios]
+
+
+def test_nothing_selected_offers_the_opened_folder_ticked_so_enter_continues(window, tmp_path, boxes):
+    """The complaint: with nothing selected the old dialog had only 'Choose another folder...' and Cancel."""
     root = library(tmp_path)
+    window.settings.last_directory = str(root / "Ultravox")
+    window._load_paths([root / "Ultravox"])
+    window.table.clearSelection()
+    QApplication.processEvents()
+    assert not window._selected_files()
+    window.settings.include_subfolders = True
+    window.notes_fetchers = lambda: ultravox_fetchers()
+    seen = {}
+
+    def scenario():
+        yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
+        dlg = scope_dialog()
+        seen["paths"] = radio_paths(dlg)
+        seen["captions"] = [c.text() for c in dlg.captions]
+        seen["default"] = dlg.chosen_folder()
+        seen["continue_is_default"] = dlg.continue_button.isDefault()
+        click(dlg.continue_button)  # what Enter does on the default button
+        yield from wait(lambda: review() is not None, "the review page")
+        seen["folders"] = sorted(str(i.proposal.folder) for i in review().session.items)
+        review().done(0)
+
+    drive(scenario, window.action_registry["create_notes"].trigger)
+    assert seen["paths"][:2] == [str(root / "Ultravox"), str(root)]
+    assert seen["captions"][0].startswith("The folder you opened") and "loaded" in seen["captions"][0]
+    assert seen["captions"][1].startswith("One level up")
+    assert seen["default"] == str(root / "Ultravox") and seen["continue_is_default"]
+    assert seen["folders"] and all(f.startswith(str(root / "Ultravox")) for f in seen["folders"])
+    assert window.settings.notes_last_folder == str(root / "Ultravox")
+
+
+def test_a_selection_is_only_a_choice_the_artist_folder_is_ticked_and_cancel_looks_nothing_up(window, tmp_path, boxes):
+    root = library(tmp_path)
+    window.settings.last_directory = str(root)
     load_and_select(window, root, "Ultravox")  # the leftover selection of the previous artist
     window.notes_fetchers = lambda: ultravox_fetchers()
     seen = {}
@@ -69,59 +108,155 @@ def test_tools_menu_never_uses_a_leftover_selection_it_asks_the_scope_first(wind
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
         dlg = scope_dialog()
         seen["title"] = dlg.windowTitle()
-        seen["suggestion"] = dlg.suggestion_button.text()
+        seen["paths"] = radio_paths(dlg)
+        seen["captions"] = [c.text() for c in dlg.captions]
+        seen["default"] = dlg.chosen_folder()
         assert review() is None  # nothing was looked up from the selection
         click(dlg.cancel_button)
 
     drive(scenario, window.action_registry["create_notes"].trigger)
     assert "which folder" in seen["title"]
-    assert seen["suggestion"].startswith("Use the artist folder of the selected files:")
-    assert str(root / "Ultravox") in seen["suggestion"]
+    assert seen["paths"][0] == str(root) and str(root / "Ultravox") in seen["paths"]
+    assert str(root / "Ultravox" / "Vienna (1980)") in seen["paths"]
+    i = seen["paths"].index(str(root / "Ultravox"))
+    assert "artist of the selected files" in seen["captions"][i]
+    assert seen["default"] == str(root / "Ultravox")
+    assert window.settings.notes_last_folder == ""  # cancelled: nothing remembered
 
 
-def test_scope_choose_another_folder_beats_the_selection(window, monkeypatch, tmp_path, boxes):
+def test_scope_one_level_up_radio_looks_at_the_other_artists_too(window, tmp_path, boxes):
     root = library(tmp_path)
-    load_and_select(window, root, "Ultravox")
+    window.settings.last_directory = str(root / "Ultravox")
+    window._load_paths([root / "Ultravox"])
+    window.table.clearSelection()
     window.settings.include_subfolders = True
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(root / "Artist B")))
-    window.notes_fetchers = lambda: cristina_fetchers()
-    result = {}
-
-    def scenario():
-        yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
-        click(scope_dialog().choose_button)
-        yield from wait(lambda: review() is not None, "the review page")
-        result["folders"] = [str(i.proposal.folder) for i in review().session.items]
-        review().done(0)
-
-    drive(scenario, window.action_registry["create_notes"].trigger)
-    assert result["folders"] and all("Artist B" in f and "Ultravox" not in f for f in result["folders"])
-    assert window.settings.notes_last_folder == str(root / "Artist B")
-
-
-@pytest.mark.parametrize("subfolders", [True, False])
-def test_scope_suggestion_states_and_honours_include_subfolders(window, tmp_path, boxes, subfolders):
-    root = library(tmp_path)
-    load_and_select(window, root, "Ultravox")
-    window.settings.include_subfolders = subfolders
     window.notes_fetchers = lambda: ultravox_fetchers()
     result = {}
 
     def scenario():
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
-        result["text"] = " ".join(label.text() for label in scope_dialog().findChildren(QLabel))
-        click(scope_dialog().suggestion_button)
+        dlg = scope_dialog()
+        radio = next(r for r, p in dlg.radios if p == str(root))
+        radio.click()
+        assert dlg.chosen_folder() == str(root)
+        click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")
-        result["kinds"] = kinds(review())
+        result["folders"] = {i.proposal.folder.name for i in review().session.items}
         review().done(0)
 
     drive(scenario, window.action_registry["create_notes"].trigger)
-    if subfolders:
-        assert "including subfolders" in result["text"]
-        assert result["kinds"] == [("artist", "Ultravox"), ("album", "Vienna (1980)")]
-    else:
-        assert "only the folder itself" in result["text"]
-        assert result["kinds"] == [("artist", "Ultravox")]
+    assert {"Ultravox", "Artist B"} <= result["folders"]
+    assert window.settings.notes_last_folder == str(root)
+
+
+def test_scope_another_folder_opens_the_picker_and_beats_the_selection(window, monkeypatch, tmp_path, boxes):
+    root = library(tmp_path)
+    load_and_select(window, root, "Ultravox")
+    window.settings.include_subfolders = True
+    calls = []
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
+                        staticmethod(lambda *a, **k: calls.append(1) or str(root / "Artist B")))
+    window.notes_fetchers = lambda: cristina_fetchers()
+    result = {}
+
+    def scenario():
+        yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
+        dlg = scope_dialog()
+        dlg.other_radio.click()  # choosing the radio opens the picker
+        result["picker_calls"] = len(calls)
+        result["label"] = dlg.other_label.text()
+        result["checked"] = dlg.chosen_folder()
+        click(dlg.continue_button)
+        yield from wait(lambda: review() is not None, "the review page")
+        result["folders"] = [str(i.proposal.folder) for i in review().session.items]
+        review().done(0)
+
+    drive(scenario, window.action_registry["create_notes"].trigger)
+    assert result["picker_calls"] == 1 and result["label"] == str(root / "Artist B")
+    assert result["checked"] == str(root / "Artist B")
+    assert result["folders"] and all("Artist B" in f and "Ultravox" not in f for f in result["folders"])
+    assert window.settings.notes_last_folder == str(root / "Artist B")
+
+
+def test_scope_cancelling_the_picker_goes_back_to_the_previous_choice(window, monkeypatch, tmp_path, boxes):
+    root = library(tmp_path)
+    window.settings.last_directory = str(root / "Ultravox")
+    window._load_paths([root / "Ultravox"])
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: ""))
+    seen = {}
+
+    def scenario():
+        yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
+        dlg = scope_dialog()
+        dlg.other_radio.click()
+        seen["checked"] = dlg.chosen_folder()
+        seen["other"] = dlg.other_radio.isChecked()
+        click(dlg.cancel_button)
+
+    drive(scenario, window.action_registry["create_notes"].trigger)
+    assert seen == {"checked": str(root / "Ultravox"), "other": False}
+
+
+def test_scope_include_subfolders_is_the_same_setting_as_the_file_menu(window, tmp_path, boxes):
+    root = library(tmp_path)
+    window.settings.last_directory = str(root)
+    window._load_paths([root / "Ultravox"])
+    window.action_include_subfolders.setChecked(False)
+    seen = {}
+
+    def scenario():
+        yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
+        dlg = scope_dialog()
+        seen["off_note"] = dlg.include_note.text()
+        dlg.include_box.setChecked(True)
+        seen["on_note"] = dlg.include_note.text()
+        seen["setting"] = window.settings.include_subfolders
+        seen["action"] = window.action_include_subfolders.isChecked()
+        seen["toolbar"] = window.include_subfolders_checkbox.isChecked()
+        click(dlg.cancel_button)
+
+    drive(scenario, window.action_registry["create_notes"].trigger)
+    assert seen == {"off_note": "Only this folder is looked at.", "on_note": "Everything below the folder is looked at.",
+                    "setting": True, "action": True, "toolbar": True}
+
+
+def test_scope_choices_dedupe_order_and_limits(tmp_path):
+    from core.notes_scope import scope_choices
+
+    root = library(tmp_path)
+    vienna_file = str(root / "Ultravox" / "Vienna (1980)" / "01 Astradyne.mp3")
+    last = root / "Artist B"
+    choices = scope_choices([vienna_file], [vienna_file], str(root / "Ultravox"), str(last), str(root))
+    paths = [c.path for c in choices]
+    assert paths[0] == str(root / "Ultravox") and len(paths) == len({p.lower() for p in paths}) <= 5
+    assert "artist of the selected files" in choices[0].caption and choices[0].default  # joined, not listed twice
+    assert str(root) in paths and str(last) in paths
+    # folders that do not exist are left out; no files and no settings: no choices
+    assert scope_choices([], [], "", str(tmp_path / "gone"), "") == []
+    # a drive root is never offered as 'one level up'
+    anchor = str(Path(tmp_path).anchor)
+    assert all(c.path != anchor for c in scope_choices([], [], str(root.parent.parent), "", ""))
+
+
+def test_scope_without_choices_is_just_another_folder_with_the_picker_opened(window, monkeypatch, tmp_path, boxes):
+    window.settings.last_directory = ""
+    window.settings.notes_last_folder = ""
+    window.settings.library_root = ""
+    window.files.clear()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp_path)))
+    seen = {}
+
+    def scenario():
+        yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
+        dlg = scope_dialog()
+        yield from wait(lambda: dlg.picked != "", "the picker")
+        seen["radios"] = len(dlg.radios)
+        seen["other"] = dlg.other_radio.isChecked()
+        seen["folder"] = dlg.chosen_folder()
+        click(dlg.cancel_button)
+
+    drive(scenario, window.action_registry["create_notes"].trigger)
+    assert seen == {"radios": 0, "other": True, "folder": str(tmp_path)}
 
 
 # -- the right-click path ----------------------------------------------------------------------------------
@@ -243,7 +378,8 @@ def test_tick_best_guesses_ticks_uncertain_with_candidate_and_clear_level_only_a
 
     def scenario():
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
-        click(scope_dialog().choose_button)
+        scope_dialog().other_radio.click()
+        click(scope_dialog().continue_button)
         yield from wait(lambda: review() is not None, "the review page")
         dlg = review()
         by = {i.proposal.folder.name: i for i in dlg.session.items if i.proposal.kind == "artist"}

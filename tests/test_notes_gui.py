@@ -83,7 +83,8 @@ def run(window, monkeypatch, folder, fetchers, scenario, must_finish=True):
             return next((w for w in QApplication.topLevelWidgets() if isinstance(w, NotesScopeDialog) and w.isVisible()), None)
 
         yield from wait(lambda: scope() is not None, "the scope dialog")
-        click(scope().choose_button)
+        scope().other_radio.click()
+        click(scope().continue_button)
         yield from scenario()
 
     script = Script(with_scope_step())
