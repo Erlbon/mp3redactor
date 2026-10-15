@@ -43,7 +43,7 @@ from core.notes_level import (
 )
 from core.notes_local import (
     ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE, KINDS, LocalAlbum, LocalGenre, read_genre, LocalArtist, ScanResult, Skipped, Target, album_children, classify,
-    album_folder_of, fold_name, is_collection_name, is_generic_name, read_album, read_artist, scan, sidecar_for, split_year, Loader,
+    album_folder_of, fold_name, is_collection_name, lookup_name, is_generic_name, read_album, read_artist, scan, sidecar_for, split_year, Loader,
 )
 from core.notes_match import (
     Confidence, Evaluation, album_key, decide_artist, discography_hits, era_conflict, name_similarity,
@@ -1113,14 +1113,14 @@ class NotesEngine:
                     f"the folder above ('{parent.name}') is not an artist folder: {parent_decision.reasons[0]}")
         # one folder of loose tracks of one artist (several album tags, no album folder): an artist level
         if (force_level != SUGGEST_ALBUM and len(local.tag_titles) >= 3 and local.artist
-                and names_agree(target.folder.name, local.artist)):
+                and names_agree(lookup_name(target.folder.name), local.artist)):
             proposal.level, proposal.suggested_levels = LEVEL_ARTIST, [SUGGEST_ARTIST, SUGGEST_ALBUM, SUGGEST_SKIP]
             proposal.level_reasons.append(f"{len(local.tag_titles)} different album tags in a folder named like the artist")
             proposal.confidence = Confidence.UNCERTAIN
             proposal.reasons = ["level unclear: loose tracks of one artist, not one album"] + proposal.level_reasons
             return proposal
         names = [n for n in _unique([local.artist, target.parent_name if parent_is_artist else ""]) if not is_generic_name(n)]
-        soundtrack = is_soundtrack_like(local.title, local.genres, parent.name if not parent_is_artist else "")
+        soundtrack = is_soundtrack_like(local.title, local.genres, lookup_name(parent.name) if not parent_is_artist else "")
         if not local.titles:
             proposal.reasons.append("the folder has no usable album title")
             return proposal

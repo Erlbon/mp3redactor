@@ -49,6 +49,8 @@ GENERIC_FOLDER_NAMES = frozenset({
     "music", "musik", "musikk", "mp3", "mp3s", "audio", "songs", "library", "various artists", "various", "va",
     "compilations", "compilation", "soundtracks", "soundtrack", "unknown artist", "unknown", "incoming",
     "downloads", "new", "misc", "singles",
+    # a place that holds the artists, not a genre or an artist: a folder you choose by this name is a library root
+    "bands", "band", "artists", "media", "albums", "archive", "collection",
 })
 
 
@@ -56,12 +58,49 @@ GENERIC_FOLDER_NAMES = frozenset({
 # Names
 # ---------------------------------------------------------------------------
 
+_YEAR_PREFIX = re.compile(r"^\s*\[?\s*((?:1[89]|20)\d{2})\s*\]?\s*[-\u2013\u2014:.]\s+(?=.*[^\W\d_])")
+
+
 def split_year(folder_name: str) -> tuple[str, str]:
-    """('Vienna', '1980') from 'Vienna (1980)' (also [1980]); the name unchanged and '' without a year."""
+    """('Vienna', '1980') from 'Vienna (1980)' (also [1980]) or '1980 - Vienna'; the name as lookup_name() cleans it
+    (numbering prefixes gone) and '' without a year."""
     match = _YEAR_SUFFIX.search(folder_name)
-    if not match:
-        return folder_name.strip(), ""
-    return folder_name[: match.start()].strip(), match.group(1)
+    if match:
+        return lookup_name(folder_name[: match.start()].strip()), match.group(1)
+    lead = _YEAR_PREFIX.match(folder_name)
+    if lead:
+        return lookup_name(folder_name[lead.end():].strip()), lead.group(1)
+    return lookup_name(folder_name.strip()), ""
+
+
+# A numbering prefix in front of a real name: '1.61 - Ska', '780 - Music', '0 - Bands', '02. Name', '[1981] - Name',
+# '[1981] Name', '#12 Name', '1.61. Ska'. Digits and dots (in brackets, or after '#') FOLLOWED BY A SEPARATOR and then a name
+# with a letter in it. '1975', '10cc', '311', '2 Unlimited', '3 Doors Down' and '5 Seconds of Summer' have no separator after
+# their number, so they stay as they are.
+_LETTER_AHEAD = r"(?=.*[^\W\d_])"
+_NUMBERING = (
+    re.compile(r"^\s*(?:\[\s*\d[\d.]*\s*\]|\d+(?:\.\d+)*\.?)\s*[-\u2013\u2014:]\s+" + _LETTER_AHEAD),
+    re.compile(r"^\s*\d+(?:\.\d+)*\.\s+" + _LETTER_AHEAD),
+    re.compile(r"^\s*\[\s*\d[\d.]*\s*\]\s+" + _LETTER_AHEAD),
+    re.compile(r"^\s*#\s*\d+\s+" + _LETTER_AHEAD),
+)
+_YEAR_RANGE = re.compile(r"\s*[(\[]\s*\d{4}\s*[-\u2013\u2014]\s*(?:\d{4})?\s*[)\]]\s*$")
+
+
+def lookup_name(folder_name: str) -> str:
+    """The name a folder stands for, for every lookup and for the note's title: numbering / Dewey prefixes ('1.61 - Ska',
+    '780 - Music', '02. Name', '[1981] - Name', '#12 Name') and a trailing year range ('Marvel (1961-2012)') taken off. Only
+    when a real name is left (a letter in it): a name that is only a number, or that would become empty, is returned as it
+    is. The folder keeps its own name for paths and display; this is only what is searched for and written as the title."""
+    text = (folder_name or "").strip()
+    cleaned = text
+    for pattern in _NUMBERING:
+        match = pattern.match(cleaned)
+        if match:
+            cleaned = cleaned[match.end():]
+            break
+    cleaned = _YEAR_RANGE.sub("", cleaned).strip()
+    return cleaned if re.search(r"[^\W\d_]", cleaned) else text
 
 
 def fold_name(text: str) -> str:
@@ -81,11 +120,13 @@ VARIOUS_ARTIST_NAMES = frozenset({"various artists", "various", "va", "v a", "di
 
 
 def is_collection_name(name: str) -> bool:
-    return fold_name(name.lstrip("_")) in COLLECTION_NAMES
+    """A collection folder name, raw or cleaned of its numbering ('2 - Various Artists')."""
+    return any(fold_name(n.lstrip("_")) in COLLECTION_NAMES for n in {name, lookup_name(name)})
 
 
 def is_generic_name(name: str) -> bool:
-    return fold_name(name) in GENERIC_FOLDER_NAMES
+    """A place-to-keep-music name, raw or cleaned of its numbering ('780 - Music', '0 - Bands')."""
+    return any(fold_name(n) in GENERIC_FOLDER_NAMES for n in {name, lookup_name(name)})
 
 
 # An ALPHABETICAL GROUPING folder (Bands/D/<Band>/<Album>): a single letter or digit, '#', a range such as 'A-C',
@@ -99,13 +140,13 @@ GROUPING_REASON = "alphabetical grouping"
 
 def is_alphabetical_grouping(name: str) -> bool:
     """Case-insensitive, trailing punctuation ignored ('D', 'd.', '#', 'A-C', 'A - C', '0-9', 'Aa-Az', 'Misc')."""
-    text = (name or "").strip()
-    stripped = text.rstrip(" .,:;!") or text
-    if len(stripped) == 1 and (stripped.isalnum() or stripped == "#"):
-        return True
-    if _GROUPING_RANGE.match(stripped):
-        return True
-    return fold_name(stripped) in GROUPING_BUCKET_NAMES
+    for text in dict.fromkeys([(name or "").strip(), lookup_name(name or "")]):  # raw, then without its numbering
+        stripped = text.rstrip(" .,:;!") or text
+        if len(stripped) == 1 and (stripped.isalnum() or stripped == "#"):
+            return True
+        if _GROUPING_RANGE.match(stripped) or fold_name(stripped) in GROUPING_BUCKET_NAMES:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -315,13 +356,13 @@ def scan(
             if include_outdated and Path(found).name.lower() == f"{NOTE_KIND_OF[kind]}.md":
                 state = note_status(found, CURRENT_NOTE_FORMAT)
                 if state.replaceable:
-                    result.targets.append(Target(folder, kind, parent_name=folder.parent.name, update=state))
+                    result.targets.append(Target(folder, kind, parent_name=lookup_name(folder.parent.name), update=state))
                     return
                 result.skipped.append(Skipped(folder, kind, f"already has {Path(found).name} ({state.kind})", state.kind))
                 return
             result.skipped.append(Skipped(folder, kind, f"already has {Path(found).name}"))
             return
-        result.targets.append(Target(folder, kind, parent_name=folder.parent.name))
+        result.targets.append(Target(folder, kind, parent_name=lookup_name(folder.parent.name)))
 
     def walk(folder: Path, is_root: bool = False) -> None:
         kind = classify_level(folder, is_root, True)
@@ -432,7 +473,7 @@ def read_genre(folder: Path) -> LocalGenre:
         if albums:
             artists.append((child, len(albums)))
     albums = [(child, len(album_files(child))) for child in album_children(folder)]
-    return LocalGenre(folder=folder, name=folder.name.lstrip("_").strip(), artists=artists, albums=albums)
+    return LocalGenre(folder=folder, name=lookup_name(folder.name.lstrip("_").strip()), artists=artists, albums=albums)
 
 
 def _leading_int(text: str) -> Optional[int]:
@@ -531,7 +572,7 @@ def read_artist(
         title, year = split_year(child.name)
         albums.append(LocalAlbum(folder=child, title=title, year=year))
     names = _common(a.artist for a in albums) if albums else []
-    return LocalArtist(folder=folder, name=folder.name, tag_names=names, albums=albums,
+    return LocalArtist(folder=folder, name=lookup_name(folder.name), tag_names=names, albums=albums,
                        loose_tracks=len(_entries(folder)[0]), sampled=sampled)
 
 
