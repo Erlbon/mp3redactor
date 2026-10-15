@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-15#25 -- Create Notes: "Local files" tab, what is in the folder (cover, tracks, tags)
+
+To identify a folder you can now see it. Every artist and album row of the review page (list view and one-at-a-time view) has a **Local files** tab next to Preview / Raw text; a row with no note to preview (uncertain, nothing found) opens on it. No network.
+- Album row: the cover as a thumbnail (about 160 px, aspect ratio kept; the embedded picture of the first files, else folder.jpg / cover.jpg beside them; "no cover" when there is none), the folder name, the album / artist / year tags, the file count and the tracks as the files carry them (number, title, artist tag, length) in their original script (Cyrillic, Greek, CJK; the system font with its fallbacks), up to 60, then "... and N more".
+- Artist row: the covers of up to 6 of its albums as a strip with the album titles under them, and the albums listed (title, year, track count, tags).
+- Cheap on a network share: nothing is read while the scan runs. The files are read in a background thread when the row is shown (an album: all its tags; an artist: one file per album for the first six), scaled to a small PNG and cached per folder, so the window never waits and a row seen twice is instant.
+
 ## 2026-10-15#24 -- Create Notes: 'Seven' and '7' are the same title
 
 Madness - Seven found nothing, Madness - 7 was confident (MusicBrainz calls the 1981 album '7').

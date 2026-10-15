@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 from core.notes_flow import (
     LEVEL_LOCAL_TAGS, Candidate, Confidence, Fetchers, NotesEngine, Proposal, build_proposals, scan,
 )
+from gui.notes_evidence_view import LocalEvidenceView
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
 from core import notes_debug
@@ -313,6 +314,11 @@ class ProposalPanel(QWidget):
         self.diff_view = QTextBrowser()  # an UPDATE: the note now (red) against the new draft (green), as a diff
         self.diff_tab = self.tabs.addTab(self.diff_view, "Before / after")
         self.tabs.setTabVisible(self.diff_tab, False)
+        self.evidence_view = LocalEvidenceView()  # what is in the folder: cover, tracks, tags (no network)
+        self.evidence_tab = self.tabs.addTab(self.evidence_view, "Local files")
+        self.tabs.setTabVisible(self.evidence_tab, False)
+        self._auto_local = False  # the tab was switched to Local files by the page, not by the person
+        self.tabs.currentChanged.connect(lambda _i: self._sync_evidence())
 
         self.sources_label = QLabel()
         self.sources_label.setWordWrap(True)
@@ -369,6 +375,8 @@ class ProposalPanel(QWidget):
             self.local_box.hide()
             self.genres_box.hide()
             self.link_box.hide()
+            self.tabs.setTabVisible(self.evidence_tab, False)
+            self.evidence_view.clear()
             self.preview.clear()
             self.raw.clear()
             self._edits_row = None  # nothing shown: the typed link / genres belong to no row any more
@@ -416,6 +424,7 @@ class ProposalPanel(QWidget):
         show_candidates = bool(self._candidates) and item.state == PENDING and (
             p.confidence != Confidence.CONFIDENT or item.user_resolved)
         self.candidate_box.setVisible(show_candidates)
+        self._show_evidence_tab(item)
         self.link_box.setVisible(p.kind in ("artist", "album") and item.state == PENDING and p.note_kind != "about")
         # What was typed into the link / genres fields belongs to ONE folder: a different row starts with empty
         # link text and its own genres (a pasted link for the previous band must never be offered for this one).
@@ -494,6 +503,30 @@ class ProposalPanel(QWidget):
         cand = self.selected_candidate()
         if cand is not None:
             self.candidateChosen.emit(cand)
+
+    def _show_evidence_tab(self, item: ReviewItem) -> None:
+        """The Local files tab for an artist / album row. A row with no note to preview (uncertain, not found) opens on it: what
+        the folder holds is the evidence the person needs; a row with a note goes back to the preview if the page had switched."""
+        p = item.proposal
+        has = p.kind in ("artist", "album") and p.note_kind != "about"
+        self.tabs.setTabVisible(self.evidence_tab, has)
+        if has and not p.note_text and self.tabs.currentIndex() == 0:
+            self._auto_local = True
+            self.tabs.setCurrentIndex(self.evidence_tab)
+        elif self._auto_local and p.note_text and self.tabs.currentIndex() == self.evidence_tab:
+            self._auto_local = False
+            self.tabs.setCurrentIndex(0)
+        self._sync_evidence()
+
+    def _sync_evidence(self) -> None:
+        item = self._item
+        visible = item is not None and self.tabs.currentIndex() == self.evidence_tab and self.tabs.isTabVisible(self.evidence_tab)
+        if not visible:
+            return
+        folder = item.proposal.target.folder
+        if self.evidence_view._pending == (str(folder), item.proposal.kind):  # shown, or being read
+            return
+        self.evidence_view.show_folder(folder, item.proposal.kind)
 
     def set_link_error(self, text: str) -> None:
         self.link_error.setText(text)
