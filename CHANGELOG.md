@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-15#06 -- Notes: the full discography as plain lines, no links, no baked-in library state
+
+- Changed (the contract is Pluteus' `docs/notes-format.md`, "Discographies"): the **artist note now lists the artist's FULL MusicBrainz discography** as plain `- Title (Year)` lines under `## Studio albums`, `## Live albums`, `## Compilations`, `## EPs`, `## Singles`, `## Remixes`, `## Soundtracks` and `## Releases` (anything else), sorted by year, release titles as MusicBrainz has them. Pluteus compares the lines with the folder names next to the note and shows live "in library" / "missing" badges. Demos, mixtapes, bootlegs, interviews, audiobooks and spoken word are left out (unless nothing else exists). One extra MusicBrainz request per artist (cached per run); the matching still uses only albums and EPs and the local folders.
+- Removed from artist notes: the `## In this library` section, "(in this library)" marks, the loose-track count and every `[[wiki link]]`. Genre / collection notes (`about.md`) lose their `[[links]]` and the list of artists below them: just the Wikipedia introduction and the credit footer. Album notes have no wiki links either. The credit footer and the front matter `links:` stay.
+- Two things are normalised in a release title, only because Pluteus' matcher needs it: a spaced dash ("Hits - Live") is written "Hits: Live" (it cuts everything after " - " off a list line but not off a folder name), and Markdown specials (`* _ [ ] < backticks`) are escaped. Unicode hyphens ("U-Vox" with U+2010) and apostrophes are kept: the matcher treats them as spaces on both sides.
+- The album note's `## In this folder` (present / missing / extra) is kept for now, behind one switch: `INCLUDE_FOLDER_COMPARISON` in `core/notes_render.py`.
+
 ## 2026-10-15#05 -- Create Notes: scope, artist notes from a file selection, bulk
 
 - Fixed: **Tools > Create Notes** no longer silently uses the selected files (a leftover selection of the previous artist won over the folder you meant). It always asks "Create notes for which folder?" first, starting at your last notes folder, the library root or the folder above the loaded files; the artist folder of the selected files is a one-click suggestion, **Choose another folder...** browses, and the question says whether Include Subfolders is on.

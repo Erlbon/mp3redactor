@@ -324,8 +324,15 @@ titles is found in the candidate's discography (so "Cristina" is not Cristina D'
 competes with it. Uncertain and unmatched folders (to be decided on the review page of Tools > Create Notes) are listed with the reasons, the candidates and the levels they could
 be (`artist`, `genre-collection`, `skip`), and are never written. A note is never overwritten, and a folder that already
 has `artist.md`, `author.md`, `series.md`, `album.md` or `about.md` in any letter case is left alone. The album note
-compares the files in the folder with the tracklist (present, missing, extra); the artist note lists the albums really
-there. The levels come from the folder structure (what holds audio is an album, its parent an artist, a folder of artists
+compares the files in the folder with the tracklist (present, missing, extra); the artist note lists the artist's FULL discography from
+MusicBrainz as plain `- Title (Year)` lines, grouped by release type (Studio albums, Live albums, Compilations, EPs,
+Singles, Remixes, Soundtracks, Releases; demos, mixtapes and similar are left out), not only what the folder has:
+Pluteus compares the lines with the folders next to the note and shows live "in library" / "missing" badges. The notes
+carry no `[[wiki links]]`, no "in this library" list and no loose-track count. Example (Ultravox): a `Studio albums`
+heading with the lines `- Ha! Ha! Ha! (1977)`, `- Vienna (1980)`, `- Quartet (1982)`, then a `Compilations` heading
+with `- The Collection (1984)`.
+
+The levels come from the folder structure (what holds audio is an album, its parent an artist, a folder of artists
 a genre; the folder you start from is the library and gets no note) and from the albums' tags: a folder whose albums are
 by different artists (Soundtracks, Various Artists) is a collection (`about.md`), never an artist.
 

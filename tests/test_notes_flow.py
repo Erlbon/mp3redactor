@@ -42,11 +42,11 @@ def test_artist_note_is_verified_by_the_local_albums_and_reflects_the_folder(tmp
     assert "Ultravox were a British new wave band" in body
     assert "**Type:** Group" in body and "**Country:** United Kingdom" in body and "**Active:** 1976 to present" in body
     assert "**Members:** Midge Ure, Billy Currie, Chris Cross, Warren Cann, John Foxx" in body
-    # the albums really in the folder, as wiki links by FOLDER name (that is how Pluteus resolves them)
-    assert "[[Vienna (1980)|Vienna]] (1980), 3 tracks" in body
-    assert "[[Quartet (1982)|Quartet]] (1982), 2 tracks" in body
-    assert "## Studio albums (all)" in body and "- Vienna (1980) *(in this library)*" in body
-    assert "- Lament (1984)" in body and "The Collection" not in body  # compilations are not studio albums
+    # the FULL discography as plain lines (Pluteus adds the in-library / missing badges itself): no library list,
+    # no [[links]], no 'in this library' marks, compilations under their own heading
+    assert "[[" not in body and "In this library" not in body and "in this library" not in body
+    assert "## Studio albums\n\n- Ha! Ha! Ha! (1977)\n- Ultravox! (1977)\n- Systems of Romance (1978)\n- Vienna (1980)" in body
+    assert "- Lament (1984)" in body and "## Compilations\n\n- The Collection (1984)" in body
     assert body.rstrip().endswith("CC BY-SA 4.0).*")
     assert "Facts from [MusicBrainz](https://musicbrainz.org) (CC0)" in body
 
@@ -57,7 +57,7 @@ def test_artist_search_is_polite_and_cached_across_the_run(tmp_path):
     build_proposals(list(targets(tmp_path).values()), fetchers)
     mb = fetchers.mb
     assert mb.count(r"ws/2/artist\?query") == 1  # artist and both albums share one resolution
-    assert mb.count(r"ws/2/release-group\?artist=") == 1
+    assert mb.count(r"ws/2/release-group\?artist=") == 2  # albums + EPs for the matching, the full list for the note: each once
     assert mb.count(r"ws/2/artist/[^?]+\?") == 1
 
 
@@ -133,7 +133,7 @@ def test_cristina_is_not_cristina_davena_and_discogs_finds_the_real_one(tmp_path
     assert "Monet Palaci" in body and "**Real name:** Cristina Monet Palaci" in body
     assert "D’Avena" not in proposal.note_text and "Avena" not in proposal.note_text
     assert "Profile from [Discogs](https://www.discogs.com/artist/55646)" in body
-    assert "[[Cristina (1980)|Cristina]] (1980), 1 track" in body
+    assert "[[" not in body and "In this library" not in body
     names = {(c.source, c.name): c for c in proposal.candidates}
     assert names[("musicbrainz", "Cristina D’Avena")].hits == []
     assert names[("discogs", "Cristina")].hits == ["Cristina", "Sleep It Off"]

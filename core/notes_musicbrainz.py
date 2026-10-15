@@ -181,6 +181,21 @@ def browse_release_groups(mbid: str, fetch: Optional[Callable] = None, max_pages
     return sorted(groups, key=lambda g: (g.first_date or "9999", g.title))
 
 
+def browse_all_release_groups(mbid: str, fetch: Optional[Callable] = None, max_pages: int = 5) -> list[ReleaseGroup]:
+    """EVERY release group of the artist (albums, EPs, singles, compilations, live, remixes...), oldest first: the
+    source of the discography in an artist note. Five pages of 100 at most."""
+    fetch = fetch or _fetch()
+    groups: list[ReleaseGroup] = []
+    for page in range(max_pages):
+        data = _get("release-group", fetch, artist=mbid, limit=100, offset=page * 100)
+        for g in data.get("release-groups", []):
+            if g.get("id"):
+                groups.append(_group(g))
+        if len(data.get("release-groups", [])) < 100:
+            break
+    return sorted(groups, key=lambda g: (g.first_date or "9999", g.title))
+
+
 def _group(g: dict) -> ReleaseGroup:
     return ReleaseGroup(
         id=g["id"], title=g.get("title") or "", first_date=g.get("first-release-date") or "",

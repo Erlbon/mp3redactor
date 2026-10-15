@@ -6,26 +6,30 @@ Pure (no network, no files): the same inputs always give the same note. The writ
 status: draft, UTF-8/LF) is redactor_common's core/notes.py; the credit lines and wiki links are its
 core/note_text.py.
 
-Shape (approved by the owner on 2026-10-15; see the sample notes under notes-spike):
+Shape (changed 2026-10-15 to the contract in Pluteus' docs/notes-format.md, "Discographies"):
 
   artist.md   front matter (title, years, genres, links, status: draft), a short introduction, a few fact lines,
-              "## In this library" (the albums really in the folder, as wiki links with year and track count),
-              "## Studio albums (all)", the credit footer.
+              the FULL MusicBrainz discography as plain "- Title (Year)" lines under "## Studio albums",
+              "## Live albums", "## Compilations", "## EPs", "## Singles", "## Remixes", "## Soundtracks",
+              "## Releases" (Pluteus adds the in-library / missing badges by comparing them with the folders), the
+              credit footer. No library list, no [[links]], no "(in this library)".
+  about.md    front matter, a short introduction, the credit footer.
   album.md    front matter, a short introduction, Artist / Released / Label / Country lines, "## Credits" (only
               structured facts: producer, writers, who played what), "## Tracklist", "## In this folder" (the
-              local files compared with the tracklist: present, missing, extra), the credit footer.
+              local files compared with the tracklist: present, missing, extra; INCLUDE_FOLDER_COMPARISON), the
+              credit footer. No [[links]].
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from core.musicbrainz_lookup import FileFacts, Release, ReleaseTrack, match_release
 from core.notes_local import LocalAlbum, LocalTrack, fold_name
-from core.notes_match import album_key, titles_match
 from core.notes_musicbrainz import Credits
-from redactor_common.core.note_text import credit_footer, wiki_link
+from redactor_common.core.note_text import credit_footer
 from redactor_common.core.notes import NoteFrontMatter, render_note
 
 
@@ -158,54 +162,89 @@ def render_credits(credits: Credits) -> str:
 # The notes
 # ---------------------------------------------------------------------------
 
+# Whether an album note carries the "## In this folder" present / missing / extra comparison. It is a baked-in copy
+# of what the folder holds when the note was written (Pluteus shows the live state itself), so it can be switched off
+# here, in one place, when the owner decides so.
+INCLUDE_FOLDER_COMPARISON = True
+
+# Discography headings, in the order they are written (Pluteus compares the plain `- Title (Year)` lines under them
+# with the folder names beside the note: docs/notes-format.md, "Discographies"). A trailing "(all)" is ignored there,
+# so none is written.
+H_STUDIO, H_LIVE, H_COMPILATIONS, H_EPS, H_SINGLES, H_REMIXES, H_SOUNDTRACKS, H_OTHER = (
+    "Studio albums", "Live albums", "Compilations", "EPs", "Singles", "Remixes", "Soundtracks", "Releases")
+DISCOGRAPHY_HEADINGS = (H_STUDIO, H_LIVE, H_COMPILATIONS, H_EPS, H_SINGLES, H_REMIXES, H_SOUNDTRACKS, H_OTHER)
+# Secondary types that are not releases of the music itself: left out of the discography (unless that would leave
+# nothing at all, then they are listed under "Releases").
+_SKIPPED_SECONDARY = frozenset({"demo", "mixtape/street", "bootleg", "interview", "audiobook", "audio drama", "spokenword"})
+_SPACED_DASH = re.compile("\\s+[-\u2010-\u2015]\\s+")
+_MARKDOWN_SPECIAL = re.compile(r"([*_\[\]<`])")
+
+
+def discography_heading(primary: str, secondary: Iterable[str]) -> str:
+    """The heading a release group is listed under, from MusicBrainz' primary type and secondary types (the order
+    of the checks decides a group with several: soundtrack, compilation, remix, then live for an album or EP)."""
+    primary = (primary or "").casefold()
+    secondary = {x.casefold() for x in secondary}
+    if "soundtrack" in secondary:
+        return H_SOUNDTRACKS
+    if "compilation" in secondary:
+        return H_COMPILATIONS
+    if "remix" in secondary:
+        return H_REMIXES
+    if "live" in secondary and primary in ("album", "ep"):
+        return H_LIVE
+    return {"album": H_STUDIO if not secondary else H_OTHER, "ep": H_EPS, "single": H_SINGLES}.get(primary, H_OTHER)
+
+
+def release_line(title: str, year: str = "") -> str:
+    """'- Title (Year)'. Only what Pluteus' matcher needs is changed in a title: a spaced dash ('Hits - Live') becomes
+    ': ' (the matcher cuts everything after ' - ' off a list line, but not off a folder name, so the two would
+    never meet), and Markdown specials are escaped so the title stays what it is."""
+    clean = _MARKDOWN_SPECIAL.sub(lambda m: chr(92) + m.group(1), _SPACED_DASH.sub(": ", " ".join(title.split())))
+    return f"- {clean}" + (f" ({year})" if year else "")
+
+
+def group_discography(groups: Iterable) -> list[tuple[str, list[tuple[str, str]]]]:
+    """[(heading, [(title, year)])] for MusicBrainz release groups (anything with title, year, primary,
+    secondary): non-empty headings only, in DISCOGRAPHY_HEADINGS order, each sorted by year then title (no year
+    last), a title and year listed once."""
+    groups = list(groups)
+    wanted = [g for g in groups if not ({x.casefold() for x in g.secondary} & _SKIPPED_SECONDARY)]
+    if not wanted:
+        wanted = groups  # nothing but demos / mixtapes: better those than no discography
+    buckets: dict[str, dict[tuple[str, str], tuple[str, str]]] = {h: {} for h in DISCOGRAPHY_HEADINGS}
+    for g in wanted:
+        if not g.title.strip():
+            continue
+        heading = discography_heading(g.primary, g.secondary)
+        buckets[heading].setdefault((" ".join(g.title.split()).casefold(), g.year), (g.title, g.year))
+    return [(h, sorted(buckets[h].values(), key=lambda ty: (ty[1] or "9999", ty[0].casefold())))
+            for h in DISCOGRAPHY_HEADINGS if buckets[h]]
+
+
 def render_artist_note(
     *, name: str, years: str = "", genres: Iterable[str] = (), links: Iterable[str] = (), intro: str = "",
-    facts: Iterable[tuple[str, str]] = (), library: Iterable[LocalAlbum] = (),
-    discography: Iterable[tuple[str, str]] = (), footer: Iterable[str] = (), loose_tracks: int = 0,
+    facts: Iterable[tuple[str, str]] = (), discography: Iterable[tuple[str, list[tuple[str, str]]]] = (),
+    footer: Iterable[str] = (),
 ) -> str:
-    """The artist.md text. `library` is what the folder holds (LocalAlbum with tracks as read); `discography`
-    is [(title, year)] of the studio albums (all, oldest first). `footer` are the source sentences."""
-    discography = list(discography)
-    library = list(library)
-    by_key = {album_key(title): year for title, year in discography if album_key(title)}
-    in_library = []
-    for album in library:
-        year = next((by_key[album_key(t)] for t in album.titles if album_key(t) in by_key), "") or album.year
-        shown = next((title for title, _y in discography if any(titles_match(t, title) for t in album.titles)), "") or album.title
-        link = wiki_link(album.folder_name, shown) or shown
-        count = f", {_plural(album.track_count, 'track')}" if album.track_count else ""
-        in_library.append(f"- {link}" + (f" ({year})" if year else "") + count)
-    if loose_tracks:
-        in_library.append(f"- Loose tracks: {loose_tracks}")
-    local_keys = {album_key(t) for album in library for t in album.titles}
-    studio = []
-    for title, year in discography:
-        mark = " *(in this library)*" if album_key(title) in local_keys else ""
-        studio.append(f"- {title}" + (f" ({year})" if year else "") + mark)
+    """The artist.md text: introduction, fact lines, then the artist's FULL discography from MusicBrainz as plain
+    '- Title (Year)' lines under '## Studio albums', '## Live albums'... (`discography` is group_discography()'s
+    result). No library list, no [[links]] and no 'in this library' marks: Pluteus compares the lines with the
+    folders next to the note and shows the badges live (docs/notes-format.md). `footer` are the source sentences."""
+    sections = ["## " + heading + "\n\n" + "\n".join(release_line(t, y) for t, y in releases)
+                for heading, releases in discography]
     front = NoteFrontMatter(title=name, years=years, genres=list(genres), links=list(links))
-    body = _block(
-        f"# {name}", intro, _lines(facts),
-        "## In this library\n\n" + ("\n".join(in_library) if in_library else "*(no albums found in the folder)*"),
-        ("## Studio albums (all)\n\n" + "\n".join(studio)) if studio else "",
-        credit_footer(list(footer)),
-    )
+    body = _block(f"# {name}", intro, _lines(facts), *sections, credit_footer(list(footer)))
     return render_note(front, body)
 
 
 def render_genre_note(
-    *, name: str, intro: str = "", links: Iterable[str] = (), entries: Iterable[tuple[str, str]] = (),
-    footer: Iterable[str] = (),
+    *, name: str, intro: str = "", links: Iterable[str] = (), footer: Iterable[str] = (),
 ) -> str:
-    """The about.md of a genre or collection folder: an introduction and '## In this library' listing what is
-    really below it. `entries` is [(folder name, detail)] as wiki links ('2 albums', '12 tracks')."""
-    listing = [f"- {wiki_link(folder) or folder}" + (f" ({detail})" if detail else "") for folder, detail in entries]
+    """The about.md of a genre or collection folder: a short introduction (Wikipedia) and the credit footer. No
+    list of what is below and no [[links]]: the folders are the structure, Pluteus shows them."""
     front = NoteFrontMatter(title=name, links=list(links))
-    body = _block(
-        f"# {name}", intro,
-        "## In this library\n\n" + ("\n".join(listing) if listing else "*(nothing found in the folder)*"),
-        credit_footer(list(footer)),
-    )
-    return render_note(front, body)
+    return render_note(front, _block(f"# {name}", intro, credit_footer(list(footer))))
 
 
 def render_album_note(
@@ -228,7 +267,7 @@ def render_album_note(
         f"# {title}", intro, _lines(facts),
         ("## Credits\n\n" + credit_text) if credit_text else "",
         ("## Tracklist\n\n" + "\n".join(listing).strip("\n")) if listing else "",
-        "## In this folder\n\n" + render_folder_section(album, tracks),
+        ("## In this folder\n\n" + render_folder_section(album, tracks)) if INCLUDE_FOLDER_COMPARISON else "",
         credit_footer(list(footer)),
     )
     return render_note(front, body)

@@ -45,7 +45,7 @@ from core.notes_match import (
     Confidence, Evaluation, album_key, decide_artist, discography_hits, era_conflict, name_similarity,
     score_release_group, titles_match, track_overlap,
 )
-from core.notes_render import TrackInfo, render_album_note, render_artist_note, render_genre_note
+from core.notes_render import TrackInfo, group_discography, render_album_note, render_artist_note, render_genre_note
 from redactor_common.core import note_text
 from redactor_common.core.notes import (
     STATUS_ERROR, STATUS_WRITTEN, NoteWriteResult, normalize_note_text, note_path, write_note,
@@ -303,6 +303,7 @@ class NotesEngine:
         self._artists: dict[tuple, _Resolution] = {}
         self._levels: dict[str, tuple[LocalArtist, LevelDecision]] = {}
         self._groups: dict[str, list[nmb.ReleaseGroup]] = {}
+        self._all_groups: dict[str, list[nmb.ReleaseGroup]] = {}
         self._network_failures = 0
         self._seen_groups: dict[str, nmb.ReleaseGroup] = {}  # release groups offered as candidates, by id
 
@@ -374,6 +375,16 @@ class NotesEngine:
         else:
             self._network_failures = 0
         return proposal
+
+    def _full_discography(self, mbid: str, fallback: list[nmb.ReleaseGroup]) -> list[nmb.ReleaseGroup]:
+        """Every release group of the artist, for the note's discography (the matching only uses albums and EPs).
+        One extra request per artist, cached; when it fails the albums and EPs already fetched are used."""
+        if mbid not in self._all_groups:
+            try:
+                self._all_groups[mbid] = nmb.browse_all_release_groups(mbid, self.fetchers.mb)
+            except nmb.MusicBrainzError:
+                return fallback
+        return self._all_groups[mbid]
 
     # -- artist resolution --------------------------------------------------------------------------------
 
@@ -589,12 +600,11 @@ class NotesEngine:
         links = [found_links.get("official homepage", ""), wiki_url or found_links.get("wikipedia", ""),
                  found_links.get("allmusic", ""), found_links.get("discogs", "") or (info.uri if info else ""),
                  found_links.get("last.fm", "")]
-        discography = [(g.title, g.year) for g in (mb.groups if mb else []) if g.is_studio_album]
+        discography = group_discography(self._full_discography(mb.evaluation.id, mb.groups)) if mb else []
         years = _years_text(life.get("begin") or "", life.get("end") or "", bool(life.get("ended"))) if detail else ""
         proposal.note_text = render_artist_note(
             name=name, years=years, genres=nmb.genres_of(detail) if detail else nfo_genres, links=[l for l in links if l],
-            intro=intro, facts=facts, library=local.albums, discography=discography, footer=footer,
-            loose_tracks=local.loose_tracks)
+            intro=intro, facts=facts, discography=discography, footer=footer)
         proposal.title = name
         proposal.sources = sources
         return proposal
@@ -608,20 +618,17 @@ class NotesEngine:
         proposal = Proposal(target, local=local, level=LEVEL_GENRE, suggested_levels=[SUGGEST_COLLECTION, SUGGEST_SKIP])
         proposal.level_reasons = [f"{len(local.artists)} artist folder(s) directly below it"
                                   if local.artists else f"{len(local.albums)} album folder(s) directly below it"]
-        entries = [(p.name, _plural(n, "album")) for p, n in local.artists] or [
-            (p.name, _plural(n, "track")) for p, n in local.albums]
-        return self._genre_like(proposal, local.name, entries)
+        return self._genre_like(proposal, local.name)
 
     def _collection_proposal(self, proposal: Proposal, local: LocalArtist) -> Proposal:
         """A folder found (from the tags / its name) to be a collection, not an artist: it gets about.md and each
         album folder below it is an album of its own, with no artist level."""
         proposal.kind_override = "about"
-        entries = [(a.folder_name, _plural(a.track_count, "track")) for a in local.albums]
-        return self._genre_like(proposal, local.name.lstrip("_").strip(), entries)
+        return self._genre_like(proposal, local.name.lstrip("_").strip())
 
-    def _genre_like(self, proposal: Proposal, name: str, entries: list[tuple[str, str]]) -> Proposal:
+    def _genre_like(self, proposal: Proposal, name: str) -> Proposal:
         """Wikipedia's page about the music genre `name` (verified: its lead says it is a genre / style of music)
-        and the list of what is below. No page verified = 'uncertain': never written in a batch run."""
+        (the note is that sentence and the credit; no list of what is below). No page verified = 'uncertain': never written in a batch run."""
         proposal.reasons = list(proposal.level_reasons)
         page = None
         if self.fetchers.wikipedia:
@@ -638,7 +645,7 @@ class NotesEngine:
         proposal.sources = ["wikipedia"]
         proposal.title = name
         proposal.note_text = render_genre_note(
-            name=name, intro=wp.trim_extract(page.extract), links=[page.url] if page.url else [], entries=entries,
+            name=name, intro=wp.trim_extract(page.extract), links=[page.url] if page.url else [],
             footer=[note_text.wikipedia_credit(page.title)])
         return proposal
 

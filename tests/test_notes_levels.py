@@ -71,7 +71,7 @@ def test_two_level_tree_has_no_genre_level(tmp_path):
     assert sorted(found) == [("album", "Quartet (1982)"), ("album", "Vienna (1980)"), ("artist", "Ultravox")]
 
 
-def test_genre_note_has_a_verified_wikipedia_intro_and_lists_the_artists_really_there(tmp_path):
+def test_genre_note_has_a_verified_wikipedia_intro_and_has_no_list_of_what_is_below(tmp_path):
     ultravox_library(tmp_path / "Music" / "New Wave")
     make_mp3(tmp_path / "Music" / "New Wave" / "Wire Train" / "In a Chamber (1987)" / "01 a.mp3", "a", "Wire Train", "In a Chamber")
     p = proposal_for(tmp_path / "Music", ("genre", "New Wave"), Fetchers(wiki=genre_wiki()))
@@ -81,7 +81,7 @@ def test_genre_note_has_a_verified_wikipedia_intro_and_lists_the_artists_really_
     assert meta["title"] == "New Wave" and meta["status"] == "draft"
     assert "https://en.wikipedia.org/wiki/New_wave_music" in meta["links"]
     assert "New wave is a music genre" in body
-    assert "- [[Ultravox]] (2 albums)" in body and "- [[Wire Train]] (1 album)" in body
+    assert "[[" not in body and "In this library" not in body and "Ultravox" not in body and "Wire Train" not in body
     assert "Introduction from Wikipedia ([New wave music]" in body
     assert write_proposal(p).ok and (tmp_path / "Music" / "New Wave" / "about.md").exists()
     assert not (tmp_path / "Music" / "New Wave" / "artist.md").exists()
@@ -206,7 +206,7 @@ def test_loose_singles_in_an_artist_folder_are_listed_not_given_an_album_note(tm
     assert sorted(k for k in found if k[0] == "album") == [("album", "Quartet (1982)"), ("album", "Vienna (1980)")]
     [p] = build_proposals([found[("artist", "Ultravox")]], ultravox_fetchers())
     assert p.confidence == Confidence.CONFIDENT
-    assert "- Loose tracks: 1" in p.note_text
+    assert "Loose tracks" not in p.note_text and "[[" not in p.note_text  # the folder view is Pluteus' business
 
 
 def test_collaboration_folder_found_only_by_its_first_artist_is_uncertain(tmp_path):
