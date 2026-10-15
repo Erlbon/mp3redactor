@@ -163,9 +163,9 @@ def render_credits(credits: Credits) -> str:
 # ---------------------------------------------------------------------------
 
 # Whether an album note carries the "## In this folder" present / missing / extra comparison. It is a baked-in copy
-# of what the folder holds when the note was written (Pluteus shows the live state itself), so it can be switched off
-# here, in one place, when the owner decides so.
-INCLUDE_FOLDER_COMPARISON = True
+# of what the folder holds when the note was written (Pluteus shows the live state itself, and a copy goes stale), so
+# the owner decided on 2026-10-15 that it is OFF. The code stays behind this one switch.
+INCLUDE_FOLDER_COMPARISON = False
 
 # Discography headings, in the order they are written (Pluteus compares the plain `- Title (Year)` lines under them
 # with the folder names beside the note: docs/notes-format.md, "Discographies"). A trailing "(all)" is ignored there,

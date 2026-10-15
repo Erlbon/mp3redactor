@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-15#07 -- Album notes no longer carry the present / missing comparison
+
+- Removed: the `## In this folder` section (present / missing / extra tracks) of an album note. It was a copy of what the folder held on the day the note was written, which goes stale; Pluteus shows what is in a folder itself. The tracklist and credits stay. (The code is still there behind `INCLUDE_FOLDER_COMPARISON` in `core/notes_render.py`, off.)
+
 ## 2026-10-15#06 -- Notes: the full discography as plain lines, no links, no baked-in library state
 
 - Changed (the contract is Pluteus' `docs/notes-format.md`, "Discographies"): the **artist note now lists the artist's FULL MusicBrainz discography** as plain `- Title (Year)` lines under `## Studio albums`, `## Live albums`, `## Compilations`, `## EPs`, `## Singles`, `## Remixes`, `## Soundtracks` and `## Releases` (anything else), sorted by year, release titles as MusicBrainz has them. Pluteus compares the lines with the folder names next to the note and shows live "in library" / "missing" badges. Demos, mixtapes, bootlegs, interviews, audiobooks and spoken word are left out (unless nothing else exists). One extra MusicBrainz request per artist (cached per run); the matching still uses only albums and EPs and the local folders.

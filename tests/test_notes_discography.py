@@ -103,11 +103,12 @@ def test_a_real_artist_note_from_the_engine_has_no_links_to_navigate_and_no_libr
             assert "## Studio albums" in proposal.note_text and "Loose tracks" not in proposal.note_text
 
 
-def test_the_folder_comparison_of_an_album_note_can_be_switched_off(tmp_path, monkeypatch):
+def test_an_album_note_has_no_folder_comparison_unless_the_switch_is_turned_on(tmp_path, monkeypatch):
+    """The owner dropped the baked-in 'In this folder' present/missing copy (2026-10-15): off by default."""
     ultravox_library(tmp_path)
     found = scan([tmp_path], kinds=[KIND_ALBUM])
     [vienna] = [t for t in found.targets if t.folder.name == "Vienna (1980)"]
-    assert "## In this folder" in build_proposals([vienna], ultravox_fetchers())[0].note_text
-    monkeypatch.setattr(notes_render, "INCLUDE_FOLDER_COMPARISON", False)
     off = build_proposals([vienna], ultravox_fetchers())[0].note_text
-    assert "## In this folder" not in off and "## Tracklist" in off
+    assert "## In this folder" not in off and "Present:" not in off and "## Tracklist" in off
+    monkeypatch.setattr(notes_render, "INCLUDE_FOLDER_COMPARISON", True)
+    assert "## In this folder" in build_proposals([vienna], ultravox_fetchers())[0].note_text

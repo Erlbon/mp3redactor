@@ -275,4 +275,4 @@ def test_soundtrack_album_note_uses_the_soundtrack_release_group_the_film_articl
     assert "soundtrack" in meta["genres"] and meta["years"] == "1994"
     assert "soundtrack album to the 1982 film" in body and "- **Written by:** Vangelis" in body
     assert "Introduction from Wikipedia ([Blade Runner (soundtrack)]" in body and "MusicBrainz" in body.splitlines()[-1]
-    assert "All 3 tracks of the tracklist are here." in body
+    assert "## In this folder" not in body  # the present/missing copy is off (owner, 2026-10-15)

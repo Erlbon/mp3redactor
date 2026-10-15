@@ -79,10 +79,8 @@ def test_vienna_gets_the_album_release_group_not_the_single_and_a_wikipedia_intr
     assert "- **Producer:** Ultravox, Conny Plank" in body
     assert "- **Musicians:** Billy Currie (synthesizer, viola), Midge Ure (lead vocals)" in body
     assert "1. Astradyne 7:07" in body and "9. All Stood Still 4:22" in body
-    # three of nine files present: the note says which are missing
-    assert "**Present:** 3 of 9 tracks." in body
-    assert "- 4. Passing Strangers" in body and "- 9. All Stood Still" in body
-    assert "Extra" not in body
+    # no baked-in present/missing copy of the folder (dropped by the owner, 2026-10-15)
+    assert "## In this folder" not in body and "**Present:**" not in body and "Extra" not in body
 
 
 def test_album_search_fallback_asks_for_primary_type_album(tmp_path):
@@ -96,7 +94,9 @@ def test_album_search_fallback_asks_for_primary_type_album(tmp_path):
     assert "Album" in first.detail  # the single ranks below the album though MusicBrainz listed it first
 
 
-def test_complete_folder_and_extra_files(tmp_path):
+def test_complete_folder_and_extra_files(tmp_path, monkeypatch):
+    """The present/missing/extra section is OFF by default (owner, 2026-10-15); this checks it still works switched on."""
+    monkeypatch.setattr("core.notes_render.INCLUDE_FOLDER_COMPARISON", True)
     ultravox_library(tmp_path, vienna_tracks=9, with_quartet=False)
     make_mp3(tmp_path / "Ultravox" / "Vienna (1980)" / "10 Secret Bonus.mp3", "Secret Bonus", "Ultravox", "Vienna", 10, "1980")
     [proposal] = build_proposals([targets(tmp_path)[("album", "Vienna (1980)")]], ultravox_fetchers())
@@ -106,7 +106,8 @@ def test_complete_folder_and_extra_files(tmp_path):
     assert "Missing" not in body
 
 
-def test_complete_folder_says_so(tmp_path):
+def test_complete_folder_says_so(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.notes_render.INCLUDE_FOLDER_COMPARISON", True)
     ultravox_library(tmp_path, vienna_tracks=9, with_quartet=False)
     [proposal] = build_proposals([targets(tmp_path)[("album", "Vienna (1980)")]], ultravox_fetchers())
     assert "All 9 tracks of the tracklist are here. No other files." in proposal.note_text

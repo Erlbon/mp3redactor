@@ -324,7 +324,7 @@ titles is found in the candidate's discography (so "Cristina" is not Cristina D'
 competes with it. Uncertain and unmatched folders (to be decided on the review page of Tools > Create Notes) are listed with the reasons, the candidates and the levels they could
 be (`artist`, `genre-collection`, `skip`), and are never written. A note is never overwritten, and a folder that already
 has `artist.md`, `author.md`, `series.md`, `album.md` or `about.md` in any letter case is left alone. The album note
-compares the files in the folder with the tracklist (present, missing, extra); the artist note lists the artist's FULL discography from
+carries the tracklist and credits (no comparison with the files in the folder: Pluteus shows what is there); the artist note lists the artist's FULL discography from
 MusicBrainz as plain `- Title (Year)` lines, grouped by release type (Studio albums, Live albums, Compilations, EPs,
 Singles, Remixes, Soundtracks, Releases; demos, mixtapes and similar are left out), not only what the folder has:
 Pluteus compares the lines with the folders next to the note and shows live "in library" / "missing" badges. The notes
