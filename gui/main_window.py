@@ -174,7 +174,9 @@ from redactor_common.core.rename_pattern import unique_path, validate_filename_s
 from redactor_common.gui.context_menu import show_table_context_menu
 from redactor_common.core.path_parser import split_pattern_history
 from redactor_common.gui.parse_filename_dialog import ParseFilenameDialog
-from redactor_common.gui.folder_options import attach_include_subfolders, include_subfolders_slot
+from redactor_common.gui.folder_options import (
+    add_include_subfolders_checkbox, attach_include_subfolders, include_subfolders_slot,
+)
 from redactor_common.gui.progress import run_busy, run_with_progress
 from redactor_common.gui.work_progress import run_work_with_progress
 from redactor_common.gui.redact_dialog import (
@@ -648,6 +650,8 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         toolbar.addAction(self.action_load_files)
         toolbar.addAction(self.action_load_folder)
+        # Mirrors File > Include Subfolders both ways; the saving stays with the action (one saved setting).
+        self.include_subfolders_checkbox = add_include_subfolders_checkbox(toolbar, self.action_include_subfolders)
         toolbar.addAction(self.action_play)
         toolbar.addSeparator()
         toolbar.addAction(self.action_save_all)

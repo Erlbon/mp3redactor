@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-15#02 -- Include Subfolders checkbox on the toolbar
+
+- An **Include Subfolders** checkbox on the toolbar next to Open Folder (the File menu item stays, both stay in step; one saved setting).
+- Help > Changelog: text with angle brackets such as `<multiple values>` no longer garbles the entries below it (redactor_common 2026-10-15-02).
+- Only one player window at a time: playing another file replaces the one playing.
+- Requires redactor_common 2026-10-15-02.
+
 ## 2026-10-15#01 -- Play button in the side panel
 
 - A large **Play** button under the cover in the side panel: the same as File > Play (Ctrl+P). It is enabled only while exactly one file is selected.
