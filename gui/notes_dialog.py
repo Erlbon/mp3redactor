@@ -20,6 +20,7 @@ is rebuilt by the engine and, if a note could be made, is confident).
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -51,6 +52,8 @@ from redactor_common.core.notes import parse_front_matter
 from gui.columns import columns_resizable
 from redactor_common.gui.progress import run_busy
 from redactor_common.gui.work_progress import run_work_with_progress
+
+log = logging.getLogger("mp3redactor.notes")
 
 DISCOGS_NOTE = "Discogs token not set: notes will be thinner (Tools > API Keys…)."
 DEFAULT_SIZE = (1100, 700)
@@ -1017,11 +1020,12 @@ def create_notes(
     parent: QWidget, paths: list, include_subfolders: bool, make_fetchers: Callable[[], Fetchers],
     size_text: str = "", on_size: Optional[Callable[[str], None]] = None,
     open_path: Callable[[str], None] = open_in_system, kinds: tuple = ALL_KINDS, cache=None,
-    include_outdated: bool = False,
+    include_outdated: bool = False, discogs_mode: str = "fallback", singles: bool = True,
 ) -> Optional[NotesReviewDialog]:
     """Scan `paths`, look every folder up under a cancellable progress dialog, then open the review page. Returns
     the (closed) dialog, or None when there was nothing to review."""
     title = "Create Notes"
+    scan_started = time.perf_counter()
     try:
         found = run_busy(parent, "Looking at the folders…", lambda: scan(paths, include_subfolders, kinds=kinds, include_outdated=include_outdated), title=title)
     except Exception as exc:  # noqa: BLE001
@@ -1043,11 +1047,13 @@ def create_notes(
         return None
 
     fetchers = make_fetchers()
-    engine = NotesEngine(fetchers, cache=cache)
+    engine = NotesEngine(fetchers, cache=cache, discogs_mode=discogs_mode, singles=singles)
     targets = found.targets
     built: list[Proposal] = []
     failure: list[str] = []
 
+    engine.phases.add("scan", time.perf_counter() - scan_started, count=len(targets))
+    current = [""]  # the progress label as it stands
     started = time.perf_counter()
     marks: list[float] = []  # when each folder was started: the gaps are how long the folders took
 
@@ -1061,8 +1067,13 @@ def create_notes(
                 marks.append(now)
                 durations = [b - a for a, b in zip(marks, marks[1:])]
                 progress.set_value(done)
-                progress.set_label(f"Looking up {name} ({done + 1} of {total})…"
-                                   + progress_suffix(done, total, now - started, durations))
+                label = f"Looking up {name} ({done + 1} of {total})…" + progress_suffix(done, total, now - started, durations)
+                current[0] = label
+                progress.set_label(label)
+
+        # 'MusicBrainz is busy, waiting 4 s' in the progress label: never wait silently (the label is set through the
+        # progress object, which marshals to the GUI thread)
+        engine.on_status = lambda text: progress.set_label(f"{text}…  {current[0]}")
 
         try:
             build_proposals(targets, fetchers, progress=report, cancel=progress.should_cancel,
@@ -1098,11 +1109,13 @@ def create_notes(
     lookup_note = lookup_sentence(len(built), time.perf_counter() - started, engine.stats.requests,
                                   engine.stats.from_cache)
     notes.append(lookup_note)
+    time_line = engine.phases.time_line()
+    log.debug("%s | %s", lookup_note, engine.phases.detail())
     from core.history import history_enabled
 
     dialog = NotesReviewDialog(
         session, choose_view(targets), _rebuild_with(engine), engine.can_choose,
-        banner="  ".join(notes), parent=parent, size=parse_size(size_text),
+        banner="  ".join(notes) + (f"\n{time_line}" if time_line else ""), parent=parent, size=parse_size(size_text),
         on_size=(lambda w, h: on_size(f"{w}x{h}")) if on_size else None, open_path=open_path,
         history_note="Recorded in Tools > History (it is switched on)." if history_enabled() else "",
         best_guess=engine.best_guess, why_not=engine.why_cannot_choose, offer_albums=kinds == (KIND_ARTIST,),
@@ -1110,7 +1123,8 @@ def create_notes(
     dialog.exec()
     if dialog.followup:  # 'Create the album notes for these artists too': only those artists' albums
         return create_notes(parent, dialog.followup, True, make_fetchers, size_text, on_size, open_path,
-                            kinds=(KIND_ALBUM,), cache=cache, include_outdated=include_outdated)
+                            kinds=(KIND_ALBUM,), cache=cache, include_outdated=include_outdated,
+                            discogs_mode=discogs_mode, singles=singles)
     return dialog
 
 

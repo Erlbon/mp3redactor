@@ -23,6 +23,7 @@ core/notes_local.py.
 from __future__ import annotations
 
 import argparse
+import logging
 import time
 
 from core.notes_flow import (
@@ -89,7 +90,14 @@ def add_notes_parser(sub) -> None:
              "(status: draft; never over an existing note, never for 'nothing found', never when the level is "
              "unclear). The report marks them 'from an uncertain match' so they can be reviewed afterwards")
     parser.add_argument("-n", "--dry-run", action="store_true", help="never write, even with --write: show what would be written")
-    parser.add_argument("--no-discogs", action="store_true", help="do not use Discogs even when a token is saved")
+    parser.add_argument("--discogs", choices=("always", "fallback", "never"), default="fallback",
+                        help="when Discogs is asked (with a token saved): fallback (the default) only when MusicBrainz "
+                             "has no verified match or Wikipedia has no introduction, always for every artist (slower), "
+                             "never")
+    parser.add_argument("--no-singles", action="store_true",
+                        help="leave the singles out of the artist note's discography (faster: only albums and EPs are "
+                             "asked for from MusicBrainz; saves requests only for artists with more than 100 release groups)")
+    parser.add_argument("--no-discogs", action="store_true", help="do not use Discogs even when a token is saved (= --discogs never)")
     parser.add_argument("--show-drafts", action="store_true", help="print each draft note (text mode) / include it (JSON)")
     add_common_options(parser)
     parser.set_defaults(handler=run_notes)
@@ -123,7 +131,9 @@ def _print(out: Output, row: dict) -> None:
 def run_notes(args: argparse.Namespace, out: Output) -> int:
     kinds = {"both": (KIND_ARTIST, KIND_ALBUM), "all": ALL_KINDS}.get(args.kind, (args.kind,))
     update = args.update or args.update_legacy
+    scan_started = time.perf_counter()
     found = scan(args.paths, include_subfolders=not args.no_recurse, kinds=kinds, include_outdated=update)
+    scan_seconds = time.perf_counter() - scan_started
     for argument in found.missing:
         out.error(f"nothing found for {argument}")
     if not found.targets and not found.skipped and not found.groupings:
@@ -149,7 +159,11 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     failed = 0
     cancelled = False
 
-    engine = NotesEngine(make_fetchers(not args.no_discogs), cache=make_cache(args))
+    mode = "never" if args.no_discogs else args.discogs
+    engine = NotesEngine(make_fetchers(mode != "never"), cache=make_cache(args), discogs_mode=mode,
+                         singles=not args.no_singles)
+    engine.phases.add("scan", scan_seconds, count=len(found.targets))
+    engine.on_status = out.info  # 'MusicBrainz is busy, waiting 4 s' on stderr
     started = time.perf_counter()
 
     def handle(proposal: Proposal) -> None:
@@ -174,7 +188,8 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
             message = ("made by the first versions (no stamp), so it cannot be known whether it was edited: "
                        "not replaced (add --update-legacy to replace it)")
         elif proposal.writable:
-            result = write_proposal(proposal, dry_run=dry or legacy_held)
+            with engine.phases.phase("write", count=0 if dry or legacy_held else 1):
+                result = write_proposal(proposal, dry_run=dry or legacy_held)
             results[proposal.path] = result
             verb = "update" if proposal.is_update else "write"
             if result.ok:
@@ -248,6 +263,12 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     summary_dict["requests"] = engine.stats.requests
     summary_dict["from_cache"] = engine.stats.from_cache
     summary_dict["elapsed_seconds"] = round(elapsed, 2)
+    summary_dict["phases"] = engine.phases.to_dict()
+    if engine.phases.time_line():
+        out.line(engine.phases.time_line())
+        if out.json_mode:
+            out.info(engine.phases.time_line())
+    logging.getLogger("mp3redactor.notes").debug("%s | %s", sentence, engine.phases.detail())
     out.finish(summary_dict)
     if cancelled:
         return EXIT_INTERRUPTED

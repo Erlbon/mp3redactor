@@ -37,6 +37,10 @@ KEY_LIBRARY_ROOT = "library_root"
 KEY_DELETE_BACKUP = "delete_backup_after_fix"
 KEY_HISTORY = "history_enabled"
 KEY_NOTES_CACHE = "notes_cache_enabled"
+KEY_NOTES_DISCOGS = "notes_discogs_always"
+KEY_NOTES_SKIP_SINGLES = "notes_skip_singles"
+NOTES_DISCOGS_LABEL = "Also ask Discogs for every artist (slower, adds members and profile)"
+NOTES_SKIP_SINGLES_LABEL = "Leave singles out of the artist note's discography (faster: fewer requests for a big artist)"
 NOTES_CACHE_LABEL = "Keep the answers of the Create Notes lookups on disk (a repeated or resumed run is then instant)"
 CLEAR_NOTES_CACHE_LABEL = "Clear the notes lookup cache…"
 HISTORY_LABEL = "Keep a history of tag changes (lets you undo a Save or Redact later)"
@@ -52,6 +56,8 @@ FIELD_BY_KEY = {
     KEY_DELETE_BACKUP: "delete_backup_after_fix",
     KEY_HISTORY: "history_enabled",
     KEY_NOTES_CACHE: "notes_cache_enabled",
+    KEY_NOTES_DISCOGS: "notes_discogs_always",
+    KEY_NOTES_SKIP_SINGLES: "notes_skip_singles",
 }
 
 
@@ -104,7 +110,18 @@ def preference_sections() -> list[PrefSection]:
         ),
         PrefSection(
             "notes", "Create Notes",
-            (PrefSpec(KEY_NOTES_CACHE, NOTES_CACHE_LABEL, "bool", True, help=notes_cache_help()),),
+            (PrefSpec(KEY_NOTES_DISCOGS, NOTES_DISCOGS_LABEL, "bool", False,
+                      help="Off by default: Discogs is asked only when MusicBrainz has no verified match for an artist "
+                           "(or an album), or when Wikipedia has no introduction (then for the profile and the members). "
+                           "Switch it on to ask Discogs for every artist: slower (3 more requests per artist at about one "
+                           "per second, run side by side with MusicBrainz). Needs the Discogs token (Tools > API Keys)."),
+             PrefSpec(KEY_NOTES_SKIP_SINGLES, NOTES_SKIP_SINGLES_LABEL, "bool", False,
+                      help="Off by default: the artist note lists the FULL MusicBrainz discography. Every 100 release groups "
+                           "cost one request, so an artist with hundreds of singles costs several; with this on only the "
+                           "albums and EPs (compilations, live albums and soundtracks included) are asked for, which saves "
+                           "requests only for such artists (an artist with fewer than 100 release groups costs the same). "
+                           "The note then has no Singles section."),
+             PrefSpec(KEY_NOTES_CACHE, NOTES_CACHE_LABEL, "bool", True, help=notes_cache_help()),),
             actions=(PrefAction(
                 CLEAR_NOTES_CACHE_LABEL, clear_notes_cache,
                 help="Deletes every stored answer at once (asks first). It is not a setting, so OK and Cancel "

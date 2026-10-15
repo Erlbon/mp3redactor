@@ -1046,6 +1046,8 @@ class MainWindow(QMainWindow):
             self, paths, include_subfolders, self.notes_fetchers or live_fetchers,
             size_text=self.settings.notes_dialog_size, on_size=remember_size, kinds=kinds,
             cache=default_cache(self.settings.notes_cache_enabled), include_outdated=include_outdated,
+            discogs_mode="always" if self.settings.notes_discogs_always else "fallback",
+            singles=not self.settings.notes_skip_singles,
         )
 
     # -- find duplicates ---------------------------------------------------

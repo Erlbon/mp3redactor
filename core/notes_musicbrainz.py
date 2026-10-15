@@ -37,7 +37,7 @@ __all__ = [
 ]
 
 
-RETRY_DELAYS = (4.0, 10.0)  # seconds: MusicBrainz answers 503 "busy" when it is rate limiting; wait and ask again
+RETRY_DELAYS = (1.5, 4.0, 10.0)  # seconds: MusicBrainz answers 503 "busy" for about every fifth request, whatever the pace (measured at 1.1 s and 1.6 s between requests): ask again soon first, back off if it stays busy
 _sleep = time.sleep
 
 
@@ -49,6 +49,9 @@ def _get(path: str, fetch: Callable, **params) -> dict:
         except MusicBrainzError as exc:
             if delay is None or "busy" not in str(exc):
                 raise
+            hook = getattr(fetch, "on_busy", None)
+            if hook is not None:  # the caller says 'MusicBrainz is busy, waiting 4 s' and counts the wait
+                hook(delay)
             _sleep(delay)
     return {}
 

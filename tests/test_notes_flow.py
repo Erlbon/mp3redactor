@@ -320,7 +320,26 @@ def test_a_busy_musicbrainz_is_asked_again_after_a_pause(tmp_path, monkeypatch):
     fetchers.mb.routes.insert(0, (r"ws/2/release/", _busy_then_ok(RECORDED["mb_release_vienna"], 1)))
     [proposal] = build_proposals([targets(tmp_path)[("album", "Vienna (1980)")]], fetchers)
     assert proposal.confidence == Confidence.CONFIDENT and "1. Astradyne 7:07" in proposal.note_text
-    assert pauses == [4.0]
+    assert pauses == [1.5]  # the first retry is soon: a busy answer is mostly a passing one
+
+
+def test_a_service_that_stays_busy_is_backed_off_from_and_the_wait_is_announced_and_counted(tmp_path, monkeypatch):
+    from core import notes_musicbrainz
+    from tests.notes_helpers import RECORDED
+
+    pauses = []
+    monkeypatch.setattr(notes_musicbrainz, "_sleep", pauses.append)
+    ultravox_library(tmp_path)
+    fetchers = ultravox_fetchers()
+    fetchers.mb.routes.insert(0, (r"ws/2/release/", _busy_then_ok(RECORDED["mb_release_vienna"], 2)))
+    engine = NotesEngine(fetchers)
+    said = []
+    engine.on_status = said.append  # what the progress label shows: never wait silently
+    [proposal] = build_proposals([targets(tmp_path)[("album", "Vienna (1980)")]], engine=engine)
+    assert proposal.confidence == Confidence.CONFIDENT
+    assert pauses == [1.5, 4.0] and said == ["MusicBrainz is busy, waiting 1.5 s", "MusicBrainz is busy, waiting 4 s"]
+    assert engine.phases.count("busy") == 2 and engine.phases.seconds("busy") == 5.5
+    assert "waiting for a busy service, 2x" in engine.phases.time_line()
 
 
 def test_a_failed_tracklist_fetch_never_writes_a_thin_note(tmp_path, monkeypatch):

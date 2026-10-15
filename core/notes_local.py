@@ -404,6 +404,7 @@ class LocalArtist:
     tag_names: list[str] = field(default_factory=list)  # artist / album-artist tags, most common first
     albums: list[LocalAlbum] = field(default_factory=list)
     loose_tracks: int = 0  # MP3 files directly in the artist folder (singles, no album folder)
+    sampled: bool = False  # True: only some of the tags were read (read_artist with max_albums / files_per_album)
 
     @property
     def names(self) -> list[str]:
@@ -453,20 +454,26 @@ def _common(values: Iterable[str]) -> list[str]:
 
 
 Loader = Callable[[list[Path]], list[MP3File]]
+TAG_WORKERS = 4  # tags are read by this many threads: on a network share the time is waiting, not work
 
 
 def default_loader(paths: list[Path]) -> list[MP3File]:
+    """The tags of `paths`, in order. Four files at a time from a handful of files on (waiting for a share overlaps)."""
     from core.scan_service import load_files
 
-    return load_files(paths)
+    paths = list(paths)
+    if len(paths) < TAG_WORKERS:
+        return load_files(paths)
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS, thread_name_prefix="notes-tags") as pool:
+        return list(pool.map(lambda path: load_files([path])[0], paths))
 
 
-def read_album(folder: Path, loader: Optional[Loader] = None) -> LocalAlbum:
-    """The album folder's files and tags."""
-    loader = loader or default_loader
-    files = album_files(folder)
+def album_from_tags(folder: Path, mp3s: list[MP3File]) -> LocalAlbum:
+    """The LocalAlbum of a folder from the tags already read of (some of) its files."""
     tracks = []
-    for mp3 in loader(files):
+    for mp3 in mp3s:
         tracks.append(LocalTrack(
             path=Path(mp3.path), title=mp3.title, track=_leading_int(mp3.track), disc=_leading_int(mp3.discnumber),
             seconds=mp3.duration_seconds, artist=mp3.artist, albumartist=mp3.albumartist, album=mp3.album,
@@ -486,12 +493,46 @@ def read_album(folder: Path, loader: Optional[Loader] = None) -> LocalAlbum:
     )
 
 
-def read_artist(folder: Path, loader: Optional[Loader] = None) -> LocalArtist:
-    """The artist folder, its album folders and their tags."""
-    albums = [read_album(child, loader) for child in album_children(folder)]
+def read_album(folder: Path, loader: Optional[Loader] = None) -> LocalAlbum:
+    """The album folder's files and tags."""
+    loader = loader or default_loader
+    return album_from_tags(folder, loader(album_files(folder)))
+
+
+def read_artist(
+    folder: Path, loader: Optional[Loader] = None, max_albums: Optional[int] = None,
+    files_per_album: Optional[int] = None,
+) -> LocalArtist:
+    """The artist folder, its album folders and their tags. With `max_albums` / `files_per_album` only a SAMPLE of the tags
+    is read: the first files of the first albums (all of them in ONE call of the loader, so a pooled reader works on all
+    at once); the other albums are listed by their folder names alone (title and year from the name, no tags, no tracks),
+    and `sampled` says so."""
+    loader = loader or default_loader
+    children = album_children(folder)
+    read_these = children if max_albums is None else children[:max_albums]
+    sampled = max_albums is not None and len(children) > max_albums
+    file_lists = []
+    for child in read_these:
+        files = album_files(child)
+        if files_per_album is not None and len(files) > files_per_album:
+            files, sampled = files[:files_per_album], True
+        file_lists.append(files)
+    everything = [f for files in file_lists for f in files]
+    loaded = loader(everything) if everything else []
+    albums = []
+    if len(loaded) == len(everything):
+        position = 0
+        for child, files in zip(read_these, file_lists):
+            albums.append(album_from_tags(child, loaded[position:position + len(files)]))
+            position += len(files)
+    else:  # a loader that drops files: one call per album, as before
+        albums = [album_from_tags(child, loader(files)) for child, files in zip(read_these, file_lists)]
+    for child in children[len(read_these):]:  # the rest: names only
+        title, year = split_year(child.name)
+        albums.append(LocalAlbum(folder=child, title=title, year=year))
     names = _common(a.artist for a in albums) if albums else []
     return LocalArtist(folder=folder, name=folder.name, tag_names=names, albums=albums,
-                       loose_tracks=len(_entries(folder)[0]))
+                       loose_tracks=len(_entries(folder)[0]), sampled=sampled)
 
 
 def sidecar_for(folder: Path) -> Optional[str]:

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-15#16 -- Create Notes: where the time goes, and a third less of it
+
+The user's real run (a Discogs token, a library on a share) was "painfully slow". Measured on a scratch tree of 30 artists x 3 albums x 12 tagged files with the REAL MusicBrainz and Wikipedia, artist notes only, ten well-known bands (Discogs simulated at 0.4 s per request, one request per second):
+
+| | before (#14) | now |
+|---|---|---|
+| no Discogs | 83.0 s = 8.3 s per artist; tags 0:01 (360 files), MusicBrainz 1:17 (49 requests), Wikipedia 0:04 | 51.6 s = 5.2 s per artist; tags 0:00 (90 files), MusicBrainz 0:47 (45 requests, 1 busy wait of 2 s), Wikipedia 0:05 |
+| Discogs for every artist | 99.3 s = 9.9 s per artist; MusicBrainz 1:15, Discogs 0:20 (30 requests) one after the other | 55.6 s = 5.6 s per artist (`always`: Discogs side by side with MusicBrainz) |
+| Discogs token, default | (asked for every artist: as the line above) | 78.4 s in the measured run, 0 Discogs requests; the run met 10 busy answers (28 s of waiting), a quiet run is about 5 s per artist |
+| slow share, 5 ms per file | 101.8 s = 10.2 s per artist; tags 0:02 (360 files) | 54.2 s = 5.4 s per artist; tags 0:00 (126 -> 90 files) |
+| slow share, 50 ms per file | tags 0:06 (360 files, read four at a time) | tags 0:02 (90 files) |
+
+What the numbers say: **MusicBrainz is the time** (47 of 52 seconds): 4 to 5 requests per artist at its pace of 1.1 s, and about **every fifth request is answered "busy" (503)** whatever the pace (15 requests at 1.1 s and at 1.6 s between them gave 3 busy answers each), after which the app waited 4 s, then 10 s. Waiting 1.5 s first, then 4 s, then 10 s cut the waiting from 22 s to 4 s in a measured series of 15 requests. Discogs added about 2 s per artist when asked one after the other; the tags cost 1 to 6 seconds in all, even at 50 ms per file.
+
+- New: **phase timing.** Every run records seconds and counts per phase: scan, tags (files read), MusicBrainz (requests, throttle and busy waits included, the busy waits named), Discogs, Wikipedia, writing. The review banner has a second line ("Time: scan 0:00, tags 0:00, MusicBrainz 0:47 (of it 0:02 waiting for a busy service, 1x), Wikipedia 0:05"), `notes` prints it and adds `phases` to its `--json` result, and it goes to the debug log (`mp3redactor.notes`). With two services side by side the phases add up to more than the wall clock.
+- Changed: **MusicBrainz is asked again after 1.5 s when it says it is busy** (then 4 s, then 10 s), and the progress label says "MusicBrainz is busy, waiting 1.5 s..." instead of waiting silently.
+- Changed: **Discogs is a fallback by default** (artist notes and album notes): it is asked only when MusicBrainz has no verified match, or when Wikipedia has no introduction (then for the profile and the members). New switches: Preferences > Create Notes "Also ask Discogs for every artist (slower, adds members and profile)" (off), and `notes --discogs always|fallback|never` (`--no-discogs` = never). With `always` the two services run side by side (one helper thread, results in a fixed order, the same note as run one after the other).
+- Changed: **a sample of the tags.** The artist is verified from the first 3 files of the first 4 albums plus the folder names of the others (all the tags are read when the match is not verified or the level is odd, and for album notes). Reads for the ten artists: 360 -> 90 files. The tags are read by a pool of four threads.
+- New: Preferences > Create Notes "Leave singles out of the artist note's discography" and `notes --no-singles`: only albums and EPs are asked for from MusicBrainz (saves requests only for artists with more than 100 release groups; it saved 3 requests in 49 here). Off by default: the note keeps its full discography.
+
 ## 2026-10-15#15 -- Create Notes: Use selected candidate updates the row in place
 
 - Fixed: in the list view, **picking a candidate ("Use selected candidate"), choosing a level or pressing "Tick best guesses" rebuilt the whole list** (it was emptied and filled again, the scroll position put back by hand). A person saw the uncertain row stay where it was and a confident row for the same folder appear further down, "the last line follows me around". Now only the rows of the picked folders are **updated in place**: the same row objects, the same positions, the same scroll position, the same selection; nothing is added or moved, and with "Only uncertain or not found" ticked the row that became confident simply leaves. (A second session item or tree row never appeared when I drove the real dialog with the real engine, 60 rows and both sources tying at 1.00, so the rebuild itself is what was removed; the new tests assert the row objects, the order and the scroll position and fail on #14.)

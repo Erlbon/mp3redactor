@@ -254,9 +254,11 @@ class CachedFetch:
     """`fetch(url) -> bytes` with a memory memo and the disk cache in front of `inner`."""
 
     def __init__(self, inner: Callable, source: str, cache: Optional[ResponseCache] = None,
-                 stats: Optional[RequestStats] = None):
+                 stats: Optional[RequestStats] = None, phases=None, phase: str = ""):
         self.inner, self.source, self.cache = inner, source, cache
         self.stats = stats if stats is not None else RequestStats()
+        self.phases, self.phase = phases, phase  # core/notes_phases.py: seconds of the real requests, throttle waits included
+        self.busy_hook: Optional[Callable[[float], None]] = None  # told when the service said 'busy' and we are about to wait
         self._memo: dict[str, tuple[int, bytes]] = {}
         self._lock = threading.Lock()
 
@@ -280,14 +282,27 @@ class CachedFetch:
                     self._memo[key] = found
                 return self._answer(url, found)
         self.stats.requests += 1
+        started = time.perf_counter()
         try:
             body = self.inner(request)
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 self._remember(key, 404, b"")
             raise
+        finally:
+            if self.phases is not None:
+                self.phases.add(self.phase, time.perf_counter() - started)
         self._remember(key, 200, body)
         return body
+
+    def on_busy(self, delay: float) -> None:
+        """Called by the retry loop of notes_musicbrainz before it waits `delay` seconds for a busy service: the wait is
+        part of the phase's time and the person is told (never wait silently)."""
+        if self.phases is not None:
+            self.phases.add(self.phase, delay, count=0)
+            self.phases.add("busy", delay)
+        if self.busy_hook is not None:
+            self.busy_hook(delay)
 
     def _remember(self, key: str, status: int, body: bytes) -> None:
         with self._lock:
@@ -307,8 +322,9 @@ class CachedDiscogs:
     """The Discogs client's `get_json` with the same memo and cache. Only GET lookups: the key is the endpoint and its
     parameters, never the token (it is sent in a header by the client and is not part of the key or the stored data)."""
 
-    def __init__(self, client, cache: Optional[ResponseCache] = None, stats: Optional[RequestStats] = None):
+    def __init__(self, client, cache: Optional[ResponseCache] = None, stats: Optional[RequestStats] = None, phases=None):
         self._client = client
+        self.phases = phases
         self.cache = cache
         self.stats = stats if stats is not None else RequestStats()
         self._memo: dict[str, dict] = {}
@@ -336,7 +352,12 @@ class CachedDiscogs:
                         self._memo[key] = data
                     return data
         self.stats.requests += 1
-        data = self._client.get_json(path, **params)
+        started = time.perf_counter()
+        try:
+            data = self._client.get_json(path, **params)
+        finally:
+            if self.phases is not None:
+                self.phases.add("discogs", time.perf_counter() - started)
         with self._lock:
             self._memo[key] = data
         if self.cache is not None and isinstance(data, dict) and data:

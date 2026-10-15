@@ -147,6 +147,7 @@ def test_the_progress_label_gets_elapsed_and_remaining_time_after_three_folders_
     assert "min elapsed" in labels[-1]
     assert "Looked up 6 folders in 0:" in seen["banner"] and "requests, 0 from the cache)." in seen["banner"]
     assert "Looked up 6 folders in 0:" in seen["summary"]  # the summary box says it too
+    assert "\nTime: " in seen["banner"] and "tags " in seen["banner"].split("\nTime: ")[1]  # the second line: where the time went
 
 
 def test_a_cancelled_run_keeps_what_it_looked_up_and_the_next_run_resumes_from_the_cache(

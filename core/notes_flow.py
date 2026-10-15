@@ -24,12 +24,15 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from core import notes_discogs as nd
 from core.notes_cache import CachedDiscogs, CachedFetch, RequestStats, ResponseCache
+from core.notes_phases import TAGS, PhaseTimer
 from core import notes_musicbrainz as nmb
 from core import wikipedia_lookup as wp
 from core.discogs_lookup import DiscogsClient, DiscogsError, load_token
@@ -327,15 +330,29 @@ class NotesEngine:
     however many of that artist's folders are asked about)."""
 
     def __init__(self, fetchers: Optional[Fetchers] = None, loader: Optional[Loader] = None,
-                 cache: Optional[ResponseCache] = None):
+                 cache: Optional[ResponseCache] = None, discogs_mode: str = "fallback", singles: bool = True):
         self.fetchers = fetchers or Fetchers()
         self.loader = loader
         # The request layer (core/notes_cache.py): a per-engine memo (the same URL is never asked twice in a run) and,
         # when a ResponseCache is given, the persistent cache (a repeated or resumed run is answered from disk).
         self.stats = RequestStats()
-        self._mb = CachedFetch(self.fetchers.mb or nmb._fetch(), "mb", cache, self.stats)
-        self._wiki = CachedFetch(self.fetchers.wiki or wp.default_fetch(), "wiki", cache, self.stats)
-        self._discogs = CachedDiscogs(self.fetchers.discogs, cache, self.stats) if self.fetchers.discogs else None
+        self.phases = PhaseTimer()  # where the time goes (core/notes_phases.py)
+        self.on_status: Optional[Callable[[str], None]] = None  # told 'MusicBrainz is busy, waiting 4 s' and the like
+        self._mb = CachedFetch(self.fetchers.mb or nmb._fetch(), "mb", cache, self.stats, self.phases, "musicbrainz")
+        self._wiki = CachedFetch(self.fetchers.wiki or wp.default_fetch(), "wiki", cache, self.stats, self.phases, "wikipedia")
+        self._discogs = (CachedDiscogs(self.fetchers.discogs, cache, self.stats, self.phases)
+                         if self.fetchers.discogs else None)
+        self._mb.busy_hook = self._busy
+        self.loader = self._timed(self.loader)
+        # When Discogs is asked (core/notes_flow.py, resolve_artist): "fallback" (the default) only when MusicBrainz has no
+        # verified match for the artist (or the album), "always" for every artist (alongside MusicBrainz, in a second
+        # thread), "never" not at all. `singles` False leaves the singles out of the artist note's discography: the
+        # release groups are then browsed with the type filter album|ep (about a third fewer requests for a big artist).
+        self.discogs_mode = discogs_mode if discogs_mode in ("always", "fallback", "never") else "fallback"
+        self.singles = singles
+        if self.discogs_mode == "never":
+            self._discogs = None
+        self._pool: Optional[ThreadPoolExecutor] = None
         self._artists: dict[tuple, _Resolution] = {}
         self._levels: dict[str, tuple[LocalArtist, LevelDecision]] = {}
         self._groups: dict[str, list[nmb.ReleaseGroup]] = {}
@@ -343,6 +360,52 @@ class NotesEngine:
         self._network_failures = 0
         self._seen_groups: dict[str, nmb.ReleaseGroup] = {}  # release groups offered as candidates, by id
         self._d_entries: dict[int, list[dict]] = {}  # Discogs artist release lists, by artist id
+
+    def _both(self, first: Callable, second: Callable):
+        """(first(), second()) with `second` on the one helper thread while `first` runs on the calling thread: two
+        independent services (MusicBrainz and Discogs, each with its own rate limit) at the same time. At most two
+        threads; the results come back in this fixed order whatever finishes first; neither function touches a widget."""
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="notes-lookup")
+        future = self._pool.submit(second)
+        try:
+            one = first()
+        except BaseException:
+            if not future.cancel():  # it is already running: let it finish, no work is left running behind us
+                try:
+                    future.result()
+                except BaseException:  # noqa: BLE001 -- the first failure is the one that is raised
+                    pass
+            raise
+        return one, future.result()
+
+    def close(self) -> None:
+        """Ends the helper thread (the engine is also fine to simply drop)."""
+        if self._pool is not None:
+            self._pool.shutdown(wait=True)
+            self._pool = None
+
+    def _busy(self, delay: float) -> None:
+        if self.on_status is not None:
+            try:
+                self.on_status(f"MusicBrainz is busy, waiting {delay:g} s")
+            except Exception:  # noqa: BLE001 -- a status line must never break a lookup
+                pass
+
+    def _timed(self, loader: Optional[Loader]) -> Loader:
+        """The tag reader, with the files and seconds counted in the 'tags' phase."""
+        from core.notes_local import default_loader
+
+        inner = loader or default_loader
+
+        def timed(paths):
+            started = time.perf_counter()
+            try:
+                return inner(paths)
+            finally:
+                self.phases.add(TAGS, time.perf_counter() - started, count=len(paths))
+
+        return timed
 
     # -- public ------------------------------------------------------------------------------------------
 
@@ -365,7 +428,7 @@ class NotesEngine:
         if candidate.source == "musicbrainz":
             return ""
         if candidate.source == "discogs":
-            return "" if self.fetchers.discogs is not None else DISCOGS_MISSING
+            return "" if self.fetchers.discogs is not None else DISCOGS_MISSING  # (a chosen candidate is asked for, whatever the mode)
         if candidate.source == "wikipedia":
             return "" if self.fetchers.wikipedia else WIKIPEDIA_OFF
         return f"No note can be built from a {candidate.source} candidate."
@@ -421,7 +484,7 @@ class NotesEngine:
         proposal.old_state = target.update
         if (proposal.kind in (KIND_ARTIST, KIND_ALBUM) and proposal.confidence != Confidence.CONFIDENT
                 and not proposal.note_text and not proposal.candidates and proposal.level != LEVEL_UNCLEAR):
-            if self.fetchers.discogs is None:
+            if self._discogs is None:
                 proposal.reasons.append(
                     "Discogs was not searched (no token set, or switched off): add the token in Tools > API Keys... "
                     "to look there too")
@@ -438,10 +501,15 @@ class NotesEngine:
         One extra request per artist, cached; when it fails the albums and EPs already fetched are used."""
         if mbid not in self._all_groups:
             try:
-                self._all_groups[mbid] = nmb.browse_all_release_groups(mbid, self._mb)
+                self._all_groups[mbid] = self._browse(mbid)
             except nmb.MusicBrainzError:
                 return fallback
         return self._all_groups[mbid]
+
+    def _browse(self, mbid: str) -> list[nmb.ReleaseGroup]:
+        """EVERY release group (one request per 100), or with singles left out only the albums and EPs (the compilations,
+        live albums and soundtracks are albums to MusicBrainz): the artist note's discography and the matching's list."""
+        return nmb.browse_all_release_groups(mbid, self._mb) if self.singles else nmb.browse_release_groups(mbid, self._mb)
 
     def _discogs_entries(self, client: DiscogsClient, artist_id: int) -> list[dict]:
         if artist_id not in self._d_entries:
@@ -455,7 +523,7 @@ class NotesEngine:
         artist note needs anyway (one browse, memoized), not asked for a second time with a type filter."""
         if mbid not in self._groups:
             if mbid not in self._all_groups:
-                self._all_groups[mbid] = nmb.browse_all_release_groups(mbid, self._mb)
+                self._all_groups[mbid] = self._browse(mbid)
             self._groups[mbid] = [g for g in self._all_groups[mbid] if (g.primary or "").casefold() in ("album", "ep")]
         return self._groups[mbid]
 
@@ -483,16 +551,34 @@ class NotesEngine:
         self, names: list[str], local_titles: list[list[str]], local_years: list[str],
         partial: Optional[list[str]] = None,
     ) -> _Resolution:
-        """The artist behind a folder: candidates from MusicBrainz AND Discogs, each scored by how many of the
-        local album titles it has in its discography (see core/notes_match.py)."""
+        """The artist behind a folder: candidates from MusicBrainz and, by `discogs_mode`, Discogs, each scored by how many
+        of the local album titles it has in its discography (see core/notes_match.py). 'always' runs the two services side by
+        side; 'fallback' asks Discogs only when MusicBrainz found no verified match."""
         partial = [p for p in (partial or []) if p and fold_name(p) not in [fold_name(n) for n in names]]
         key = (tuple(fold_name(n) for n in names), tuple(fold_name(p) for p in partial), tuple(album_key(t) for names_ in local_titles for t in names_))
         if key in self._artists:
             return self._artists[key]
         res = _Resolution()
         self._artists[key] = res
+        client = self._discogs
+        asks = client is not None and not client.rate_limited
+        dc = _Resolution()
+        if asks and self.discogs_mode == "always":
+            mb, dc = self._both(lambda: self._resolve_mb(names, partial, local_titles, local_years),
+                                lambda: self._resolve_discogs(names, local_titles))
+        else:
+            mb = self._resolve_mb(names, partial, local_titles, local_years)
+            if asks and self.discogs_mode == "fallback" and mb.confidence != Confidence.CONFIDENT:
+                dc = self._resolve_discogs(names, local_titles)
+        res.candidates = self._merge_same_artist([*mb.candidates, *dc.candidates])
+        res.reasons = [*mb.reasons, *dc.reasons]
+        res.problems = [*mb.problems, *dc.problems]
+        res.mb, res.discogs = mb.mb, dc.discogs
+        return res
+
+    def _resolve_mb(self, names, partial, local_titles, local_years) -> _Resolution:
+        res = _Resolution()
         wanted = len([t for t in local_titles if t])
-        # -- MusicBrainz
         try:
             hits: list[nmb.ArtistHit] = []
             for name in [*names[:2], *partial[:1]]:
@@ -528,7 +614,11 @@ class NotesEngine:
             res.reasons += [f"MusicBrainz: {r}" for r in reasons]
         except nmb.MusicBrainzError as exc:
             res.problems.append(str(exc))
-        # -- Discogs
+        return res
+
+    def _resolve_discogs(self, names, local_titles) -> _Resolution:
+        res = _Resolution()
+        wanted = len([t for t in local_titles if t])
         client = self._discogs
         if client is not None and not client.rate_limited:
             try:
@@ -553,16 +643,23 @@ class NotesEngine:
                 res.reasons += [f"Discogs: {r}" for r in reasons]
             except DiscogsError as exc:
                 res.problems.append(str(exc))
-        res.candidates = self._merge_same_artist(res.candidates)
         return res
 
     # -- artist notes -------------------------------------------------------------------------------------
 
-    def _artist_level(self, folder: Path) -> tuple[LocalArtist, LevelDecision]:
-        """The artist folder read (cached) and the artist test applied to it (core/notes_level.py)."""
-        key = os.path.normcase(str(folder))
+    SAMPLE_ALBUMS = 4  # the artist match is verified from the tags of the first albums ...
+    SAMPLE_FILES = 3  # ... and the first files of each (the other albums count by their folder names); then all, if unsure
+
+    def _artist_level(self, folder: Path, full: bool = False) -> tuple[LocalArtist, LevelDecision]:
+        """The artist folder read (cached) and the artist test applied to it (core/notes_level.py). By default only a SAMPLE
+        of the tags is read (the first SAMPLE_FILES files of the first SAMPLE_ALBUMS albums: on a slow share the tags cost
+        more than anything else); `full` reads all of them (an unclear level or an unverified match asks for that)."""
+        key = (os.path.normcase(str(folder)), full)
         if key not in self._levels:
-            local = read_artist(folder, self.loader)
+            if full:
+                local = read_artist(folder, self.loader)
+            else:
+                local = read_artist(folder, self.loader, max_albums=self.SAMPLE_ALBUMS, files_per_album=self.SAMPLE_FILES)
             self._levels[key] = (local, artist_level(local.name, local.albums))
         return self._levels[key]
 
@@ -586,6 +683,8 @@ class NotesEngine:
 
     def _artist_proposal(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
         local, decision = self._artist_level(target.folder)
+        if local.sampled and decision.level != LEVEL_ARTIST:  # an odd level needs ALL the evidence
+            local, decision = self._artist_level(target.folder, full=True)
         level = {SUGGEST_ARTIST: LEVEL_ARTIST, SUGGEST_COLLECTION: LEVEL_COLLECTION}.get(force_level, decision.level)
         proposal = Proposal(target, local=local, level=level, level_reasons=list(decision.reasons),
                             suggested_levels=list(decision.suggested))
@@ -603,6 +702,13 @@ class NotesEngine:
         collab = split_collab(local.name)
         partial = collab[:1] if len(collab) > 1 else []
         res = self.resolve_artist(local.names, titles, years, partial)
+        if res.confidence != Confidence.CONFIDENT and local.sampled and force is None:
+            # not verified from a sample of the tags: read the rest and ask again (the answers are already in memory)
+            local, _decision = self._artist_level(target.folder, full=True)
+            proposal.local = local
+            titles = [a.titles for a in local.albums]
+            years = [a.year for a in local.albums]
+            res = self.resolve_artist(local.names, titles, years, partial)
         if force is not None and force.source == "wikipedia":
             return self._wikipedia_artist(proposal, local, res, force, titles)
         if force is not None:
@@ -630,20 +736,38 @@ class NotesEngine:
         detail: dict = {}
         sources: list[str] = []
         footer: list[str] = []
-        if mb is not None:
+        info: Optional[nd.DiscogsArtist] = None
+        want_info = res.discogs_ok is not None and self._discogs is not None
+
+        def fetch_detail():
             try:
-                detail = nmb.artist_detail(mb.evaluation.id, self._mb)
+                return nmb.artist_detail(mb.evaluation.id, self._mb), None
+            except nmb.MusicBrainzError as exc:
+                return {}, exc
+
+        def fetch_info():
+            try:
+                return nd.artist_info(self._discogs, int(res.discogs_ok.evaluation.id)), None
+            except DiscogsError as exc:
+                return None, exc
+
+        # the two services side by side when both have to be asked
+        if mb is not None and want_info:
+            (detail, detail_error), (info, info_error) = self._both(fetch_detail, fetch_info)
+        else:
+            detail, detail_error = fetch_detail() if mb is not None else ({}, None)
+            info, info_error = fetch_info() if want_info else (None, None)
+        if mb is not None:
+            if detail_error is None:
                 sources.append("musicbrainz")
                 footer.append(note_text.musicbrainz_credit())
-            except nmb.MusicBrainzError as exc:
-                proposal.problems.append(str(exc))
-        info: Optional[nd.DiscogsArtist] = None
-        if res.discogs_ok is not None and self.fetchers.discogs is not None:
-            try:
-                info = nd.artist_info(self._discogs, int(res.discogs_ok.evaluation.id))
+            else:
+                proposal.problems.append(str(detail_error))
+        if want_info:
+            if info_error is None:
                 sources.append("discogs")
-            except DiscogsError as exc:
-                proposal.problems.append(str(exc))
+            else:
+                proposal.problems.append(str(info_error))
 
         name = (detail.get("name") if detail else "") or (info.name if info else "") or local.name
         if fold_name(name) == fold_name(local.name):
@@ -665,6 +789,19 @@ class NotesEngine:
                 intro_credit = note_text.wikipedia_credit(page.title)
                 sources.append("wikipedia")
                 proposal.reasons.append(f"Wikipedia: '{page.title}' (found by {page.via})")
+        if (not intro and info is None and self._discogs is not None and self.discogs_mode == "fallback"
+                and res.discogs is None and not self._discogs.rate_limited):
+            # no Wikipedia introduction: in fallback mode Discogs is asked now, for the profile and the members
+            part = self._resolve_discogs(local.names, titles)
+            proposal.problems += part.problems
+            if part.discogs_ok is not None:
+                try:
+                    info = nd.artist_info(self._discogs, int(part.discogs_ok.evaluation.id))
+                    sources.append("discogs")
+                    proposal.reasons.append("Discogs asked for the profile and members: Wikipedia had no introduction")
+                    name = name if detail else (info.name or name)
+                except DiscogsError as exc:
+                    proposal.problems.append(str(exc))
         if not intro and info is not None and info.profile.strip():
             intro = _cap_text(note_text.clean_discogs_markup(info.profile), 1500)
             intro_credit = note_text.discogs_credit("artist", info.id)
@@ -1032,7 +1169,11 @@ class NotesEngine:
         discogs_info: Optional[nd.DiscogsAlbumInfo] = None
         discogs_hits: list = []
         client = self._discogs
-        if client is not None and not client.rate_limited and names:
+        weak = mb_artist is None or best is None or not best[1].title_match or best[1].score < 0.75
+        wanted_discogs = (self.discogs_mode == "always"
+                          or (self.discogs_mode == "fallback"
+                              and (weak or (force is not None and force.source in ("discogs", "wikipedia")))))
+        if client is not None and not client.rate_limited and names and wanted_discogs:
             try:
                 discogs_hits = nd.search_album(client, names[0], local.titles[0], local.year, limit=8)
                 if discogs_hits and discogs_hits[0].score >= 0.9:
