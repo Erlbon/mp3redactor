@@ -295,13 +295,37 @@ def render_artist_note(
     return render_note(front, body)
 
 
+def wikipedia_credits(pages: Iterable[tuple[str, str]]) -> str:
+    """ONE credit sentence for several Wikipedia introductions: 'Introductions from Wikipedia ([Ska](url), [Ska punk](url)),
+    CC BY-SA 4.0' (credit_footer adds the full stop). `pages` are (title, url); one page gives the usual single credit."""
+    from redactor_common.core.note_text import wikipedia_credit
+
+    pages = list(pages)
+    if len(pages) == 1:
+        return wikipedia_credit(pages[0][0])
+    links = ", ".join(f"[{title.strip().replace('[', '(').replace(']', ')')}]({url})" for title, url in pages)
+    return f"Introductions from Wikipedia ({links}), CC BY-SA 4.0"
+
+
 def render_genre_note(
     *, name: str, intro: str = "", links: Iterable[str] = (), footer: Iterable[str] = (),
+    sections: Iterable[tuple[str, str]] = (), genres: Iterable[str] = (),
 ) -> str:
     """The about.md of a genre or collection folder: a short introduction (Wikipedia) and the credit footer. No
-    list of what is below and no [[links]]: the folders are the structure, Pluteus shows them."""
-    front = NoteFrontMatter(title=name, links=list(links), generator=generator_text(), note_format=CURRENT_NOTE_FORMAT)
-    return render_note(front, _block(f"# {name}", intro, credit_footer(list(footer))))
+    list of what is below and no [[links]]: the folders are the structure, Pluteus shows them.
+
+    A folder that covers SEVERAL genres ('1.61 - Ska' covers ska and ska punk) passes `sections` ((genre title, its
+    introduction) in order) and `genres` (listed in the front matter): the body is '# Name' and one '## Genre' section per
+    genre, then the one credit footer. Without `sections` the note keeps its single-introduction shape."""
+    front = NoteFrontMatter(title=name, genres=[g.lower() for g in genres], links=list(links), generator=generator_text(),
+                            note_format=CURRENT_NOTE_FORMAT)
+    parts = [f"# {name}"]
+    sections = list(sections)
+    if sections:
+        parts += [f"## {title}" + ("\n\n" + text if text else "") for title, text in sections]
+    else:
+        parts.append(intro)
+    return render_note(front, _block(*parts, credit_footer(list(footer))))
 
 
 def render_album_note(

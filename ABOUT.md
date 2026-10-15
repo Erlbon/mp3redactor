@@ -95,7 +95,7 @@ mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [
                                [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
                                [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
                                [--lookup] [--region STORE] [--min-score N] [-n]
-mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]
+mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--genres FOLDER=GENRE,GENRE] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]
 ```
 
 The command line uses the same code as the window, so the results are the same. It reads the same settings file
@@ -315,7 +315,7 @@ the match that was used and `filled`, the names of what it filled in.
 
 ### notes
 
-`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]`
+`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--genres FOLDER=GENRE,GENRE] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]`
 
 Drafts the short Markdown notes that the Pluteus media server shows beside a folder: `artist.md` in an artist
 folder, `album.md` in an album folder, and (with `--kind genre` or `all`) `about.md` in a genre or collection folder
@@ -350,6 +350,7 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 | `--no-singles` | Leave the singles out of the artist note's discography: only the albums and EPs (compilations, live albums and soundtracks included) are asked for from MusicBrainz, which saves requests only for an artist with more than 100 release groups. |
 | `--update` | Also list the notes made by an older version of this app (stamped, an older note format, nobody edited them) as updates, and with `--write` replace ONLY those: the old note goes to the Recycle Bin. A note edited by a person, a note this app did not write and a note that is already current are never touched (the summary says how many were left alone). |
 | `--update-legacy` | With `--update --write`: also replace the notes of the first versions (no stamp, so it cannot be known whether they were edited; still the Recycle Bin, still never an edited or foreign note). |
+| `--genres FOLDER=GENRE,GENRE` | The genres a genre / collection folder covers when its name does not say so, e.g. `--genres "1.61 - Ska=Ska,Ska punk"` (FOLDER is its name, with or without the numbering, or its path; repeatable). Every genre is checked on Wikipedia as a music genre; the `about.md` gets one section per genre and one credit line. A name such as `Ska & Ska Punk` is split by itself, but only when every part is a genre of its own (`Rock and Roll` and `Drum and Bass` stay whole). |
 | `--no-cache` | Do not use the disk cache of earlier answers (see below): every lookup is asked again. |
 | `--show-drafts` | Print each draft note (with `--json`: include it in the row). |
 | `-R`, `--no-recurse` | Look only at the folders named, not at the folders below them. |

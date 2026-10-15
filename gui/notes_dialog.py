@@ -29,7 +29,7 @@ from typing import Callable, Optional
 from PyQt6.QtCore import QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QDesktopServices, QTextDocument
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QMessageBox, QPushButton, QRadioButton, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QTextEdit,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -157,6 +157,7 @@ class ProposalPanel(QWidget):
 
     candidateChosen = pyqtSignal(object)  # a Candidate
     levelChosen = pyqtSignal(str)  # a suggested level key
+    genresChosen = pyqtSignal(list)  # the genres a genre / collection folder covers, as edited
     openNoteRequested = pyqtSignal()
     showFolderRequested = pyqtSignal()
 
@@ -255,6 +256,21 @@ class ProposalPanel(QWidget):
         local_row.addWidget(self.local_button)
         local_row.addStretch(1)
 
+        # a genre / collection note: which genres the folder covers ('1.61 - Ska' = Ska, Ska punk); edit and look up again
+        self.genres_box = QWidget()
+        genres_row = QHBoxLayout(self.genres_box)
+        genres_row.setContentsMargins(0, 0, 0, 0)
+        genres_row.addWidget(QLabel("Genres covered:"))
+        self.genres_edit = QLineEdit()
+        self.genres_edit.setPlaceholderText("one genre, or several separated by commas (Ska, Ska punk)")
+        self.genres_edit.setToolTip("The genres this folder covers, separated by commas. Each is checked on Wikipedia as a "
+                                    "music genre; the note gets one section per genre.")
+        self.genres_button = _flat_button("Look up again")
+        self.genres_button.clicked.connect(self._genres_clicked)
+        self.genres_edit.returnPressed.connect(self._genres_clicked)
+        genres_row.addWidget(self.genres_edit, 1)
+        genres_row.addWidget(self.genres_button)
+
         # the preview (rendered) and the raw text; read-only
         self.preview = QTextBrowser()
         self.preview.setOpenExternalLinks(True)
@@ -291,6 +307,7 @@ class ProposalPanel(QWidget):
         layout.addWidget(self.level_box)
         layout.addWidget(self.candidate_box)
         layout.addWidget(self.local_box)
+        layout.addWidget(self.genres_box)
         layout.addWidget(self.tabs, 1)
         layout.addLayout(foot)
         _shrinkable(self.path_label, self.kind_label, self.reasons_label, self.problems_label, self.sources_label,
@@ -322,6 +339,7 @@ class ProposalPanel(QWidget):
             self.level_box.hide()
             self.candidate_box.hide()
             self.local_box.hide()
+            self.genres_box.hide()
             self.preview.clear()
             self.raw.clear()
             self.open_note_button.hide()
@@ -366,6 +384,10 @@ class ProposalPanel(QWidget):
         show_candidates = bool(self._candidates) and item.state == PENDING and (
             p.confidence != Confidence.CONFIDENT or item.user_resolved)
         self.candidate_box.setVisible(show_candidates)
+        about = p.note_kind == "about" and item.state == PENDING
+        self.genres_box.setVisible(about)
+        if about and not self.genres_edit.hasFocus():
+            self.genres_edit.setText(", ".join(p.genres) if p.genres else p.title or p.folder.name)
         self.local_box.setVisible(item.state == PENDING and p.kind in ("artist", "album") and not p.writable
                                   and p.note_kind in ("artist", "album"))
         self._fill_candidates(p)
@@ -430,6 +452,11 @@ class ProposalPanel(QWidget):
         cand = self.selected_candidate()
         if cand is not None:
             self.candidateChosen.emit(cand)
+
+    def _genres_clicked(self) -> None:
+        genres = [g.strip() for g in self.genres_edit.text().replace(";", ",").split(",") if g.strip()]
+        if genres:
+            self.genresChosen.emit(genres)
 
     def _level_clicked(self) -> None:
         key = self.level_combo.currentData()
@@ -519,6 +546,7 @@ class NotesReviewDialog(QDialog):
         panel = ProposalPanel(self._can_choose, why_not=self._why_not)
         panel.candidateChosen.connect(self._choose_candidate)
         panel.levelChosen.connect(self._choose_level)
+        panel.genresChosen.connect(self._choose_genres)
         panel.openNoteRequested.connect(self.open_current_note)
         panel.showFolderRequested.connect(self.show_current_folder)
         return panel
@@ -960,11 +988,16 @@ class NotesReviewDialog(QDialog):
             return
         self._resolve(None, level)
 
-    def _resolve(self, candidate: Optional[Candidate], level: str) -> None:
+    def _choose_genres(self, genres: list) -> None:
+        self._resolve(None, "", genres=genres)
+
+    def _resolve(self, candidate: Optional[Candidate], level: str, genres: Optional[list] = None) -> None:
         item = self.session.items[self.index]
-        what = candidate.name if candidate else LEVEL_LABELS.get(level, level)
+        what = candidate.name if candidate else (", ".join(genres) if genres else LEVEL_LABELS.get(level, level))
+        extra = {"genres": genres} if genres is not None else {}  # (a rebuild callable without genres keeps working)
         try:
-            rebuilt = run_busy(self, f"Looking up {what}…", self._rebuild, item.proposal, candidate, level, title="Create Notes")
+            rebuilt = run_busy(self, f"Looking up {what}…", lambda: self._rebuild(item.proposal, candidate, level, **extra),
+                               title="Create Notes")
         except Exception as exc:  # noqa: BLE001 -- shown as one readable message, never a traceback
             QMessageBox.warning(self, "Create Notes", f"The lookup failed: {exc}")
             return
@@ -1134,8 +1167,8 @@ def create_notes(
 
 
 def _rebuild_with(engine: NotesEngine):
-    def rebuild(proposal: Proposal, candidate: Optional[Candidate], level: str) -> Proposal:
-        return engine.rebuild(proposal, candidate=candidate, level=level)
+    def rebuild(proposal: Proposal, candidate: Optional[Candidate], level: str, genres: Optional[list] = None) -> Proposal:
+        return engine.rebuild(proposal, candidate=candidate, level=level, genres=genres)
 
     return rebuild
 

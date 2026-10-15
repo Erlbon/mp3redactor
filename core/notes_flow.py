@@ -51,7 +51,7 @@ from core.notes_match import (
 )
 from core.notes_render import (
     H_OTHER, LOCAL_ONLY_CREDIT, TrackInfo, discogs_facts_credit, group_discogs_discography, group_discography,
-    render_album_note, render_artist_note, render_genre_note,
+    render_album_note, render_artist_note, render_genre_note, wikipedia_credits,
 )
 from redactor_common.core import note_text
 from redactor_common.core.notes import (
@@ -137,6 +137,7 @@ class Proposal:
     level_reasons: list[str] = field(default_factory=list)
     suggested_levels: list[str] = field(default_factory=list)
     kind_override: str = ""  # the note kind when the level differs from the scan's guess (collection -> about)
+    genres: list[str] = field(default_factory=list)  # a genre / collection note: the genres the folder covers, as looked up
     # An UPDATE proposal: the folder already has an older note of ours (state outdated-untouched or legacy, read by
     # scan(include_outdated=True)); `note_text` is the new draft, this is what the old note was when it was looked at.
     old_state: Optional[NoteState] = None
@@ -179,6 +180,8 @@ class Proposal:
             "candidates": [c.to_dict() for c in self.candidates], "problems": list(self.problems),
             "action": "update" if self.is_update else "create",
         }
+        if self.genres:
+            out["genres"] = list(self.genres)
         if self.old_state is not None:
             out["old_state"] = self.old_state.kind
             out["old_generator"] = self.old_state.generator
@@ -353,6 +356,7 @@ class NotesEngine:
         if self.discogs_mode == "never":
             self._discogs = None
         self._pool: Optional[ThreadPoolExecutor] = None
+        self._genre_overrides: dict[str, list[str]] = {}  # set_genres(): the genres a folder covers
         self._artists: dict[tuple, _Resolution] = {}
         self._levels: dict[str, tuple[LocalArtist, LevelDecision]] = {}
         self._groups: dict[str, list[nmb.ReleaseGroup]] = {}
@@ -449,7 +453,21 @@ class NotesEngine:
                 return candidate
         return None
 
-    def rebuild(self, proposal: Proposal, candidate: Optional[Candidate] = None, level: str = "") -> Proposal:
+    def set_genres(self, folder: str, genres: list[str]) -> None:
+        """The genres a genre / collection folder covers, when they are not what its name says ('1.61 - Ska' covers ska and
+        ska punk). `folder` is the raw or the cleaned name, or a path. Every genre is verified as a music genre like any."""
+        wanted = [g.strip() for g in genres if g and g.strip()]
+        for key in {fold_name(folder), fold_name(lookup_name(folder)), os.path.normcase(os.path.abspath(folder))}:
+            self._genre_overrides[key] = wanted
+
+    def _genre_override(self, folder: Path) -> list[str]:
+        for key in (os.path.normcase(str(folder)), fold_name(folder.name), fold_name(lookup_name(folder.name))):
+            if key in self._genre_overrides:
+                return self._genre_overrides[key]
+        return []
+
+    def rebuild(self, proposal: Proposal, candidate: Optional[Candidate] = None, level: str = "",
+                genres: Optional[list[str]] = None) -> Proposal:
         """The proposal again after a PERSON decided: `candidate` (one of proposal.candidates) is the artist /
         release group to use whatever the score said, and/or `level` (one of proposal.suggested_levels:
         'artist', 'album', 'genre-collection') is the level to build. A chosen candidate is believed: the result
@@ -467,14 +485,15 @@ class NotesEngine:
             kind = KIND_ALBUM
         if kind != target.kind:
             target = Target(target.folder, kind, target.parent_name)  # another level: no older note to refresh
-        return self._dispatch(target, candidate, level)
+        return self._dispatch(target, candidate, level, genres)
 
-    def _dispatch(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
+    def _dispatch(self, target: Target, force: Optional[Candidate] = None, force_level: str = "",
+                  genres: Optional[list[str]] = None) -> Proposal:
         try:
             if target.kind == KIND_ARTIST:
-                proposal = self._artist_proposal(target, force, force_level)
+                proposal = self._artist_proposal(target, force, force_level, genres)
             elif target.kind == KIND_GENRE:
-                proposal = self._genre_proposal(target)
+                proposal = self._genre_proposal(target, genres)
             else:
                 proposal = self._album_proposal(target, force, force_level)
         except nmb.MusicBrainzError as exc:
@@ -681,7 +700,8 @@ class NotesEngine:
             forced.reasons.append(f"{len(candidate.hits)} local album(s) found in its discography: {', '.join(candidate.hits)}")
         return forced
 
-    def _artist_proposal(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
+    def _artist_proposal(self, target: Target, force: Optional[Candidate] = None, force_level: str = "",
+                         genres: Optional[list[str]] = None) -> Proposal:
         local, decision = self._artist_level(target.folder)
         if local.sampled and decision.level != LEVEL_ARTIST:  # an odd level needs ALL the evidence
             local, decision = self._artist_level(target.folder, full=True)
@@ -691,7 +711,7 @@ class NotesEngine:
         if level != decision.level:
             proposal.level_reasons.append(f"level chosen by you: {force_level}")
         if level == LEVEL_COLLECTION:
-            return self._collection_proposal(proposal, local)
+            return self._collection_proposal(proposal, local, genres)
         if level == LEVEL_UNCLEAR:
             proposal.confidence = Confidence.UNCERTAIN
             proposal.reasons = list(decision.reasons)
@@ -864,40 +884,78 @@ class NotesEngine:
 
     # -- genre and collection notes (about.md) --------------------------------------------------------------
 
-    def _genre_proposal(self, target: Target) -> Proposal:
+    def _genre_proposal(self, target: Target, genres: Optional[list[str]] = None) -> Proposal:
         local = read_genre(target.folder)
         proposal = Proposal(target, local=local, level=LEVEL_GENRE, suggested_levels=[SUGGEST_COLLECTION, SUGGEST_SKIP])
         proposal.level_reasons = [f"{len(local.artists)} artist folder(s) directly below it"
                                   if local.artists else f"{len(local.albums)} album folder(s) directly below it"]
-        return self._genre_like(proposal, local.name)
+        return self._genre_like(proposal, local.name, genres)
 
-    def _collection_proposal(self, proposal: Proposal, local: LocalArtist) -> Proposal:
+    def _collection_proposal(self, proposal: Proposal, local: LocalArtist, genres: Optional[list[str]] = None) -> Proposal:
         """A folder found (from the tags / its name) to be a collection, not an artist: it gets about.md and each
         album folder below it is an album of its own, with no artist level."""
         proposal.kind_override = "about"
-        return self._genre_like(proposal, local.name.lstrip("_").strip())
+        return self._genre_like(proposal, local.name.lstrip("_").strip(), genres)
 
-    def _genre_like(self, proposal: Proposal, name: str) -> Proposal:
-        """Wikipedia's page about the music genre `name` (verified: its lead says it is a genre / style of music)
-        (the note is that sentence and the credit; no list of what is below). No page verified = 'uncertain': never written in a batch run."""
+    def _verify_genres(self, names: list[str], notes: list[str], problems: list[str]):
+        """([(genre as asked, its verified Wikipedia page)], [genres that could not be verified as a music genre])."""
+        found, failed = [], []
+        for genre in names:
+            page = None
+            if self.fetchers.wikipedia:
+                try:
+                    page = wp.find_page("genre", genre, fetch=self._wiki, notes=notes)
+                except wp.WikipediaError as exc:
+                    problems.append(str(exc))
+            (found if page is not None else failed).append((genre, page) if page is not None else genre)
+        return found, failed
+
+    def _genre_like(self, proposal: Proposal, name: str, genres: Optional[list[str]] = None) -> Proposal:
+        """Wikipedia's page about the music genre `name` (verified: its lead says it is a genre / style of music): the note
+        is that introduction and the credit. A folder can cover SEVERAL genres ('1.61 - Ska' = ska and ska punk): the ones
+        a person gave (`genres`, or set_genres), else the name split on ' & ', ' and ', ',', '/', ' + ' ONLY when every
+        part verifies as its own genre page ('Rock and Roll', 'Drum and Bass' stay whole). Each is verified; the note has
+        one section per genre and one credit. A genre that cannot be verified makes the row 'uncertain', and the reasons
+        name which one. Never written in a batch run when uncertain."""
         proposal.reasons = list(proposal.level_reasons)
-        page = None
-        if self.fetchers.wikipedia:
-            try:
-                page = wp.find_page("genre", name, fetch=self._wiki, notes=proposal.reasons)
-            except wp.WikipediaError as exc:
-                proposal.problems.append(str(exc))
-        if page is None:
+        explicit = [g.strip() for g in (genres or self._genre_override(proposal.folder)) if g and g.strip()]
+        covered = list(dict.fromkeys(explicit)) if explicit else [name]
+        found, failed = [], []
+        if explicit:
+            found, failed = self._verify_genres(covered, proposal.reasons, proposal.problems)
+        else:
+            parts = split_genre_name(name)
+            if len(parts) > 1:  # 'Ska & Ska Punk': split only when every part is a genre of its own
+                scratch: list[str] = []
+                trial, bad = self._verify_genres(parts, scratch, proposal.problems)
+                if not bad:
+                    found, failed, covered = trial, [], parts
+                    proposal.reasons.append(f"covers {len(parts)} genres: {', '.join(parts)} (each verified on Wikipedia)")
+            if not found:
+                found, failed = self._verify_genres([name], proposal.reasons, proposal.problems)
+        proposal.genres = list(covered)
+        if failed or not found:
             proposal.confidence = Confidence.UNCERTAIN
-            proposal.reasons.append(f"no Wikipedia page about a music genre called '{name}' could be verified")
+            for genre in failed:
+                proposal.reasons.append(f"no Wikipedia page about a music genre called '{genre}' could be verified")
+            if found:
+                proposal.reasons.append("verified: " + ", ".join(f"'{g}'" for g, _p in found))
             return proposal
         proposal.confidence = Confidence.CONFIDENT
-        proposal.reasons.append(f"Wikipedia: '{page.title}' (found by {page.via})")
+        for _genre, page in found:
+            proposal.reasons.append(f"Wikipedia: '{page.title}' (found by {page.via})")
         proposal.sources = ["wikipedia"]
         proposal.title = name
-        proposal.note_text = render_genre_note(
-            name=name, intro=wp.trim_extract(page.extract), links=[page.url] if page.url else [],
-            footer=[note_text.wikipedia_credit(page.title)])
+        links = [page.url for _g, page in found if page.url]
+        credit = wikipedia_credits([(page.title, page.url or "") for _g, page in found])
+        if len(found) == 1:
+            page = found[0][1]
+            proposal.note_text = render_genre_note(
+                name=name, intro=wp.trim_extract(page.extract), links=links, footer=[credit])
+        else:
+            proposal.note_text = render_genre_note(
+                name=name, links=links, footer=[credit], genres=[g for g, _p in found],
+                sections=[(page.title, wp.trim_extract(page.extract)) for _g, page in found])
         return proposal
 
     # -- other sources: Discogs albums, Wikipedia-only notes, the explicit local-only note -----------------------
@@ -1330,6 +1388,16 @@ class NotesEngine:
         proposal.title = title
         proposal.sources = sources
         return proposal
+
+
+_GENRE_SPLIT = re.compile(r"\s*(?:,|/|\+|&|\band\b)\s*", re.IGNORECASE)
+
+
+def split_genre_name(name: str) -> list[str]:
+    """'Ska & Ska Punk' -> ['Ska', 'Ska Punk']; a name with no separator, or that would leave a part empty, comes back whole.
+    Only a CANDIDATE split: the engine uses it only when every part verifies as its own genre."""
+    parts = [p.strip() for p in _GENRE_SPLIT.split(name or "") if p.strip()]
+    return parts if len(parts) > 1 else [name]
 
 
 def _seconds(text: str) -> Optional[float]:

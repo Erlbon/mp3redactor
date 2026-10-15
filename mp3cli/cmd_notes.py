@@ -93,6 +93,11 @@ def add_notes_parser(sub) -> None:
                         help="with --update --write: ALSO replace the notes of the first versions (no stamp, so it "
                              "cannot be known whether they were edited; still the Recycle Bin, still never an edited "
                              "or foreign note)")
+    parser.add_argument("--genres", action="append", default=[], metavar="FOLDER=GENRE,GENRE",
+                        help="the genres a genre / collection folder covers, when its name does not say so: "
+                             "--genres \"1.61 - Ska=Ska,Ska punk\" (FOLDER is its name, with or without the numbering, or "
+                             "its path). Every genre is verified on Wikipedia; the note gets one section per genre. "
+                             "Repeatable")
     parser.add_argument("--no-cache", action="store_true",
                         help="do not use the disk cache of earlier answers (the lookups are all asked again)")
     parser.add_argument("--write", action="store_true", help="write the drafts of the confident matches (default: report only)")
@@ -177,6 +182,11 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     mode = "never" if args.no_discogs else args.discogs
     engine = NotesEngine(make_fetchers(mode != "never"), cache=make_cache(args), discogs_mode=mode,
                          singles=not args.no_singles)
+    for spec in args.genres:
+        folder, sep, genres = spec.rpartition("=")
+        if not sep or not folder.strip() or not [g for g in genres.split(",") if g.strip()]:
+            raise CliError(f"--genres wants FOLDER=GENRE,GENRE (got {spec!r})")
+        engine.set_genres(folder.strip(), genres.split(","))
     engine.phases.add("scan", scan_seconds, count=len(found.targets))
     engine.on_status = out.info  # 'MusicBrainz is busy, waiting 4 s' on stderr
     started = time.perf_counter()
