@@ -199,6 +199,11 @@ class Settings:
     musicbrainz_dump: str = ""
     musicbrainz_options: str = ""
 
+    # Tools > Create Notes...: the last folder picked when none was selected, and the review page's size ("WxH").
+    # This computer only (not part of Export Settings).
+    notes_last_folder: str = ""
+    notes_dialog_size: str = ""
+
     def saved_rename_pattern(self) -> str:
         """The dedicated rename pattern; before one was ever saved, the most
         recent pattern in the shared history (a first-run default only)."""
@@ -257,6 +262,8 @@ class Settings:
             "musicbrainz_database": self.musicbrainz_database,
             "musicbrainz_dump": self.musicbrainz_dump,
             "musicbrainz_options": self.musicbrainz_options,
+            "notes_last_folder": self.notes_last_folder,
+            "notes_dialog_size": self.notes_dialog_size,
         }
         config[HISTORY_SECTION] = {"enabled": str(self.history_enabled)}
         return config
@@ -306,6 +313,8 @@ class Settings:
             musicbrainz_database=section.get("musicbrainz_database", fallback=""),
             musicbrainz_dump=section.get("musicbrainz_dump", fallback=""),
             musicbrainz_options=section.get("musicbrainz_options", fallback=""),
+            notes_last_folder=section.get("notes_last_folder", fallback=""),
+            notes_dialog_size=section.get("notes_dialog_size", fallback=""),
         )
 
 

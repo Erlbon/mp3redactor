@@ -75,7 +75,7 @@ def test_menu_contents_and_order(window):
         "Detect BPM", "Detect Key", "Measure Loudness", "---", "Find Duplicates",
     ]
     assert _menu_tree(menus["Tools"]) == [
-        "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database Setup", "---",
+        "Create Notes", "---", "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database Setup", "---",
         "Columns", "Genres", "Languages", "---", "History",
     ]
     assert _menu_tree(menus["Help"]) == ["Changelog", "Credits", "---", f"About {mw.APP_NAME}"]
@@ -167,7 +167,8 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
     top = [t if isinstance(t, str) else t[0] for t in tree if t != "---"]
     assert top == [
         "Open in Default App", "Open Containing Folder", "Copy Path", "Play", "Rename File",
-        "Look Up", "Organize", "Analyze", "Cover", "Edit Lyrics", "Redact", "Remove from List",
+        "Look Up", "Organize", "Analyze", "Cover", "Edit Lyrics",
+        "Create Notes for This Folder", "Redact", "Remove from List",
     ]
     by_name = {t[0]: t[1] for t in tree if isinstance(t, tuple)}
     assert by_name["Look Up"] == ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]

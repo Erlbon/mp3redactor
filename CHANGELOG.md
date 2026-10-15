@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-15#04 -- Tools > Create Notes: the review page
+
+- New **Tools > Create Notes...** (no shortcut) and a right-click **Create Notes for This Folder...**: drafts the folder notes (`artist.md`, `album.md`, `about.md`) for the Pluteus media server. With files selected it works on their folders; with nothing selected it asks for a library, artist or album folder (remembered, and File > Include Subfolders is honoured).
+- The lookups run on a worker thread under a **cancellable progress dialog** ("Looking up <folder> (3 of 12)..."). Cancel keeps what was looked up and opens the review of that. A missing Discogs token is said once in the review page (Tools > API Keys...); network trouble is one readable message, never a traceback.
+- The **review page** has two views, chosen automatically and switchable with a link: **one at a time** (one artist folder or one album: Skip, Write note (Enter), Back, Write all remaining confident) and a **list** (several artist folders: ticks, filter "only uncertain or not found", Write N ticked notes). Each proposal shows the target path, a Confident / Uncertain / Nothing found badge with the engine's reasons, the rendered note (read-only preview and raw text) and its sources.
+- Confident proposals are pre-ticked. **Uncertain and nothing-found ones cannot be ticked or written** until you pick one of the engine's candidates, or a level (artist, genre or collection, album) when the level is unclear; the proposal is then rebuilt through the engine (new `NotesEngine.rebuild`, which reuses the cached lookups) and says it was chosen by you.
+- Nothing is written without a click on Write. A note is never overwritten (an existing note of any of the five names blocks the write and the page says which); a summary box lists written / skipped / uncertain left / blocked / errors. After writing, Open note and Show in folder. With the opt-in History on, writes are recorded as before (History stays off by default).
+- Escape closes the page; it asks first only when ticked notes are still unwritten. The page remembers its size.
+- New: `core/notes_review.py` (the rules, no Qt), `gui/notes_dialog.py`. Settings: `notes_last_folder`, `notes_dialog_size` (this computer only, not exported).
+
 ## 2026-10-15#03 -- Folder notes: the engine and `mp3redactor notes`
 
 - New command line command **`mp3redactor notes PATH... [--kind artist|album|genre|both|all] [--write] [-n] [--no-discogs] [--show-drafts] [-R]`**: drafts the Markdown notes the Pluteus media server shows beside a folder (`artist.md`, `album.md`, and `about.md` for a genre or collection folder). A report by default; `--write` writes only the CONFIDENT matches (`status: draft`), never overwrites, never touches a folder that already has a note of any of the five names in any letter case. Uncertain and unmatched folders are listed with reasons, candidates and the levels they could be. No window yet (the review page comes later).

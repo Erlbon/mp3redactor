@@ -9,7 +9,7 @@ A REPORT by default: every target folder is looked up and listed with how sure t
 written, and nothing is written. --write writes the drafts (status: draft in the front matter) of the CONFIDENT
 matches only -- a match is confident when at least one of the folder's own album titles is found in the candidate's
 discography and nothing equally good competes with it. Uncertain and unmatched folders are listed with the reasons
-and the candidates, never written: they are for a person to decide (the review page of the app, later). A folder
+and the candidates, never written: they are for a person to decide (Tools > Create Notes in the app has the review page). A folder
 that already has artist.md / author.md / series.md / album.md / about.md, in any letter case, is never touched; a
 note is never overwritten. The engine is core/notes_flow.py; the layout rule (Artist/Album (Year)/01 Song.mp3) is
 core/notes_local.py.

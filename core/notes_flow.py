@@ -303,6 +303,7 @@ class NotesEngine:
         self._levels: dict[str, tuple[LocalArtist, LevelDecision]] = {}
         self._groups: dict[str, list[nmb.ReleaseGroup]] = {}
         self._network_failures = 0
+        self._seen_groups: dict[str, nmb.ReleaseGroup] = {}  # release groups offered as candidates, by id
 
     # -- public ------------------------------------------------------------------------------------------
 
@@ -311,13 +312,42 @@ class NotesEngine:
         if self._network_failures >= 2:
             return Proposal(target, Confidence.NONE, reasons=["skipped: the services could not be reached"],
                             problems=["could not reach MusicBrainz (repeated); the rest of the run was not looked up"])
+        return self._dispatch(target)
+
+    def can_choose(self, proposal: Proposal, candidate: Candidate) -> bool:
+        """Can the proposal be rebuilt around this candidate? An artist note can use a MusicBrainz or a Discogs
+        artist; an album note needs a MusicBrainz release group (a Discogs-only album has no tracklist source
+        here)."""
+        if proposal.kind == KIND_ALBUM:
+            return candidate.source == "musicbrainz"
+        return proposal.kind in (KIND_ARTIST,) and candidate.source in ("musicbrainz", "discogs")
+
+    def rebuild(self, proposal: Proposal, candidate: Optional[Candidate] = None, level: str = "") -> Proposal:
+        """The proposal again after a PERSON decided: `candidate` (one of proposal.candidates) is the artist /
+        release group to use whatever the score said, and/or `level` (one of proposal.suggested_levels:
+        'artist', 'album', 'genre-collection') is the level to build. A chosen candidate is believed: the result
+        is 'confident' when the note could be built, and its reasons say it was chosen. Cached lookups are
+        reused, so this is usually one or two requests. Never raises for a service failure. 'skip' is not an
+        engine matter (the review page just leaves the folder out)."""
+        self._network_failures = 0
+        target = proposal.target
+        kind = target.kind
+        if level == SUGGEST_ARTIST:
+            kind = KIND_ARTIST
+        elif level == SUGGEST_ALBUM:
+            kind = KIND_ALBUM
+        if kind != target.kind:
+            target = Target(target.folder, kind, target.parent_name)
+        return self._dispatch(target, candidate, level)
+
+    def _dispatch(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
         try:
             if target.kind == KIND_ARTIST:
-                proposal = self._artist_proposal(target)
+                proposal = self._artist_proposal(target, force, force_level)
             elif target.kind == KIND_GENRE:
                 proposal = self._genre_proposal(target)
             else:
-                proposal = self._album_proposal(target)
+                proposal = self._album_proposal(target, force, force_level)
         except nmb.MusicBrainzError as exc:
             proposal = Proposal(target, Confidence.NONE, reasons=["MusicBrainz failed"], problems=[str(exc)])
         except (wp.WikipediaError, DiscogsError) as exc:  # only reached when nothing was caught closer
@@ -421,22 +451,41 @@ class NotesEngine:
             self._levels[key] = (local, artist_level(local.name, local.albums))
         return self._levels[key]
 
-    def _artist_proposal(self, target: Target) -> Proposal:
+    def _forced_resolution(self, res: _Resolution, candidate: Candidate) -> _Resolution:
+        """The resolution with the artist a person chose as its (confident) winner."""
+        forced = _Resolution(candidates=list(res.candidates), problems=list(res.problems))
+        evaluation = Evaluation(candidate.source, candidate.id, candidate.name, hits=list(candidate.hits),
+                                name_sim=candidate.score, detail=candidate.detail)
+        if candidate.source == "musicbrainz":
+            forced.mb = _ArtistFound(evaluation, Confidence.CONFIDENT, groups=self._discography(candidate.id))
+        else:
+            forced.discogs = _ArtistFound(evaluation, Confidence.CONFIDENT)
+        forced.reasons = [f"chosen by you: {candidate.name} ({candidate.source})"]
+        if candidate.hits:
+            forced.reasons.append(f"{len(candidate.hits)} local album(s) found in its discography: {', '.join(candidate.hits)}")
+        return forced
+
+    def _artist_proposal(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
         local, decision = self._artist_level(target.folder)
-        proposal = Proposal(target, local=local, level=decision.level, level_reasons=list(decision.reasons),
+        level = {SUGGEST_ARTIST: LEVEL_ARTIST, SUGGEST_COLLECTION: LEVEL_COLLECTION}.get(force_level, decision.level)
+        proposal = Proposal(target, local=local, level=level, level_reasons=list(decision.reasons),
                             suggested_levels=list(decision.suggested))
-        if decision.level == LEVEL_COLLECTION:
+        if level != decision.level:
+            proposal.level_reasons.append(f"level chosen by you: {force_level}")
+        if level == LEVEL_COLLECTION:
             return self._collection_proposal(proposal, local)
-        if decision.level == LEVEL_UNCLEAR:
+        if level == LEVEL_UNCLEAR:
             proposal.confidence = Confidence.UNCERTAIN
             proposal.reasons = list(decision.reasons)
             return proposal
-        proposal.reasons = list(decision.reasons)
+        proposal.reasons = list(proposal.level_reasons)
         titles = [a.titles for a in local.albums]
         years = [a.year for a in local.albums]
         collab = split_collab(local.name)
         partial = collab[:1] if len(collab) > 1 else []
         res = self.resolve_artist(local.names, titles, years, partial)
+        if force is not None:
+            res = self._forced_resolution(res, force)
         proposal.candidates = list(res.candidates)
         proposal.reasons += list(res.reasons)
         proposal.problems = list(res.problems)
@@ -590,7 +639,7 @@ class NotesEngine:
                 return titles, years
         return [local.titles], [local.year]
 
-    def _album_proposal(self, target: Target) -> Proposal:
+    def _album_proposal(self, target: Target, force: Optional[Candidate] = None, force_level: str = "") -> Proposal:
         local = read_album(target.folder, self.loader)
         proposal = Proposal(target, local=local, level=LEVEL_ALBUM, suggested_levels=[SUGGEST_ALBUM, SUGGEST_SKIP])
         parent = target.folder.parent
@@ -603,7 +652,8 @@ class NotesEngine:
                 proposal.level_reasons.append(
                     f"the folder above ('{parent.name}') is not an artist folder: {parent_decision.reasons[0]}")
         # one folder of loose tracks of one artist (several album tags, no album folder): an artist level
-        if len(local.tag_titles) >= 3 and local.artist and names_agree(target.folder.name, local.artist):
+        if (force_level != SUGGEST_ALBUM and len(local.tag_titles) >= 3 and local.artist
+                and names_agree(target.folder.name, local.artist)):
             proposal.level, proposal.suggested_levels = LEVEL_ARTIST, [SUGGEST_ARTIST, SUGGEST_ALBUM, SUGGEST_SKIP]
             proposal.level_reasons.append(f"{len(local.tag_titles)} different album tags in a folder named like the artist")
             proposal.confidence = Confidence.UNCERTAIN
@@ -647,6 +697,8 @@ class NotesEngine:
                 local.titles, local.year, artist_names, group.title, group.year, group.primary, group.secondary,
                 group.artist, group.id)))
         scored.sort(key=lambda s: (s[1].title_match, s[1].score), reverse=True)
+        for group, _score in scored:
+            self._seen_groups[group.id] = group
         for group, score in scored[:MAX_CANDIDATES]:
             proposal.candidates.append(Candidate(
                 "musicbrainz", group.id, f"{group.artist} - {group.title}" if group.artist else group.title,
@@ -663,7 +715,11 @@ class NotesEngine:
                 proposal.problems.append(str(exc))
 
         confident_group = None
-        if best is not None:
+        chosen_group = self._seen_groups.get(force.id) if force is not None and force.source == "musicbrainz" else None
+        if chosen_group is not None:
+            confident_group = chosen_group
+            proposal.reasons.append(f"chosen by you: {force.name}")
+        elif best is not None:
             group, score = best
             rivals = [g for g, s in scored[1:] if s.title_match and abs(s.score - score.score) < 0.05
                       and g.primary == group.primary and g.year == group.year]
@@ -690,12 +746,12 @@ class NotesEngine:
             return proposal
 
         return self._finish_album(proposal, local, confident_group, mb_artist, discogs_info, names, soundtrack,
-                                  mb_artist is None and not names)
+                                  mb_artist is None and not names, forced=chosen_group is not None)
 
     def _finish_album(
         self, proposal: Proposal, local: LocalAlbum, group: nmb.ReleaseGroup, mb_artist: Optional[_ArtistFound],
         discogs_info: Optional[nd.DiscogsAlbumInfo], names: list[str], soundtrack: bool = False,
-        relaxed: bool = False,
+        relaxed: bool = False, forced: bool = False,
     ) -> Proposal:
         group_detail: dict = {}
         release: Optional[nmb.ReleaseDetail] = None
@@ -719,12 +775,12 @@ class NotesEngine:
         local_titles = [t.title for t in local.tracks if t.title]
         if tracks and len(local_titles) >= 3:
             overlap = track_overlap(local_titles, [t.title for t in tracks])
-            if overlap < 0.3:
+            if overlap < 0.3 and not forced:
                 proposal.confidence = Confidence.UNCERTAIN
                 proposal.reasons.append(f"only {round(overlap * 100)}% of the track titles match this release")
                 return proposal
             proposal.reasons.append(f"{round(overlap * 100)}% of the local track titles are on the release")
-        if relaxed:  # no artist to check: the folder itself must look like this release
+        if relaxed and not forced:  # no artist to check: the folder itself must look like this release
             overlap_ok = len(local_titles) >= 3 and track_overlap(local_titles, [t.title for t in tracks]) >= 0.6
             if not (overlap_ok or (group.year and group.year == local.year)):
                 proposal.confidence = Confidence.UNCERTAIN
@@ -829,13 +885,13 @@ def _pick_release(releases: list[nmb.ReleaseSummary], local_count: int, first_da
 def build_proposals(
     targets: list[Target], fetchers: Optional[Fetchers] = None, progress: Optional[Progress] = None,
     cancel: Optional[Callable[[], bool]] = None, loader: Optional[Loader] = None,
-    on_proposal: Optional[Callable[[Proposal], None]] = None,
+    on_proposal: Optional[Callable[[Proposal], None]] = None, engine: Optional[NotesEngine] = None,
 ) -> list[Proposal]:
     """One Proposal per target, in order. `progress(done, total, label)` is called before each target;
     `cancel()` returning True ends the run early (the proposals built so far are returned); `on_proposal(p)` is
     called as each one is ready (the command line writes it there, so an interrupted run keeps what it did).
     Network only; this function writes no file."""
-    engine = NotesEngine(fetchers, loader)
+    engine = engine or NotesEngine(fetchers, loader)  # a caller that keeps the engine can rebuild with its caches
     proposals: list[Proposal] = []
     for index, target in enumerate(targets):
         if cancel is not None and cancel():

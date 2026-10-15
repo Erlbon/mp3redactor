@@ -36,6 +36,16 @@ time.
   beside the original. Opening a folder that has no MP3 at all but such files offers the same.
 - **M4B audiobooks**: File > Create M4B Audiobook joins the selected MP3s into a chaptered `.m4b` (one book per
   folder), with optional Audible / Open Library lookup and an Audiobookshelf-style library layout.
+- **Create Notes** (Tools > Create Notes, or right-click > Create Notes for This Folder) drafts the short Markdown notes
+  the Pluteus media server shows beside a folder: `artist.md`, `album.md`, and `about.md` for a genre or collection
+  folder. With files selected it works on their folders; otherwise it asks for a library, artist or album folder (and
+  follows Include Subfolders). The lookups (MusicBrainz, Wikipedia and, with the Discogs token saved under Tools > API
+  Keys, Discogs) run under a progress dialog you can cancel; what was looked up so far is still reviewed. The review
+  page has two views, chosen from what was found and switchable: one note at a time (one artist or album: Skip, Write
+  note, Back, Write all remaining confident) or a list with tick boxes (several artists: Write N ticked notes).
+  Confident matches are pre-ticked; uncertain and nothing-found ones cannot be ticked until you pick one of the
+  candidates (or the level: artist, genre or collection, album) and the note is rebuilt from it. Nothing is written
+  until you click Write; a note is never overwritten, and a note you write is a draft (`status: draft`).
 - **History** (Tools > History) is opt-in, off by default: nothing is recorded until you turn on Tools >
   Preferences > History > "Keep a history of tag changes" (or answer yes when you open Tools > History).
   From then on every tag change the app writes to a file (Save, Save All, Redact, the command line's `set`,
@@ -310,7 +320,7 @@ Wikipedia (and Discogs, when a token is saved under Tools > API Keys or in `DISC
 just thinner) and listed with how sure the match is; nothing is written. `--write` writes the drafts (`status: draft`
 in the front matter) of the **confident** matches only. A match is confident when at least one of the folder's own album
 titles is found in the candidate's discography (so "Cristina" is not Cristina D'Avena) and nothing equally good
-competes with it. Uncertain and unmatched folders are listed with the reasons, the candidates and the levels they could
+competes with it. Uncertain and unmatched folders (to be decided on the review page of Tools > Create Notes) are listed with the reasons, the candidates and the levels they could
 be (`artist`, `genre-collection`, `skip`), and are never written. A note is never overwritten, and a folder that already
 has `artist.md`, `author.md`, `series.md`, `album.md` or `about.md` in any letter case is left alone. The album note
 compares the files in the folder with the tracklist (present, missing, extra); the artist note lists the albums really

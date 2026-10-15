@@ -130,6 +130,9 @@ from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
 from gui.m4b_batch_dialog import M4bBatchDialog
 from gui.m4b_dialog import M4bDialog
+from gui.notes_dialog import ask_folder as ask_notes_folder
+from gui.notes_dialog import create_notes
+from core.notes_flow import live_fetchers
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
@@ -394,6 +397,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.files: list[MP3File] = []
         self._list_filter = ""  # Edit > Filter List's text; "" = every file shown
+        self.notes_fetchers = None  # Create Notes: a callable returning core.notes_flow.Fetchers (None = the real services; tests inject)
         self.settings: Settings = load_settings()
         # The remembered "an unencrypted key file is OK on this computer" answer
         # is applied now, and a new yes is stored through the returned callable
@@ -584,7 +588,11 @@ class MainWindow(QMainWindow):
                     MenuAction("find_duplicates", labels.FIND_DUPLICATES_ALT, self.open_find_duplicates_dialog),
                 ]),
             ],
-            tools=standard_tools_items(
+            tools=[
+                MenuAction("create_notes", "Cre&ate Notes…", self.create_notes_dialog,
+                           tooltip="Draft the artist.md / album.md folder notes for the Pluteus media server"),
+                Separator(),
+            ] + standard_tools_items(
                 preferences=self.open_settings_dialog,
                 api_keys=self.open_api_keys_dialog,
                 external_tools=self.open_external_tools_dialog,
@@ -991,6 +999,46 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Showing {shown} of {len(self.files)} files (filter: {self._list_filter})"
             )
+
+    # -- create notes ------------------------------------------------------
+
+    def create_notes_dialog(self) -> None:
+        """Tools > Create Notes...: with files selected, the folders of the selected files; otherwise a folder
+        (a library root, an artist or an album folder) is asked for, starting where it was last, and File >
+        Include Subfolders is honoured. The review page is gui/notes_dialog.py."""
+        if self._selected_files():
+            self.create_notes_for_selection()
+            return
+        start = self.settings.notes_last_folder or self.settings.library_root or self.settings.last_directory
+        folder = ask_notes_folder(self, resolve_start_directory(start))
+        if not folder:
+            return
+        self.settings.notes_last_folder = folder
+        save_settings(self.settings)
+        self._run_create_notes([folder], self.settings.include_subfolders)
+
+    def create_notes_for_selection(self) -> None:
+        """Right-click "Create Notes for This Folder...": the folders of the selected files (the engine's scan
+        decides for each whether it is an artist or an album level)."""
+        folders: list[str] = []
+        for mp3 in self._selected_files():
+            folder = str(Path(mp3.path).parent)
+            if folder not in folders:
+                folders.append(folder)
+        if not folders:
+            self.statusBar().showMessage("Select a file first, or use Tools > Create Notes with nothing selected.", 6000)
+            return
+        self._run_create_notes(folders, False)
+
+    def _run_create_notes(self, paths: list, include_subfolders: bool) -> None:
+        def remember_size(text: str) -> None:
+            self.settings.notes_dialog_size = text
+            save_settings(self.settings)
+
+        create_notes(
+            self, paths, include_subfolders, self.notes_fetchers or live_fetchers,
+            size_text=self.settings.notes_dialog_size, on_size=remember_size,
+        )
 
     # -- find duplicates ---------------------------------------------------
 
@@ -2987,6 +3035,7 @@ class MainWindow(QMainWindow):
                 items.append(
                     MenuAction("edit_lyrics", "Edit Lyrics…", lambda: self.open_lyrics_dialog(files[0]))
                 )
+            items.append(MenuAction("create_notes_here", "Create Notes for This Folder…", self.create_notes_for_selection))
             items.extend([Separator(), self.action_redact, Separator(), self.action_remove_from_list])
             return items
 

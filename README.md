@@ -70,6 +70,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Analyze | Check Integrity, Fix Integrity Issues…, Deep Check Integrity… | |
 | Analyze | Detect BPM, Detect Key, Measure Loudness | |
 | Analyze | Find Duplicates… (all loaded files) | |
+| Tools | Create Notes… (draft the `artist.md` / `album.md` / `about.md` folder notes the Pluteus media server shows, from MusicBrainz, Wikipedia and Discogs; with files selected it works on their folders, otherwise it asks for a folder and follows Include Subfolders; a review page with two views, one note at a time or a ticking list; nothing is written until you click Write; the engine is `core/notes_flow.py`, the page `gui/notes_dialog.py`, its rules `core/notes_review.py`) | |
 | Tools | Preferences… | Ctrl+, |
 | Tools | API Keys… (Discogs token), External Tools… (mp3val, keyfinder-cli, ffmpeg, ffprobe, fpcalc), MusicBrainz Database Setup… | |
 | Tools | Columns…, Genres…, Languages… | |
@@ -77,7 +78,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Help | Changelog…, Credits…, About The ɯP3 Redactor | |
 
 The table's right-click menu has the everyday subset: Preview (one file), Rename File (one file), Look Up, Organize (Rename /
-Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Redact, Remove from List, plus Open in Default App,
+Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Create Notes for This Folder, Redact, Remove from List, plus Open in Default App,
 Open Containing Folder and Copy Path. Double-click a Filename cell to rename that file, a Lyrics cell to edit its
 lyrics. Click a header to sort (Track, Disc, Year, BPM, Loudness, Sample Rate and Channels sort as numbers), drag
 a header to reorder, right-click a header to show or hide columns.
