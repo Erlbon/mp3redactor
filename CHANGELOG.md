@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-15#26 -- Create Notes: Look up by link for genre folders, and picking a level builds at once
+
+- New: **Look up by link** now also appears on a genre / collection row. Paste the Wikipedia article about the genre (for example https://en.wikipedia.org/wiki/Ska_punk): the note is built from that article's introduction and the credit, believed like a picked candidate ("chosen by you from a link"). Any other kind of link is refused next to the field in plain words, and nothing is fetched then. Before, the box was hidden for these rows, so there was no way to say which article a genre means when the name search did not find it.
+- Changed: **choosing "Build this folder as" builds at once**, the way a pasted link does; there is no separate Build press any more. The list starts on "Choose..." (so showing a row never builds anything). Only **Skip this folder** keeps a button of its own, because a skipped row leaves the list.
+- Tests: tests/test_notes_genre_link.py (the engine with a link, refused links, the genre row's link box, the level pick); the level-choice test in test_notes_pick_no_duplicate.py uses the new pick.
+
 ## 2026-10-15#25 -- Create Notes: "Local files" tab, what is in the folder (cover, tracks, tags)
 
 To identify a folder you can now see it. Every artist and album row of the review page (list view and one-at-a-time view) has a **Local files** tab next to Preview / Raw text; a row with no note to preview (uncertain, nothing found) opens on it. No network.

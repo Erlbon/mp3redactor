@@ -206,8 +206,8 @@ def test_the_level_choice_updates_the_row_in_place(window, tmp_path, boxes):
         index, row = select_tie_row(page)
         calls = watch_rebuilds(page)
         before = snapshot(page)
-        page.list_panel.level_combo.setCurrentIndex(0)
-        click(page.list_panel.level_button)  # 'Build this folder as': the rebuild of the same folder
+        page.list_panel.level_combo.setCurrentIndex(1)  # index 0 is "Choose..."
+        page.list_panel.level_combo.activated.emit(1)  # picking a level builds at once: no Build button
         QApplication.processEvents()
         return before, snapshot(page), calls, page.tree.currentItem() is row, index
 

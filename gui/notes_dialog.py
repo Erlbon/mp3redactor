@@ -219,8 +219,11 @@ class ProposalPanel(QWidget):
         self.level_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.level_combo.setMinimumContentsLength(14)
         level_row.addWidget(self.level_combo, 1)
-        self.level_button = _flat_button("Build")
+        # choosing a level acts at once, like Look up by link; only 'Skip' waits for a second click (a skipped row is gone from the list)
+        self.level_combo.activated.connect(self._level_activated)
+        self.level_button = _flat_button("Skip this folder")
         self.level_button.clicked.connect(self._level_clicked)
+        self.level_button.setVisible(False)
         level_row.addWidget(self.level_button)
         level_row.addStretch(1)
 
@@ -417,15 +420,21 @@ class ProposalPanel(QWidget):
         alternatives = level_alternatives(p) if item.state == PENDING else []
         self.level_box.setVisible(bool(alternatives))
         self.level_combo.clear()
+        self.level_combo.addItem("Choose...", None)           # nothing is built until a level is picked from the list
         for key in alternatives:
             self.level_combo.addItem(LEVEL_LABELS.get(key, key), key)
+        self.level_combo.setCurrentIndex(0)
+        self.level_button.setVisible(False)
 
         self._candidates = list(p.candidates)
         show_candidates = bool(self._candidates) and item.state == PENDING and (
             p.confidence != Confidence.CONFIDENT or item.user_resolved)
         self.candidate_box.setVisible(show_candidates)
         self._show_evidence_tab(item)
-        self.link_box.setVisible(p.kind in ("artist", "album") and item.state == PENDING and p.note_kind != "about")
+        genre_row = p.note_kind == "about"                      # a genre / collection folder: the link is the genre's Wikipedia article
+        self.link_box.setVisible(item.state == PENDING and (p.kind in ("artist", "album") or genre_row))
+        self.link_edit.setPlaceholderText("Paste the Wikipedia article about the genre" if genre_row else
+                                          "Paste a Wikipedia, MusicBrainz or Discogs link (or a MusicBrainz id)")
         # What was typed into the link / genres fields belongs to ONE folder: a different row starts with empty
         # link text and its own genres (a pasted link for the previous band must never be offered for this one).
         # The same row shown again (after a rebuild in place, a state change) keeps what the person typed.
@@ -536,9 +545,13 @@ class ProposalPanel(QWidget):
         from core.notes_link import LinkError, parse_link
 
         kind = self._item.proposal.kind if self._item is not None else "artist"
+        genre_row = self._item is not None and self._item.proposal.note_kind == "about"
         text = self.link_edit.text().strip()
         try:
-            parse_link(text, bare_as="release-group" if kind == "album" else "artist")  # checked here: nothing is fetched yet
+            target = parse_link(text, bare_as="release-group" if kind == "album" else "artist")  # checked here: nothing is fetched yet
+            if genre_row and target.kind != "wikipedia":
+                raise LinkError("For a genre or collection folder paste the Wikipedia article about the genre "
+                                "(a link like https://en.wikipedia.org/wiki/Ska_punk).")
         except LinkError as exc:
             self.set_link_error(str(exc))
             return
@@ -550,7 +563,15 @@ class ProposalPanel(QWidget):
         if genres:
             self.genresChosen.emit(genres)
 
-    def _level_clicked(self) -> None:
+    def _level_activated(self, index: int) -> None:
+        """A level picked in the list: built at once (no second button), except 'Skip', which shows its own button first."""
+        key = self.level_combo.itemData(index)
+        skip = key == SUGGEST_SKIP
+        self.level_button.setVisible(skip)
+        if key and not skip:
+            self.levelChosen.emit(str(key))
+
+    def _level_clicked(self) -> None:                           # the 'Skip this folder' button
         key = self.level_combo.currentData()
         if key:
             self.levelChosen.emit(str(key))

@@ -21,6 +21,7 @@ recorded fixtures.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 import re
@@ -588,6 +589,8 @@ class NotesEngine:
         self._network_failures = 0
         target = proposal.target
         kind = target.kind
+        if link and proposal.note_kind == "about":  # a genre / collection folder: the link names the genre's Wikipedia article
+            return self._genre_from_link(proposal, link)
         if link:  # 'Look up by link': the pasted link names the artist / album: believed like a picked candidate
             candidate = self.candidate_from_link(proposal, link)
         if level == LEVEL_LOCAL_TAGS:
@@ -1168,7 +1171,29 @@ class NotesEngine:
             (found if page is not None else failed).append((genre, page) if page is not None else genre)
         return found, failed
 
-    def _genre_like(self, proposal: Proposal, name: str, genres: Optional[list[str]] = None) -> Proposal:
+    def _genre_from_link(self, proposal: Proposal, link: str) -> Proposal:
+        """'Look up by link' for a genre / collection folder: the pasted Wikipedia article IS the genre's page, believed like a picked
+        candidate (no check that its lead says 'genre'). The note is that article's introduction and the credit. Raises LinkError for a
+        link that is not a Wikipedia article or names none; nothing else changes then."""
+        target = parse_link(link)
+        if target.kind != "wikipedia":
+            raise LinkError("For a genre or collection folder paste the Wikipedia article about the genre "
+                            "(a link like https://en.wikipedia.org/wiki/Ska_punk).")
+        try:
+            page = wp.get_summary(target.id, self._wiki, target.lang or "en")
+        except wp.WikipediaError as exc:
+            raise LinkError(str(exc)) from exc
+        if page is None or page.is_disambiguation:
+            raise LinkError("No Wikipedia article about one genre was found at that link.")
+        page.via = f"link: {target.raw or target.id}"
+        fresh = copy.copy(proposal)
+        fresh.candidates, fresh.problems, fresh.note_text = [], [], ""
+        name = proposal.title or lookup_name(proposal.folder.name)
+        result = self._genre_like(fresh, name, link_page=page)
+        result.reasons.append("chosen by you from a link")
+        return result
+
+    def _genre_like(self, proposal: Proposal, name: str, genres: Optional[list[str]] = None, link_page=None) -> Proposal:
         """Wikipedia's page about the music genre `name` (verified: its lead says it is a genre / style of music): the note
         is that introduction and the credit. A folder can cover SEVERAL genres ('1.61 - Ska' = ska and ska punk): the ones
         a person gave (`genres`, or set_genres), else the name split on ' & ', ' and ', ',', '/', ' + ' ONLY when every
@@ -1179,7 +1204,10 @@ class NotesEngine:
         explicit = [g.strip() for g in (genres or self._genre_override(proposal.folder)) if g and g.strip()]
         covered = list(dict.fromkeys(explicit)) if explicit else [name]
         found, failed = [], []
-        if explicit:
+        if link_page is not None:                                # a pasted article: used as it is, named by its own title
+            covered = [link_page.title]
+            found = [(link_page.title, link_page)]
+        elif explicit:
             found, failed = self._verify_genres(covered, proposal.reasons, proposal.problems)
         else:
             parts = split_genre_name(name)
