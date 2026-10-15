@@ -24,6 +24,8 @@ from typing import Callable, Optional
 
 import time
 
+from core.notes_numbers import title_variants
+
 from core.musicbrainz_lookup import (
     MusicBrainzError, _credit, _get as _single_get, _leading_int, _lucene,
 )
@@ -176,12 +178,20 @@ def artist_by_id(mbid: str, fetch: Optional[Callable] = None) -> "ArtistHit":
     return hit
 
 
+def _title_clause(title: str) -> str:
+    """releasegroup:"Seven" -- and, when the title has a number, the other spelling too ('Seven' / '7')."""
+    forms = title_variants(title)
+    if len(forms) < 2:
+        return f"releasegroup:{_lucene(title)}"
+    return "(" + " OR ".join(f"releasegroup:{_lucene(f)}" for f in forms) + ")"
+
+
 def search_release_groups_by_title(title: str, fetch: Optional[Callable] = None, limit: int = 25) -> list["ReleaseGroup"]:
     """Release groups called exactly `title` (any script), whoever made them: the albums of a folder when the artist's NAME
     finds nothing. Each carries its artist id (ReleaseGroup.artist_id)."""
     if not title.strip():
         return []
-    data = _get("release-group", fetch or _fetch(), query=f"releasegroup:{_lucene(title)} AND primarytype:album", limit=limit)
+    data = _get("release-group", fetch or _fetch(), query=f"{_title_clause(title)} AND primarytype:album", limit=limit)
     return [_group(g) for g in data.get("release-groups", []) if g.get("id")]
 
 
@@ -248,7 +258,7 @@ def search_release_groups(
     everything when that finds nothing."""
     if not album.strip():
         return []
-    query = f"releasegroup:{_lucene(album)}"
+    query = _title_clause(album)
     if artist.strip():
         query += f" AND artist:{_lucene(artist)}"
     if primary_album:

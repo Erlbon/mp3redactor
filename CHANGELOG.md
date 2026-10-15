@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-15#24 -- Create Notes: 'Seven' and '7' are the same title
+
+Madness - Seven found nothing, Madness - 7 was confident (MusicBrainz calls the 1981 album '7').
+- Changed: ONE normaliser for comparing (`core/notes_numbers.compare_key`; for comparing only, never written into a note) treats number words and numerals as equal in both directions: English and Norwegian words up to twenty (one/en/ett, two/to, seven/syv/sju, eight/atte ...), ordinals (first = 1st), roman numerals II to XX as standalone tokens (the single letters I, V and X stay letters), 'No. 1' = 'Number One' = '#1', 'Part II' = 'Pt. 2' = 'Part Two', 'Vol. 1' = 'Volume One', '&' = 'and' = 'og'. It is used for local album titles against a discography (the verification evidence), track titles, artist names ('Ten Years After' = '10 Years After', 'Maroon 5' = 'Maroon Five', '10cc' stays) and the Wikipedia context terms.
+- Changed: the album search fallbacks (the album row and the search by local album titles) also ask for the other spelling of a number in the title ('Seven' also searches '7' and the reverse), in the same request.
+
 ## 2026-10-15#23 -- Create Notes: a pasted link no longer follows you to the next row
 
 - Fixed: on the review page the text typed into **Look up by link** (and the red error under it) stayed in the box when you selected another row, so a link pasted for one band was offered for the next one. Each row now starts with an empty link field and its own **Genres covered** text. Showing the same row again (after a rebuild in place) keeps what you typed.

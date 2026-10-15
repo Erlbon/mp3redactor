@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Iterable, Optional
 
 from core.notes_local import fold_name
+from core.notes_numbers import compare_key
 
 
 class Confidence(str, Enum):
@@ -50,7 +51,7 @@ def album_key(title: str) -> str:
     '- Remastered 2011' dropped, accents/case/punctuation folded, a leading 'The ' dropped."""
     text = _EDITION_GROUP.sub("", title or "")
     text = _EDITION_TAIL.sub("", text)
-    return _LEADING_THE.sub("", fold_name(text))
+    return _LEADING_THE.sub("", compare_key(text))
 
 
 def titles_match(a: str, b: str, threshold: float = 0.93) -> bool:
@@ -67,7 +68,7 @@ def _name_forms(name: str) -> set[str]:
     match = re.match(r"^(.*),\s*(the|a|an)$", text, re.IGNORECASE)
     if match:
         text = f"{match.group(2)} {match.group(1)}"
-    folded = fold_name(text)
+    folded = compare_key(text)
     if folded:
         forms.add(folded)
         forms.add(_LEADING_THE.sub("", folded))
@@ -231,13 +232,13 @@ def score_release_group(
 def track_overlap(local_titles: Iterable[str], release_titles: Iterable[str]) -> float:
     """The share (0..1) of the local track titles found on the release; 1.0 when there are no local titles."""
     local = [t for t in local_titles if t and t.strip()]
-    pool = [fold_name(t) for t in release_titles]
+    pool = [compare_key(t) for t in release_titles]
     if not local:
         return 1.0
     found = 0
     for title in local:
-        key = fold_name(re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*$", "", title)) or fold_name(title)
-        if any(key == p or key == fold_name(re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*$", "", t))
+        key = compare_key(re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*$", "", title)) or compare_key(title)
+        if any(key == p or key == compare_key(re.sub(r"\s*[\(\[][^)\]]*[\)\]]\s*$", "", t))
                or difflib.SequenceMatcher(None, key, p).ratio() >= 0.88 for p, t in zip(pool, release_titles)):
             found += 1
     return found / len(local)

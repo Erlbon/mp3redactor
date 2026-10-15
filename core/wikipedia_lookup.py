@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
+from core.notes_numbers import compare_key
 from core.version import APP_VERSION
 from redactor_common.core.lookup_client import Throttle, fetch_json, make_default_fetch, throttled
 
@@ -220,8 +221,8 @@ _SINGLE_WORD = re.compile(r"\b(single|song)\b", re.IGNORECASE)
 
 
 def _mentions(text: str, name: str) -> bool:
-    name = _fold(name)
-    return bool(name) and f" {name} " in f" {_fold(text)} "
+    name = compare_key(name)  # 'Seven' finds '7' and the reverse
+    return bool(name) and f" {name} " in f" {compare_key(text)} "
 
 
 def looks_like(page: Page, kind: str, name: str, artist: str = "", context_terms: Iterable[str] = ()) -> bool:

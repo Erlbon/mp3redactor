@@ -36,6 +36,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from core.notes_local import LocalAlbum, VARIOUS_ARTIST_NAMES, fold_name, is_collection_name
+from core.notes_numbers import compare_key
 
 LEVEL_ARTIST = "artist"
 LEVEL_COLLECTION = "collection"
@@ -71,7 +72,7 @@ def split_collab(name: str) -> list[str]:
 
 def artist_key(name: str) -> str:
     """The comparable form of an artist name (see the module text, step 3)."""
-    return _THE.sub("", fold_name(_FEAT.sub("", name or "")))
+    return _THE.sub("", compare_key(_FEAT.sub("", name or "")))
 
 
 def _first_key(name: str) -> str:

@@ -28,6 +28,7 @@ from typing import Iterable, Optional
 
 from core.musicbrainz_lookup import FileFacts, Release, ReleaseTrack, match_release
 from core.notes_local import LocalAlbum, LocalTrack, fold_name
+from core.notes_numbers import compare_key
 from core.notes_musicbrainz import Credits
 from redactor_common.core.note_text import credit_footer
 from core.version import APP_VERSION
@@ -102,8 +103,8 @@ def compare_tracks(local: Iterable[LocalTrack], tracks: list[TrackInfo]) -> Comp
     assignment: dict[int, ReleaseTrack] = {}
     taken: set[int] = set()
     for file_index, fact in enumerate(facts):
-        wanted = fold_name(fact.title)
-        options = [i for i, t in enumerate(release.tracks) if i not in taken and wanted and fold_name(t.title) == wanted]
+        wanted = compare_key(fact.title)
+        options = [i for i, t in enumerate(release.tracks) if i not in taken and wanted and compare_key(t.title) == wanted]
         if options:
             best = next((i for i in options if release.tracks[i].position == fact.track), options[0])
             assignment[file_index] = release.tracks[best]
