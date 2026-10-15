@@ -31,6 +31,7 @@ from core.notes_flow import (
     write_proposal,
 )
 from core.notes_cache import default_cache
+from core.notes_link import LinkError
 from core.notes_local import LIBRARY_ROOT_MESSAGE
 from core.notes_kinds import parse_kinds
 from core.notes_timing import lookup_sentence
@@ -93,6 +94,11 @@ def add_notes_parser(sub) -> None:
                         help="with --update --write: ALSO replace the notes of the first versions (no stamp, so it "
                              "cannot be known whether they were edited; still the Recycle Bin, still never an edited "
                              "or foreign note)")
+    parser.add_argument("--link", action="append", default=[], metavar="FOLDER=URL",
+                        help="the right page for a folder the search does not find: --link \"Leningrad=https://en.wikipedia.org/wiki/"
+                             "Leningrad_(band)\" (FOLDER is its name, with or without numbering, or its path; URL is a "
+                             "Wikipedia, MusicBrainz or Discogs link, or a MusicBrainz id). Only musicbrainz.org, discogs.com, "
+                             "wikipedia.org and wikidata.org are used. Repeatable")
     parser.add_argument("--genres", action="append", default=[], metavar="FOLDER=GENRE,GENRE",
                         help="the genres a genre / collection folder covers, when its name does not say so: "
                              "--genres \"1.61 - Ska=Ska,Ska punk\" (FOLDER is its name, with or without the numbering, or "
@@ -182,6 +188,14 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     mode = "never" if args.no_discogs else args.discogs
     engine = NotesEngine(make_fetchers(mode != "never"), cache=make_cache(args), discogs_mode=mode,
                          singles=not args.no_singles)
+    for spec in args.link:
+        folder, sep, url = spec.partition("=")
+        if not sep or not folder.strip():
+            raise CliError(f"--link wants FOLDER=URL (got {spec!r})")
+        try:
+            engine.set_links(folder.strip(), url.strip())
+        except LinkError as exc:
+            raise CliError(f"--link {folder.strip()!r}: {exc}") from exc
     for spec in args.genres:
         folder, sep, genres = spec.rpartition("=")
         if not sep or not folder.strip() or not [g for g in genres.split(",") if g.strip()]:

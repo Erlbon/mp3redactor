@@ -32,6 +32,7 @@ UNCLEAR and COLLECTION both come with `suggested` levels for the review page: ar
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from core.notes_local import LocalAlbum, VARIOUS_ARTIST_NAMES, fold_name, is_collection_name
@@ -93,6 +94,17 @@ def album_artist_name(album: LocalAlbum) -> str:
     return album.album_artist or (album.track_artists[0] if album.track_artists else "")
 
 
+def _other_script(a: str, b: str) -> bool:
+    """One name is Latin letters only, the other has none ('Leningrad' / 'Ленинград'): a spelling, not a different artist."""
+    def latin(text: str) -> bool:
+        return bool(re.search(r"[A-Za-z]", text or ""))
+
+    def other(text: str) -> bool:
+        return any(c.isalpha() and not c.isascii() and not "LATIN" in unicodedata.name(c, "") for c in text or "")
+
+    return (latin(a) and not other(a) and other(b) and not latin(b)) or (latin(b) and not other(b) and other(a) and not latin(a))
+
+
 def artist_level(folder_name: str, albums: list[LocalAlbum]) -> LevelDecision:
     """ARTIST, COLLECTION or UNCLEAR for a folder with these album folders (the module text lists the steps)."""
     if is_collection_name(folder_name):
@@ -128,6 +140,11 @@ def artist_level(folder_name: str, albums: list[LocalAlbum]) -> LevelDecision:
             [SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP])
     if len(keys) == 1:
         only = tagged[0][1]
+        if _other_script(folder_name, only):
+            return LevelDecision(
+                LEVEL_ARTIST, [f"every album is tagged '{only}', the folder is named '{folder_name}': the same name in another "
+                               f"script is possible, the discography match decides"],
+                [SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP])
         return LevelDecision(
             LEVEL_UNCLEAR, [f"level unclear: the albums are all by '{only}', not '{folder_name}'"],
             [SUGGEST_COLLECTION, SUGGEST_ARTIST, SUGGEST_SKIP])

@@ -34,7 +34,7 @@ def no_mb() -> FakeFetch:
 
 
 def no_wiki() -> FakeFetch:
-    return FakeFetch([(r"search/title", {"pages": []}), (r"page/summary/", None)])
+    return FakeFetch([(r"wikidata", {"entities": {}}), (r"search/title", {"pages": []}), (r"page/summary/", None)])
 
 
 def album_routes():
@@ -164,6 +164,7 @@ def test_discogs_artist_candidate_chosen_by_a_person_builds_end_to_end(tmp_path)
 def wiki_only_fetchers():
     r = RECORDED
     wiki = FakeFetch([
+        (r"wikidata", {"entities": {}}),
         (r"search/title\?q=Ultravox", {"pages": [{"title": "Ultravox", "description": "British new wave band",
                                                   "excerpt": "Ultravox were a British new wave band"}]}),
         (r"search/title\?q=Vienna", r["wiki_search_vienna"]),

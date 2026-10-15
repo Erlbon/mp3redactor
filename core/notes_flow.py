@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from core import notes_discogs as nd
+from core.notes_link import LinkError, LinkTarget, parse_link
 from core.notes_cache import CachedDiscogs, CachedFetch, RequestStats, ResponseCache
 from core.notes_phases import TAGS, PhaseTimer
 from core import notes_musicbrainz as nmb
@@ -289,6 +290,10 @@ def _tracks_from_mb(detail: nmb.ReleaseDetail) -> list[TrackInfo]:
     return [TrackInfo(t.disc, t.position, t.title, t.seconds) for t in detail.tracks]
 
 
+def _chosen(candidate: "Candidate") -> str:
+    return "chosen by you from a link" if candidate.note.startswith("from a link") else "chosen by you"
+
+
 @dataclass
 class _ArtistFound:
     """A verified candidate artist of one source and what was fetched to verify it."""
@@ -307,6 +312,8 @@ class _Resolution:
     candidates: list[Candidate] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    via: str = ""  # 'wikipedia': found through the article's Wikidata item (the name searches found nothing verified)
+    page: Optional[object] = None  # the Wikipedia article that led to it (its introduction is used, no second search)
 
     @property
     def confidence(self) -> Confidence:
@@ -357,12 +364,14 @@ class NotesEngine:
             self._discogs = None
         self._pool: Optional[ThreadPoolExecutor] = None
         self._genre_overrides: dict[str, list[str]] = {}  # set_genres(): the genres a folder covers
+        self._links: dict[str, str] = {}  # set_links(): a link given for a folder
         self._artists: dict[tuple, _Resolution] = {}
         self._levels: dict[str, tuple[LocalArtist, LevelDecision]] = {}
         self._groups: dict[str, list[nmb.ReleaseGroup]] = {}
         self._all_groups: dict[str, list[nmb.ReleaseGroup]] = {}
         self._network_failures = 0
         self._seen_groups: dict[str, nmb.ReleaseGroup] = {}  # release groups offered as candidates, by id
+        self._link_hits: dict[str, tuple] = {}  # artist id -> (ArtistHit, Wikipedia page or None) of a pasted link
         self._d_entries: dict[int, list[dict]] = {}  # Discogs artist release lists, by artist id
 
     def _both(self, first: Callable, second: Callable):
@@ -418,7 +427,109 @@ class NotesEngine:
         if self._network_failures >= 2:
             return Proposal(target, Confidence.NONE, reasons=["skipped: the services could not be reached"],
                             problems=["could not reach MusicBrainz (repeated); the rest of the run was not looked up"])
+        url = self._link_override(target.folder)
+        if url:
+            try:
+                return self.rebuild(Proposal(target), link=url)
+            except LinkError as exc:
+                return Proposal(target, Confidence.NONE, reasons=[f"the link given for this folder cannot be used: {exc}"],
+                                problems=[str(exc)])
         return self._dispatch(target)
+
+    def set_links(self, folder: str, url: str) -> None:
+        """A link (Wikipedia, MusicBrainz, Discogs) given for a folder (its name, cleaned name or path): the lookup of that
+        folder goes straight to what the link names (the command line's --link)."""
+        parse_link(url)  # validated now: a bad link is an error at once, not a silent miss later
+        for key in {fold_name(folder), fold_name(lookup_name(folder)), os.path.normcase(os.path.abspath(folder))}:
+            self._links[key] = url
+
+    def _link_override(self, folder: Path) -> str:
+        for key in (os.path.normcase(str(folder)), fold_name(folder.name), fold_name(lookup_name(folder.name))):
+            if key in self._links:
+                return self._links[key]
+        return ""
+
+    def candidate_from_link(self, proposal: Proposal, link: str) -> Candidate:
+        """The Candidate a pasted link names, for this proposal's kind (artist or album), looked up by id: the MusicBrainz /
+        Discogs ids of a Wikipedia or Wikidata page come from Wikidata. Raises LinkError for a link that does not fit."""
+        kind = proposal.target.kind
+        target = parse_link(link, bare_as="release-group" if kind == KIND_ALBUM else "artist")
+        names = [lookup_name(proposal.folder.name)]
+        try:
+            if kind == KIND_ARTIST:
+                return self._artist_candidate_from_link(target, names, proposal)
+            if kind == KIND_ALBUM:
+                return self._album_candidate_from_link(target, proposal)
+        except (nmb.MusicBrainzError, DiscogsError, wp.WikipediaError) as exc:
+            raise LinkError(str(exc)) from exc
+        raise LinkError("A link can be used for an artist or an album folder.")
+
+    def _artist_candidate_from_link(self, target: LinkTarget, names: list[str], proposal: Proposal) -> Candidate:
+        local = proposal.local if isinstance(proposal.local, LocalArtist) else self._artist_level(proposal.folder)[0]
+        titles = [a.titles for a in local.albums]
+        years = [a.year for a in local.albums]
+        names = local.names or names
+        mbid = discogs_id = ""
+        origin = f"from a link: {target.raw or target.id}"
+        if target.kind == "mb-artist":
+            mbid = target.id
+        elif target.kind == "mb-release-group":
+            mbid, _group = nmb.release_group_artist(target.id, self._mb)
+            if not mbid:
+                raise LinkError("MusicBrainz names no artist for that release group.")
+        elif target.kind == "discogs-artist":
+            discogs_id = target.id
+        elif target.kind in ("wikipedia", "wikidata"):
+            ids = (wp.wikidata_identifiers(entity_id=target.id, fetch=self._wiki) if target.kind == "wikidata"
+                   else wp.wikidata_identifiers(title=target.id, fetch=self._wiki, lang=target.lang or "en"))
+            mbid, discogs_id = ids["musicbrainz"], ids["discogs"]
+            if not mbid and not discogs_id:
+                page = wp.get_summary(target.id, self._wiki, target.lang or "en") if target.kind == "wikipedia" else None
+                if page is None:
+                    raise LinkError("That page has no MusicBrainz or Discogs id on Wikidata and no Wikipedia article was found.")
+                return Candidate("wikipedia", page.title, page.title, page.description or "Wikipedia article", [], 0.5,
+                                 f"from a link: {target.raw} (a Wikipedia article only: it names no MusicBrainz or Discogs id)")
+            origin = f"from a link: {target.raw} (Wikidata {ids['qid']})"
+        else:
+            raise LinkError("Use a link to an artist here (a MusicBrainz or Discogs artist page, a Wikipedia article, "
+                            "a MusicBrainz release group of theirs).")
+        if mbid:
+            hit = nmb.artist_by_id(mbid, self._mb)
+            evaluation, _groups = self._evaluate_mb(hit, names, [], titles, years)
+            cand = Candidate("musicbrainz", hit.id, hit.name, evaluation.detail, list(evaluation.hits), 1.0, origin)
+            page = None
+            if target.kind == "wikipedia":
+                try:
+                    page = wp.get_summary(target.id, self._wiki, target.lang or "en")
+                except wp.WikipediaError:
+                    page = None
+            self._link_hits[hit.id] = (hit, page)
+            if discogs_id and discogs_id.isdigit() and self._discogs is not None:
+                cand.also, cand.also_id = "discogs", discogs_id
+            return cand
+        if self._discogs is None:
+            raise LinkError(DISCOGS_MISSING)
+        info = nd.artist_info(self._discogs, int(discogs_id))
+        return Candidate("discogs", discogs_id, info.name, f"Discogs {discogs_id}", [], 1.0, origin)
+
+    def _album_candidate_from_link(self, target: LinkTarget, proposal: Proposal) -> Candidate:
+        origin = f"from a link: {target.raw or target.id}"
+        if target.kind == "mb-release-group":
+            data = nmb.release_group_detail(target.id, self._mb)
+            group = nmb._group({**data, "id": data.get("id") or target.id})
+            self._seen_groups[group.id] = group
+            return Candidate("musicbrainz", group.id, group.title, group.first_date[:4], [], 1.0, origin)
+        if target.kind in ("discogs-release", "discogs-master"):
+            if self._discogs is None:
+                raise LinkError(DISCOGS_MISSING)
+            ident = target.id if target.kind == "discogs-release" else nd.MASTER_PREFIX + target.id
+            return Candidate("discogs", ident, f"Discogs {target.kind.split('-')[1]} {target.id}", "", [], 1.0, origin)
+        if target.kind == "wikipedia":
+            page = wp.get_summary(target.id, self._wiki, target.lang or "en")
+            if page is None:
+                raise LinkError("No Wikipedia article was found at that link.")
+            return Candidate("wikipedia", page.title, page.title, page.description or "Wikipedia article", [], 0.5, origin)
+        raise LinkError("Use a link to an album here (a MusicBrainz release group, a Discogs release or master, a Wikipedia article).")
 
     def can_choose(self, proposal: Proposal, candidate: Candidate) -> bool:
         """Can the proposal be rebuilt around this candidate? Artist and album notes can be built from a
@@ -467,7 +578,7 @@ class NotesEngine:
         return []
 
     def rebuild(self, proposal: Proposal, candidate: Optional[Candidate] = None, level: str = "",
-                genres: Optional[list[str]] = None) -> Proposal:
+                genres: Optional[list[str]] = None, link: Optional[str] = None) -> Proposal:
         """The proposal again after a PERSON decided: `candidate` (one of proposal.candidates) is the artist /
         release group to use whatever the score said, and/or `level` (one of proposal.suggested_levels:
         'artist', 'album', 'genre-collection') is the level to build. A chosen candidate is believed: the result
@@ -477,6 +588,8 @@ class NotesEngine:
         self._network_failures = 0
         target = proposal.target
         kind = target.kind
+        if link:  # 'Look up by link': the pasted link names the artist / album: believed like a picked candidate
+            candidate = self.candidate_from_link(proposal, link)
         if level == LEVEL_LOCAL_TAGS:
             return self.local_note(proposal)
         if level == SUGGEST_ARTIST:
@@ -593,6 +706,140 @@ class NotesEngine:
         res.reasons = [*mb.reasons, *dc.reasons]
         res.problems = [*mb.problems, *dc.problems]
         res.mb, res.discogs = mb.mb, dc.discogs
+        # The name searches verified nothing (a band whose plain name is shared with a city, or written in another script):
+        # Wikipedia's article and its Wikidata item name the MusicBrainz / Discogs ids; then the local album titles.
+        down = any(_is_network_down(p) for p in res.problems)  # the services cannot be reached: nothing more to ask
+        steps = [] if down else ([self._resolve_wikipedia] if self.fetchers.wikipedia else []) + [self._resolve_by_titles]
+        for extra in steps:
+            if res.mb_ok or res.discogs_ok:
+                break
+            more = extra(names, local_titles, local_years)
+            ids = {m.id for m in more.candidates}
+            res.candidates = [*more.candidates, *[c for c in res.candidates if c.id not in ids]]
+            res.reasons += more.reasons
+            res.problems += more.problems
+            if more.mb is not None and (more.mb_ok or res.mb is None):
+                res.mb = more.mb
+            if more.discogs is not None and (more.discogs_ok or res.discogs is None):
+                res.discogs = more.discogs
+            if more.mb_ok or more.discogs_ok:
+                res.via, res.page = more.via, more.page
+        return res
+
+    def _evaluate_mb(self, hit: "nmb.ArtistHit", names, partial, local_titles, local_years):
+        """(the Evaluation of one MusicBrainz artist against the folder, its release groups): the name through the name, sort
+        name and aliases, the local albums found in its discography, the era."""
+        forms = [hit.name, hit.sort_name, *hit.aliases]
+        sim = max(name_similarity(names, forms), 0.55 * name_similarity(partial, forms) if partial else 0.0)
+        groups = self._discography(hit.id)
+        found = discography_hits(local_titles, [g.title for g in groups])
+        return Evaluation(
+            "musicbrainz", hit.id, hit.name, hits=found, name_sim=sim, search_score=hit.score,
+            era_conflict=era_conflict(hit.begin, hit.end, local_years),
+            detail=", ".join(x for x in (hit.disambiguation, hit.country, hit.begin[:4]) if x)), groups
+
+    def _resolve_wikipedia(self, names, local_titles, local_years) -> _Resolution:
+        """WIKIPEDIA FIRST: the article about the artist ('X (band)', 'X (musician)', the search), its Wikidata item's
+        MusicBrainz id (P434) and Discogs id (P1953), then those ids looked up DIRECTLY and verified like any candidate by
+        the local album titles. Verified by at least one local album: confident, 'found through Wikipedia'. No local album
+        found: uncertain (a person decides; never written in a batch)."""
+        res = _Resolution(via="wikipedia")
+        if not self.fetchers.wikipedia:
+            return res
+        context = [t for titles in local_titles for t in titles]
+        notes: list[str] = []
+        try:
+            page = None
+            for name in names[:2]:
+                page = wp.find_artist_page(name, context, self._wiki, notes=notes)
+                if page is not None:
+                    break
+            if page is None:
+                res.reasons.append("Wikipedia: no article about this artist was found and verified")
+                return res
+            ids = wp.wikidata_identifiers(title=page.title, fetch=self._wiki)
+        except wp.WikipediaError as exc:
+            res.problems.append(str(exc))
+            return res
+        if not ids["musicbrainz"] and not ids["discogs"]:
+            res.reasons.append(f"Wikipedia: '{page.title}' has no MusicBrainz or Discogs id on Wikidata")
+            return res
+        res.page = page
+        core_name = re.sub(r"\s*\([^)]*\)\s*$", "", page.title)
+        mb_eval = dc_eval = None
+        try:
+            if ids["musicbrainz"]:
+                hit = nmb.artist_by_id(ids["musicbrainz"], self._mb)
+                mb_eval, groups = self._evaluate_mb(hit, names, [], local_titles, local_years)
+                winner, confidence, why = decide_artist([mb_eval])
+                res.mb = _ArtistFound(mb_eval, confidence, hit=hit, groups=groups)
+                res.reasons += [f"MusicBrainz: {r}" for r in why]
+        except nmb.MusicBrainzError as exc:
+            res.problems.append(str(exc))
+        try:
+            if ids["discogs"] and ids["discogs"].isdigit() and self._discogs is not None and not self._discogs.rate_limited:
+                entries = self._discogs_entries(self._discogs, int(ids["discogs"]))
+                found = discography_hits(local_titles, [e["title"] for e in entries])
+                forms = [core_name, *(([mb_eval.name] if mb_eval else []))]
+                dc_eval = Evaluation("discogs", ids["discogs"], core_name, hits=found, name_sim=name_similarity(names, forms),
+                                     detail=f"Discogs {ids['discogs']}")
+                winner, confidence, why = decide_artist([dc_eval])
+                res.discogs = _ArtistFound(dc_eval, confidence, discogs_hit=nd.DiscogsArtistHit(int(ids["discogs"]), core_name))
+                res.reasons += [f"Discogs: {r}" for r in why]
+        except DiscogsError as exc:
+            res.problems.append(str(exc))
+        sources = " and ".join(s for s, e in (("MusicBrainz", mb_eval), ("Discogs", dc_eval)) if e is not None)
+        res.reasons.insert(0, f"found through Wikipedia: '{page.title}' (found by {page.via}); its Wikidata item {ids['qid']} "
+                              f"names the artist at {sources or 'neither service'}")
+        lead = mb_eval or dc_eval
+        if lead is not None:
+            cand = Candidate(lead.source, lead.id, lead.name, lead.detail, list(lead.hits), lead.name_sim,
+                             f"found through Wikipedia '{page.title}' (Wikidata {ids['qid']})")
+            if mb_eval is not None and dc_eval is not None:
+                cand.also, cand.also_id = "discogs", dc_eval.id
+                cand.detail = "; ".join(x for x in (cand.detail, f"Discogs {dc_eval.id}") if x)
+            res.candidates.append(cand)
+        return res
+
+    def _resolve_by_titles(self, names, local_titles, local_years) -> _Resolution:
+        """The artist's NAME found nothing: search MusicBrainz for the albums by their exact titles (any script) and group
+        the hits by artist. An artist that owns two of the local albums, or the one album that only it has, becomes a
+        candidate and is checked like any other (its discography against all the local albums). A few requests, only here."""
+        res = _Resolution(via="titles")
+        owned: dict[str, int] = {}
+        sole: dict[str, int] = {}
+        seen: set[str] = set()
+        try:
+            for titles in local_titles[:4]:
+                title = titles[0] if titles else ""
+                key = album_key(title)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                owners = {g.artist_id for g in nmb.search_release_groups_by_title(title, self._mb)
+                          if g.artist_id and titles_match(title, g.title)}
+                for owner in owners:
+                    owned[owner] = owned.get(owner, 0) + 1
+                    if len(owners) == 1:
+                        sole[owner] = sole.get(owner, 0) + 1
+            chosen = sorted((o for o in owned if owned[o] >= 2 or sole.get(o)), key=lambda o: (-owned[o], o))[:2]
+            for owner in chosen:
+                hit = nmb.artist_by_id(owner, self._mb)
+                evaluation, groups = self._evaluate_mb(hit, names, [], local_titles, local_years)
+                winner, confidence, why = decide_artist([evaluation])
+                if confidence != Confidence.CONFIDENT and len(evaluation.hits) >= 2 and not evaluation.era_conflict:
+                    confidence = Confidence.CONFIDENT  # two of the albums are theirs: the name may be written in another script
+                    why = [f"{len(evaluation.hits)} local albums are in its discography ({', '.join(evaluation.hits)}), "
+                           f"found by their titles although the name differs"]
+                found = _ArtistFound(evaluation, confidence, hit=hit, groups=groups)
+                if res.mb is None or confidence == Confidence.CONFIDENT:
+                    res.mb = found
+                res.candidates.append(Candidate(
+                    "musicbrainz", hit.id, hit.name, evaluation.detail, list(evaluation.hits), evaluation.name_sim,
+                    f"found by the local album titles ({owned[owner]} of them)"))
+                res.reasons += [f"MusicBrainz (by album titles): {r}" for r in why]
+        except nmb.MusicBrainzError as exc:
+            res.problems.append(str(exc))
         return res
 
     def _resolve_mb(self, names, partial, local_titles, local_years) -> _Resolution:
@@ -688,14 +935,18 @@ class NotesEngine:
         evaluation = Evaluation(candidate.source, candidate.id, candidate.name, hits=list(candidate.hits),
                                 name_sim=candidate.score, detail=candidate.detail)
         if candidate.source == "musicbrainz":
-            forced.mb = _ArtistFound(evaluation, Confidence.CONFIDENT, groups=self._discography(candidate.id))
+            link_hit, link_page = self._link_hits.get(candidate.id, (None, None))
+            forced.mb = _ArtistFound(evaluation, Confidence.CONFIDENT, hit=link_hit, groups=self._discography(candidate.id))
+            if link_page is not None:
+                forced.via, forced.page = "wikipedia", link_page
             if candidate.also == "discogs":  # both sources name this artist: members and profile come from Discogs too
                 forced.discogs = _ArtistFound(Evaluation("discogs", candidate.also_id, candidate.name, hits=list(candidate.hits),
                                                          name_sim=candidate.score, detail=f"Discogs {candidate.also_id}"),
                                               Confidence.CONFIDENT)
         else:
             forced.discogs = _ArtistFound(evaluation, Confidence.CONFIDENT)
-        forced.reasons = [f"chosen by you: {candidate.name} ({candidate.source})"]
+        how = _chosen(candidate)
+        forced.reasons = [f"{how}: {candidate.name} ({candidate.source})"]
         if candidate.hits:
             forced.reasons.append(f"{len(candidate.hits)} local album(s) found in its discography: {', '.join(candidate.hits)}")
         return forced
@@ -756,6 +1007,8 @@ class NotesEngine:
         detail: dict = {}
         sources: list[str] = []
         footer: list[str] = []
+        if res.via == "wikipedia":
+            footer.append("Links to MusicBrainz and Discogs found through Wikipedia's Wikidata item (CC0)")
         info: Optional[nd.DiscogsArtist] = None
         want_info = res.discogs_ok is not None and self._discogs is not None
 
@@ -792,15 +1045,20 @@ class NotesEngine:
         name = (detail.get("name") if detail else "") or (info.name if info else "") or local.name
         if fold_name(name) == fold_name(local.name):
             name = local.name
+        elif mb is not None and mb.hit is not None and fold_name(local.name) in {
+                fold_name(f) for f in (mb.hit.sort_name, *mb.hit.aliases)}:
+            name = local.name  # 'Leningrad' is the band's alias and sort name: the folder's own name stays the title
         # -- the introduction: Wikipedia, else Discogs' profile, else a sidecar's text
         intro, intro_credit, wiki_url = "", "", ""
         if self.fetchers.wikipedia:
             hint_title, wikidata = nmb.wikipedia_hint(detail) if detail else ("", "")
+            page = res.page if res.via == "wikipedia" else None  # the article that named the ids is the introduction
             try:
-                page = wp.find_page(
-                    "artist", name, linked_title=hint_title, wikidata_id=wikidata,
-                    context_terms=[t for names_ in titles for t in names_], fetch=self._wiki,
-                    notes=proposal.reasons)
+                if page is None:
+                    page = wp.find_page(
+                        "artist", name, linked_title=hint_title, wikidata_id=wikidata,
+                        context_terms=[t for names_ in titles for t in names_], fetch=self._wiki,
+                        notes=proposal.reasons)
             except wp.WikipediaError as exc:
                 page = None
                 proposal.problems.append(str(exc))
@@ -1027,7 +1285,7 @@ class NotesEngine:
             return proposal
         release = info.release
         tracks = [TrackInfo(t.disc, t.number, t.title, _seconds(t.duration)) for t in release.tracks]
-        proposal.reasons.append(f"chosen by you: {force.name} (Discogs release {release.id})")
+        proposal.reasons.append(f"{_chosen(force)}: {force.name} (Discogs release {release.id})")
         local_titles = [t.title for t in local.tracks if t.title]
         if tracks and len(local_titles) >= 3:
             overlap = track_overlap(local_titles, [t.title for t in tracks])
@@ -1248,7 +1506,7 @@ class NotesEngine:
         chosen_group = self._seen_groups.get(force.id) if force is not None and force.source == "musicbrainz" else None
         if chosen_group is not None:
             confident_group = chosen_group
-            proposal.reasons.append(f"chosen by you: {force.name}")
+            proposal.reasons.append(f"{_chosen(force)}: {force.name}")
         elif best is not None:
             group, score = best
             rivals = [g for g, s in scored[1:] if s.title_match and abs(s.score - score.score) < 0.05

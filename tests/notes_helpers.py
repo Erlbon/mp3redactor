@@ -48,6 +48,7 @@ class FakeFetch:
 def musicbrainz_routes(search_artist="mb_artist_search_ultravox", rgs="mb_rgs_ultravox", detail="mb_artist_ultravox"):
     r = RECORDED
     routes = [
+        (r"ws/2/release-group\?query=[^ ]*limit=25", {"release-groups": []}),  # the search by album titles: nothing by default
         (r"ws/2/artist\?query", r[search_artist] if search_artist else {"artists": []}),
         (r"ws/2/artist/[^?]+\?", r[detail]),
         (r"ws/2/release-group\?artist=", r[rgs]),
@@ -82,6 +83,7 @@ def cristina_fetchers(with_discogs: bool = True) -> Fetchers:
     mb = FakeFetch([
         (r"ws/2/artist\?query", r["mb_artist_search_cristina"]),
         (r"ws/2/release-group\?artist=", r["mb_rgs_davena"]),
+        (r"ws/2/release-group\?query=", {"release-groups": []}),  # the search by album titles (no artist found by name)
     ])
     wiki = FakeFetch([(r"search/title", {"pages": []}), (r"page/summary/", None)])
     client = None

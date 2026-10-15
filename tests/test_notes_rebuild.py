@@ -6,7 +6,7 @@ from core.notes_local import ALL_KINDS
 from redactor_common.core.notes import parse_front_matter
 from tests.notes_helpers import FakeFetch, make_mp3, ultravox_fetchers, ultravox_library
 
-NO_WIKI = FakeFetch([(r"search/title", {"pages": []}), (r"page/summary/", None)])
+NO_WIKI = FakeFetch([(r"wikidata", {"entities": {}}), (r"search/title", {"pages": []}), (r"page/summary/", None)])
 
 
 def by_key(root):
@@ -73,7 +73,7 @@ def test_an_unclear_level_can_be_rebuilt_as_an_artist_folder(tmp_path):
     base = tmp_path / "Compilation Box"
     make_mp3(base / "One (1980)" / "01 a.mp3", "a", "Queen", "One", 1, "1980")
     make_mp3(base / "Two (1981)" / "01 a.mp3", "a", "Queen", "Two", 1, "1981")
-    engine = NotesEngine(Fetchers(mb=FakeFetch([(r"ws/2/artist\?query", {"artists": []})]), wiki=NO_WIKI))
+    engine = NotesEngine(Fetchers(mb=FakeFetch([(r"ws/2/artist\?query", {"artists": []}), (r"ws/2/release-group\?query=", {"release-groups": []})]), wiki=NO_WIKI))
     [unclear] = build_proposals([by_key(tmp_path)[("artist", "Compilation Box")]], engine=engine)
     assert unclear.level == "unclear" and "artist" in unclear.suggested_levels
     rebuilt = engine.rebuild(unclear, level="artist")

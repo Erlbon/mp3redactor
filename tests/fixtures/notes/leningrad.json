@@ -1,0 +1,47 @@
+{
+  "_comment": "Hand-made replies in the real services' shapes, built from verified live facts about the Russian band Leningrad (MusicBrainz 2bf704b3-4c05-441f-ad54-52722c1bdba9 'Ленинград', sort-name and alias 'Leningrad'; Discogs 331797; Wikipedia 'Leningrad (band)' = Wikidata Q909810 with P434 and P1953). The album lists are shortened.",
+  "mbid": "2bf704b3-4c05-441f-ad54-52722c1bdba9",
+  "cowboys": "9a2f0d6c-5b84-4e0a-9d6e-3d0f0a7c1c11",
+  "search_latin": {"artists": [
+    {"id": "9a2f0d6c-5b84-4e0a-9d6e-3d0f0a7c1c11", "name": "Leningrad Cowboys", "sort-name": "Leningrad Cowboys", "score": 100, "type": "Group",
+     "country": "FI", "life-span": {"begin": "1986"}, "disambiguation": "Finnish rock band"},
+    {"id": "3b1a4a52-9d7e-4f33-8f1a-6a5a1c8d2e22", "name": "Leningrad Sandwich", "sort-name": "Leningrad Sandwich", "score": 90, "type": "Group",
+     "country": "DE", "life-span": {"begin": "2005"}}
+  ]},
+  "search_cyrillic": {"artists": [
+    {"id": "2bf704b3-4c05-441f-ad54-52722c1bdba9", "name": "Ленинград", "sort-name": "Leningrad", "score": 100, "type": "Group", "country": "RU",
+     "life-span": {"begin": "1997"}, "aliases": [{"name": "Leningrad", "sort-name": "Leningrad"}], "disambiguation": "Russian ska punk band"}
+  ]},
+  "artist": {"id": "2bf704b3-4c05-441f-ad54-52722c1bdba9", "name": "Ленинград", "sort-name": "Leningrad", "type": "Group", "country": "RU",
+             "life-span": {"begin": "1997"}, "aliases": [{"name": "Leningrad", "sort-name": "Leningrad"}],
+             "area": {"name": "Russia"}, "relations": [], "genres": [{"name": "ska punk", "count": 3}], "tags": []},
+  "release_groups_band": {"release-groups": [
+    {"id": "rg-dachniki", "title": "Дачники", "primary-type": "Album", "first-release-date": "2000"},
+    {"id": "rg-pirates", "title": "Пираты XXI века", "primary-type": "Album", "first-release-date": "2001"},
+    {"id": "rg-bikini", "title": "Бикини", "primary-type": "Album", "first-release-date": "2004"}
+  ]},
+  "release_groups_cowboys": {"release-groups": [
+    {"id": "rg-cow1", "title": "Leningrad Cowboys Go America", "primary-type": "Album", "first-release-date": "1989"}
+  ]},
+  "title_search_dachniki": {"release-groups": [
+    {"id": "rg-dachniki", "title": "Дачники", "primary-type": "Album", "first-release-date": "2000", "score": 100,
+     "artist-credit": [{"name": "Ленинград", "joinphrase": "", "artist": {"id": "2bf704b3-4c05-441f-ad54-52722c1bdba9", "name": "Ленинград"}}]}
+  ]},
+  "title_search_pirates": {"release-groups": [
+    {"id": "rg-pirates", "title": "Пираты XXI века", "primary-type": "Album", "first-release-date": "2001", "score": 100,
+     "artist-credit": [{"name": "Ленинград", "joinphrase": "", "artist": {"id": "2bf704b3-4c05-441f-ad54-52722c1bdba9", "name": "Ленинград"}}]}
+  ]},
+  "wikipedia_summary": {"type": "standard", "title": "Leningrad (band)", "description": "Russian ska punk band",
+    "extract": "Leningrad (Russian: Ленинград) is a Russian ska punk band from Saint Petersburg, formed in 1997 by Sergey Shnurov. Its albums include Дачники.",
+    "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Leningrad_(band)"}}},
+  "wikidata_claims": {"entities": {"Q909810": {"id": "Q909810", "claims": {
+    "P434": [{"mainsnak": {"datavalue": {"value": "2bf704b3-4c05-441f-ad54-52722c1bdba9", "type": "string"}}}],
+    "P1953": [{"mainsnak": {"datavalue": {"value": "331797", "type": "string"}}}]}}}},
+  "wikidata_missing": {"entities": {"-1": {"site": "enwiki", "title": "Nothing", "missing": ""}}},
+  "discogs_search_latin": {"results": [{"id": 111, "title": "Leningrad Cowboys"}, {"id": 222, "title": "Leningrad Philharmonic Orchestra"}]},
+  "discogs_releases_cowboys": {"releases": [{"title": "Thank You Very Much", "year": 1993, "role": "Main", "type": "master"}]},
+  "discogs_releases_orchestra": {"releases": [{"title": "Symphony No. 5", "year": 1975, "role": "Main", "type": "master"}]},
+  "discogs_releases_band": {"releases": [{"title": "Дачники", "year": 2000, "role": "Main", "type": "master"}, {"title": "Бикини", "year": 2004, "role": "Main", "type": "master"}]},
+  "discogs_artist_band": {"id": 331797, "name": "Ленинград", "profile": "Ska band from Saint Petersburg, Russia.", "members": [],
+                          "uri": "https://www.discogs.com/artist/331797"}
+}

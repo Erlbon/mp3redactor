@@ -41,6 +41,7 @@ from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, 
 from core.notes_local import ALL_KINDS
 from core import notes_debug
 from core.notes_kinds import kinds_text, parse_kinds
+from core.notes_link import LinkError
 from core.notes_local import LIBRARY_ROOT_MESSAGE
 from core.notes_scope import ScopeChoice, count_targets, folder_caption, folder_info, kinds_sentence
 from core.notes_timing import lookup_sentence, progress_suffix, scope_hint
@@ -159,6 +160,7 @@ class ProposalPanel(QWidget):
     candidateChosen = pyqtSignal(object)  # a Candidate
     levelChosen = pyqtSignal(str)  # a suggested level key
     genresChosen = pyqtSignal(list)  # the genres a genre / collection folder covers, as edited
+    linkChosen = pyqtSignal(str)  # a pasted link (Wikipedia, MusicBrainz, Discogs) or MusicBrainz id, already checked
     openNoteRequested = pyqtSignal()
     showFolderRequested = pyqtSignal()
 
@@ -257,6 +259,30 @@ class ProposalPanel(QWidget):
         local_row.addWidget(self.local_button)
         local_row.addStretch(1)
 
+        # 'Look up by link': for any artist / album row, paste the page that is the right one
+        self.link_box = QWidget()
+        link_layout = QVBoxLayout(self.link_box)
+        link_layout.setContentsMargins(0, 0, 0, 0)
+        link_row = QHBoxLayout()
+        link_row.addWidget(QLabel("Link:"))
+        self.link_edit = QLineEdit()
+        self.link_edit.setPlaceholderText("Paste a Wikipedia, MusicBrainz or Discogs link (or a MusicBrainz id)")
+        self.link_edit.setToolTip("The right page for this folder, when the search did not find it: a Wikipedia article, a "
+                                  "MusicBrainz artist or release-group page, a Discogs artist / release / master page, or a "
+                                  "bare MusicBrainz id. Only musicbrainz.org, discogs.com, wikipedia.org and wikidata.org are used.")
+        self.link_button = _flat_button("Look up by link")
+        self.link_button.clicked.connect(self._link_clicked)
+        self.link_edit.returnPressed.connect(self._link_clicked)
+        self.link_edit.textChanged.connect(lambda _t: self.set_link_error(""))
+        link_row.addWidget(self.link_edit, 1)
+        link_row.addWidget(self.link_button)
+        self.link_error = QLabel()
+        self.link_error.setStyleSheet("color:#b00020;")
+        self.link_error.setWordWrap(True)
+        self.link_error.setVisible(False)
+        link_layout.addLayout(link_row)
+        link_layout.addWidget(self.link_error)
+
         # a genre / collection note: which genres the folder covers ('1.61 - Ska' = Ska, Ska punk); edit and look up again
         self.genres_box = QWidget()
         genres_row = QHBoxLayout(self.genres_box)
@@ -309,6 +335,7 @@ class ProposalPanel(QWidget):
         layout.addWidget(self.candidate_box)
         layout.addWidget(self.local_box)
         layout.addWidget(self.genres_box)
+        layout.addWidget(self.link_box)
         layout.addWidget(self.tabs, 1)
         layout.addLayout(foot)
         _shrinkable(self.path_label, self.kind_label, self.reasons_label, self.problems_label, self.sources_label,
@@ -341,6 +368,7 @@ class ProposalPanel(QWidget):
             self.candidate_box.hide()
             self.local_box.hide()
             self.genres_box.hide()
+            self.link_box.hide()
             self.preview.clear()
             self.raw.clear()
             self.open_note_button.hide()
@@ -385,6 +413,7 @@ class ProposalPanel(QWidget):
         show_candidates = bool(self._candidates) and item.state == PENDING and (
             p.confidence != Confidence.CONFIDENT or item.user_resolved)
         self.candidate_box.setVisible(show_candidates)
+        self.link_box.setVisible(p.kind in ("artist", "album") and item.state == PENDING and p.note_kind != "about")
         about = p.note_kind == "about" and item.state == PENDING
         self.genres_box.setVisible(about)
         if about and not self.genres_edit.hasFocus():
@@ -453,6 +482,23 @@ class ProposalPanel(QWidget):
         cand = self.selected_candidate()
         if cand is not None:
             self.candidateChosen.emit(cand)
+
+    def set_link_error(self, text: str) -> None:
+        self.link_error.setText(text)
+        self.link_error.setVisible(bool(text))
+
+    def _link_clicked(self) -> None:
+        from core.notes_link import LinkError, parse_link
+
+        kind = self._item.proposal.kind if self._item is not None else "artist"
+        text = self.link_edit.text().strip()
+        try:
+            parse_link(text, bare_as="release-group" if kind == "album" else "artist")  # checked here: nothing is fetched yet
+        except LinkError as exc:
+            self.set_link_error(str(exc))
+            return
+        self.set_link_error("")
+        self.linkChosen.emit(text)
 
     def _genres_clicked(self) -> None:
         genres = [g.strip() for g in self.genres_edit.text().replace(";", ",").split(",") if g.strip()]
@@ -548,6 +594,7 @@ class NotesReviewDialog(QDialog):
         panel.candidateChosen.connect(self._choose_candidate)
         panel.levelChosen.connect(self._choose_level)
         panel.genresChosen.connect(self._choose_genres)
+        panel.linkChosen.connect(self._choose_link)
         panel.openNoteRequested.connect(self.open_current_note)
         panel.showFolderRequested.connect(self.show_current_folder)
         return panel
@@ -1036,13 +1083,25 @@ class NotesReviewDialog(QDialog):
     def _choose_genres(self, genres: list) -> None:
         self._resolve(None, "", genres=genres)
 
-    def _resolve(self, candidate: Optional[Candidate], level: str, genres: Optional[list] = None) -> None:
+    def _choose_link(self, link: str) -> None:
+        self._resolve(None, "", link=link)
+
+    def _resolve(self, candidate: Optional[Candidate], level: str, genres: Optional[list] = None,
+                 link: Optional[str] = None) -> None:
         item = self.session.items[self.index]
-        what = candidate.name if candidate else (", ".join(genres) if genres else LEVEL_LABELS.get(level, level))
-        extra = {"genres": genres} if genres is not None else {}  # (a rebuild callable without genres keeps working)
+        what = (candidate.name if candidate else ("the link" if link else (", ".join(genres) if genres
+                                                                            else LEVEL_LABELS.get(level, level))))
+        extra = {}  # (a rebuild callable without these keeps working)
+        if genres is not None:
+            extra["genres"] = genres
+        if link is not None:
+            extra["link"] = link
         try:
             rebuilt = run_busy(self, f"Looking up {what}…", lambda: self._rebuild(item.proposal, candidate, level, **extra),
                                title="Create Notes")
+        except LinkError as exc:  # the link cannot be used: said next to the line, nothing changes
+            (self.list_panel if self.view == VIEW_LIST else self.one_panel).set_link_error(str(exc))
+            return
         except Exception as exc:  # noqa: BLE001 -- shown as one readable message, never a traceback
             QMessageBox.warning(self, "Create Notes", f"The lookup failed: {exc}")
             return
@@ -1212,8 +1271,9 @@ def create_notes(
 
 
 def _rebuild_with(engine: NotesEngine):
-    def rebuild(proposal: Proposal, candidate: Optional[Candidate], level: str, genres: Optional[list] = None) -> Proposal:
-        return engine.rebuild(proposal, candidate=candidate, level=level, genres=genres)
+    def rebuild(proposal: Proposal, candidate: Optional[Candidate], level: str, genres: Optional[list] = None,
+                link: Optional[str] = None) -> Proposal:
+        return engine.rebuild(proposal, candidate=candidate, level=level, genres=genres, link=link)
 
     return rebuild
 

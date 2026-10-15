@@ -110,8 +110,8 @@ def six_artists(root):
 
 
 def nothing_found():
-    mb = FakeFetch([(r"ws/2/artist\?query", {"artists": []})])
-    wiki = FakeFetch([(r"search/title", {"pages": []}), (r"page/summary/", None)])
+    mb = FakeFetch([(r"ws/2/artist\?query", {"artists": []}), (r"ws/2/release-group\?query=", {"release-groups": []})])
+    wiki = FakeFetch([(r"wikidata", {"entities": {}}), (r"search/title", {"pages": []}), (r"page/summary/", None)])
     return Fetchers(mb=mb, wiki=wiki)
 
 

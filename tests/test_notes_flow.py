@@ -87,7 +87,7 @@ def test_album_search_fallback_asks_for_primary_type_album(tmp_path):
     ultravox_library(tmp_path, with_quartet=False)
     fetchers = ultravox_fetchers(search_artist=None)  # no artist found: the album search carries the proof
     [proposal] = build_proposals([targets(tmp_path)[("album", "Vienna (1980)")]], fetchers)
-    assert fetchers.mb.count(r"release-group\?query=.*primarytype") == 1
+    assert fetchers.mb.count(r"release-group\?query=.*primarytype.*limit=6") == 1
     assert proposal.confidence == Confidence.CONFIDENT
     assert "rg-ultravox-3" in proposal.note_text and "cd130148" not in proposal.note_text
     first = proposal.candidates[0]

@@ -107,10 +107,11 @@ def lookup_name(folder_name: str) -> str:
 
 
 def fold_name(text: str) -> str:
-    """A name for comparing: accents and case gone, '&' as 'and', punctuation and spacing collapsed."""
+    """A name for comparing: accents and case gone, '&' as 'and', punctuation and spacing collapsed. Letters of every script
+    stay ('Дачники' is 'дачники', not nothing: the albums of a Russian band are matched by their Cyrillic titles)."""
     text = unicodedata.normalize("NFKD", text or "")
     text = "".join(c for c in text if not unicodedata.combining(c)).casefold().replace("&", " and ")
-    return re.sub(r"[^0-9a-z]+", " ", text).strip()
+    return re.sub(r"[\W_]+", " ", text).strip()  # letters and digits of ANY script stay (Cyrillic, Greek, CJK ...)
 
 
 # Folders that hold many artists' work: a COLLECTION (about.md level), never an artist (artist.md).

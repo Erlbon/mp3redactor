@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-15#22 -- Create Notes: bands the name search cannot find (the Leningrad case)
+
+A Latin folder `Leningrad` with Cyrillic tags and albums: a MusicBrainz name search for "Leningrad" returns Leningrad Cowboys first and not the band (MusicBrainz names it `Ленинград`, sort name and alias `Leningrad`); Discogs does not list it in the top 8 either.
+- New: **Wikipedia first** when the name searches do not verify an artist. The article (`X (band)`, `X (musician)`, `X (singer)`, then the plain title) names the MusicBrainz and Discogs ids on Wikidata (P434, P1953); the artist is then looked up by id and checked against the local albums, in any script. Verified by at least one local album: confident, with the reason "found through Wikipedia (Wikidata links to MusicBrainz/Discogs)"; otherwise uncertain (never written in a batch without `--include-uncertain`). The footer credits Wikipedia and Wikidata (CC0).
+- New: **the local album titles are searched** (MusicBrainz release groups, one request per title) and grouped by artist id; an artist who owns two or more of the local albums, or the only owner of one, becomes a candidate. Only runs when the name searches fail.
+- New: the artist search asks for the **name, an alias or the sort name** (`artist:"X" OR alias:"X" OR sortname:"X"`), and the tag spelling is searched as well as the folder name.
+- New: **Look up by link** on the review page (a line edit and a button under the candidates, for artist and album rows; an inline red message for a link that cannot be used, nothing is fetched then) and `notes --link "FOLDER=URL"` (repeatable). Accepts Wikipedia, MusicBrainz and Discogs links, Wikidata items and a bare MusicBrainz id. Only musicbrainz.org, discogs.com, wikipedia.org and wikidata.org are ever used (look-alike hosts such as `musicbrainz.org.evil.com` are refused). The row is rebuilt in place, confident, marked "chosen by you from a link".
+- Changed: comparing names and titles keeps letters of every script (before, Cyrillic titles folded to nothing and could never match a local album). A folder named in Latin letters whose albums are all tagged in another script (`Leningrad` / `Ленинград`) is an artist folder, decided by the discography match, not "level unclear". When the folder's name is the artist's alias or sort name, it stays the note's title.
+
 ## 2026-10-15#21 -- Create Notes list: no lost selection after the filter, no moving tooltip, a troubleshooting log
 
 Found by driving the review list on the REAL display (Windows platform, real fonts and painting, real mouse and key events; the same sequences as before: clicks on rows, hovers, keys, wheel, Use selected candidate, ticks, level, Tick best guesses, the filter, resizing, the splitter; a screenshot and a pixel comparison after each step):

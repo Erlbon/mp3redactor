@@ -256,6 +256,7 @@ def test_soundtrack_album_note_uses_the_soundtrack_release_group_the_film_articl
                                                     for i, t in enumerate(titles, start=1)]}]}
     mb = FakeFetch([
         (r"ws/2/artist\?query", {"artists": []}),
+        (r"ws/2/release-group\?query=[^ ]*limit=25", {"release-groups": []}),  # (the search by album titles finds nothing)
         (r"ws/2/release-group\?query=.*secondarytype", {"release-groups": [rg]}),
         (r"ws/2/release-group/", {"id": "rg-br", "title": rg["title"], "first-release-date": "1994-10-11", "genres": [{"name": "synth-pop", "count": 2}], "relations": []}),
         (r"ws/2/release\?release-group=", {"releases": [{"id": "rel-br", "status": "Official", "date": "1994-10-11", "media": [{"track-count": 3}]}]}),
@@ -266,7 +267,7 @@ def test_soundtrack_album_note_uses_the_soundtrack_release_group_the_film_articl
         (r"page/summary/Blade_Runner_\(soundtrack\)", {"type": "standard", "title": "Blade Runner (soundtrack)", "description": "1994 soundtrack album by Vangelis",
                                                       "extract": "Blade Runner is the soundtrack album to the 1982 film of the same name, composed by Vangelis.",
                                                       "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Blade_Runner_(soundtrack)"}}}),
-        (r"search/title", {"pages": []}), (r"page/summary/", None),
+        (r"wikidata", {"entities": {}}), (r"search/title", {"pages": []}), (r"page/summary/", None),
     ])
     target = level_targets(tmp_path)[("album", folder.name)]
     [p] = build_proposals([target], Fetchers(mb=mb, wiki=wiki))

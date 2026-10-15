@@ -147,6 +147,56 @@ def title_from_wikidata(entity_id: str, fetch: Optional[Callable] = None, lang: 
     return str((entity.get("sitelinks") or {}).get(f"{lang}wiki", {}).get("title") or "")
 
 
+def wikidata_identifiers(title: str = "", entity_id: str = "", fetch: Optional[Callable] = None, lang: str = "en") -> dict:
+    """What a Wikipedia article's Wikidata item says about the artist elsewhere: {'qid', 'musicbrainz' (P434, the MusicBrainz
+    artist id), 'discogs' (P1953, the Discogs artist id)}; empty strings for what the item does not have. By the article
+    `title` (one request: wbgetentities with sites / titles) or by the item id. Raises WikipediaError only when the service
+    cannot be reached."""
+    params = {"action": "wbgetentities", "props": "claims", "format": "json"}
+    if entity_id:
+        if not re.fullmatch(r"Q\d+", entity_id):
+            return {"qid": "", "musicbrainz": "", "discogs": ""}
+        params["ids"] = entity_id
+    elif title:
+        params.update({"sites": f"{lang}wiki", "titles": title})
+    else:
+        return {"qid": "", "musicbrainz": "", "discogs": ""}
+    data = _get(WIKIDATA_URL + "?" + urlencode(params), fetch) or {}
+    found = {"qid": "", "musicbrainz": "", "discogs": ""}
+    for qid, entity in (data.get("entities") or {}).items():
+        if not isinstance(entity, dict) or "missing" in entity or not str(qid).startswith("Q"):
+            continue
+        found["qid"] = str(qid)
+        claims = entity.get("claims") or {}
+        for prop, key in (("P434", "musicbrainz"), ("P1953", "discogs")):
+            for claim in claims.get(prop) or []:
+                value = (((claim.get("mainsnak") or {}).get("datavalue") or {}).get("value"))
+                if isinstance(value, str) and value.strip():
+                    found[key] = value.strip()
+                    break
+        break
+    return found
+
+
+ARTIST_SUFFIXES = ("band", "musician", "singer", "group", "rapper", "duo", "DJ")
+
+
+def find_artist_page(name: str, context_terms: Iterable[str] = (), fetch: Optional[Callable] = None, lang: str = "en",
+                     notes: Optional[list[str]] = None) -> Optional[Page]:
+    """The Wikipedia article of a band / musician whose plain name is shared with a city, a film or another act:
+    'Leningrad (band)', 'X (musician)', 'X (singer)'... tried as the article title, then the usual search. Each page must
+    pass the same check as any artist page (a music word in its lead, the name in its title or lead, and the name as the
+    title's own or a local album named in the lead). None when no such page is found."""
+    notes = notes if notes is not None else []
+    context_terms = [t for t in context_terms if t]
+    for suffix in ARTIST_SUFFIXES[:3]:
+        page = _verified(get_summary(f"{name} ({suffix})", fetch, lang))
+        if page and looks_like(page, "artist", name, "", context_terms):
+            page.via = f"the title '{name} ({suffix})'"
+            return page
+    return find_page("artist", name, context_terms=context_terms, fetch=fetch, lang=lang, notes=notes)
+
+
 # ---------------------------------------------------------------------------
 # Verifying a page
 # ---------------------------------------------------------------------------
@@ -154,7 +204,7 @@ def title_from_wikidata(entity_id: str, fetch: Optional[Callable] = None, lang: 
 def _fold(text: str) -> str:
     text = unicodedata.normalize("NFKD", text or "")
     text = "".join(c for c in text if not unicodedata.combining(c)).casefold().replace("&", " and ")
-    return re.sub(r"[^0-9a-z]+", " ", text).strip()
+    return re.sub(r"[\W_]+", " ", text).strip()
 
 
 _MUSIC_WORDS = re.compile(

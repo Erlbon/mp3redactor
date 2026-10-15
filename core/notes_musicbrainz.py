@@ -79,6 +79,7 @@ class ReleaseGroup:
     secondary: list[str] = field(default_factory=list)  # "Compilation", "Live"...
     artist: str = ""
     score: int = 0
+    artist_id: str = ""
 
     @property
     def year(self) -> str:
@@ -149,19 +150,48 @@ def search_artists(name: str, fetch: Optional[Callable] = None, limit: int = 6) 
     which is how "Cristina" finds Cristina D'Avena: the caller verifies each candidate's discography."""
     if not name.strip():
         return []
-    data = _get("artist", fetch or _fetch(), query=f"artist:{_lucene(name)}", limit=limit)
-    hits = []
-    for a in data.get("artists", []):
-        if not a.get("id"):
-            continue
-        life = a.get("life-span") or {}
-        hits.append(ArtistHit(
-            id=a["id"], name=a.get("name") or "", score=int(a.get("score") or 0), type=a.get("type") or "",
-            country=a.get("country") or "", disambiguation=a.get("disambiguation") or "",
-            begin=life.get("begin") or "", end=life.get("end") or "", sort_name=a.get("sort-name") or "",
-            aliases=[x.get("name", "") for x in a.get("aliases", []) if x.get("name")],
-        ))
-    return hits
+    quoted = _lucene(name)
+    # the name, an alias or the sort name: a Russian band is 'Ленинград' with the alias and sort name 'Leningrad'
+    data = _get("artist", fetch or _fetch(), query=f"artist:{quoted} OR alias:{quoted} OR sortname:{quoted}", limit=limit)
+    return [_artist_hit(a) for a in data.get("artists", []) if a.get("id")]
+
+
+def _artist_hit(a: dict) -> "ArtistHit":
+    life = a.get("life-span") or {}
+    return ArtistHit(
+        id=a["id"], name=a.get("name") or "", score=int(a.get("score") or 0), type=a.get("type") or "",
+        country=a.get("country") or "", disambiguation=a.get("disambiguation") or "",
+        begin=life.get("begin") or "", end=life.get("end") or "", sort_name=a.get("sort-name") or "",
+        aliases=[x.get("name", "") for x in a.get("aliases", []) if x.get("name")],
+    )
+
+
+def artist_by_id(mbid: str, fetch: Optional[Callable] = None) -> "ArtistHit":
+    """One artist looked up DIRECTLY by its MusicBrainz id (with its aliases), as an ArtistHit with score 100."""
+    data = _get(f"artist/{mbid}", fetch or _fetch(), inc="aliases")
+    if not data.get("id"):
+        raise MusicBrainzError("MusicBrainz has no artist with that id")
+    hit = _artist_hit(data)
+    hit.score = 100
+    return hit
+
+
+def search_release_groups_by_title(title: str, fetch: Optional[Callable] = None, limit: int = 25) -> list["ReleaseGroup"]:
+    """Release groups called exactly `title` (any script), whoever made them: the albums of a folder when the artist's NAME
+    finds nothing. Each carries its artist id (ReleaseGroup.artist_id)."""
+    if not title.strip():
+        return []
+    data = _get("release-group", fetch or _fetch(), query=f"releasegroup:{_lucene(title)} AND primarytype:album", limit=limit)
+    return [_group(g) for g in data.get("release-groups", []) if g.get("id")]
+
+
+def release_group_artist(rgid: str, fetch: Optional[Callable] = None) -> tuple[str, "ReleaseGroup"]:
+    """(the MusicBrainz id of the artist that made this release group, the release group): a release-group link pasted
+    where an artist is wanted."""
+    data = _get(f"release-group/{rgid}", fetch or _fetch(), inc="artists")
+    credit = data.get("artist-credit") or []
+    artist_id = ((credit[0] or {}).get("artist") or {}).get("id", "") if credit else ""
+    return artist_id, _group({**data, "id": data.get("id") or rgid})
 
 
 def artist_detail(mbid: str, fetch: Optional[Callable] = None) -> dict:
@@ -204,6 +234,8 @@ def _group(g: dict) -> ReleaseGroup:
         id=g["id"], title=g.get("title") or "", first_date=g.get("first-release-date") or "",
         primary=g.get("primary-type") or "", secondary=list(g.get("secondary-types") or []),
         artist=_credit(g.get("artist-credit")), score=int(g.get("score") or 0),
+        artist_id=next((((c or {}).get("artist") or {}).get("id", "") for c in g.get("artist-credit") or []
+                        if ((c or {}).get("artist") or {}).get("id")), ""),
     )
 
 
