@@ -52,6 +52,9 @@ GENERIC_FOLDER_NAMES = frozenset({
     # a place that holds the artists, not a genre or an artist: a folder you choose by this name is a library root
     "bands", "band", "artists", "media", "albums", "archive", "collection",
 })
+LIBRARY_ROOT_MESSAGE = (
+    "This folder looks like a library root, not a genre: nothing to write here. "
+    "Choose the genre folder itself or one level lower.")
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +256,17 @@ class ScanResult:
     targets: list[Target] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
     groupings: list[Skipped] = field(default_factory=list)  # alphabetical grouping folders: no note, no proposal
+    library_root: bool = False  # a folder the scan started from was left out as a generic place name / a grouping
     missing: list[str] = field(default_factory=list)  # arguments that named nothing
+
+    @property
+    def only_a_library_root(self) -> bool:
+        """Nothing to write, and the reason is the folder itself: it is empty, or a generic place / grouping (a library
+        root), not that its folders already have notes. The message is LIBRARY_ROOT_MESSAGE."""
+        if self.targets or self.missing:
+            return False
+        has_notes = any(s.reason.startswith("already has") for s in self.skipped)
+        return not has_notes and (self.library_root or not (self.skipped or self.groupings))
 
 
 def _resolve_roots(paths: Iterable[str | os.PathLike]) -> tuple[list[Path], list[str]]:
@@ -297,15 +310,14 @@ def _has_audio_below(folder: Path, depth: int = 4) -> bool:
 def classify_level(folder: Path, is_root: bool = False, include_subfolders: bool = True) -> str:
     """classify() plus the genre level: 'genre', 'artist', 'album' or ''. An underscore folder with audio
     anywhere below it is a grouping (genre/about level) whatever else it looks like. Otherwise a folder with
-    artist folders directly below it is a genre folder, except the library root: the folder a recursive scan
-    started from is never given a note (with `include_subfolders` False the named folder is taken as meant)."""
+    artist folders directly below it is a genre folder. The folder a scan STARTS from is judged like any other: it gets
+    its own note when it is eligible (a generic place name such as Music or Bands, and an alphabetical grouping, never
+    get one: scan() leaves them out and says it looked like a library root)."""
     if folder.name.startswith("_") and _has_audio_below(folder):
         return KIND_GENRE
     kind = classify(folder)
     if kind:
         return kind
-    if is_root and include_subfolders:
-        return ""
     if any(classify(child) == KIND_ARTIST for child in _entries(folder)[1]):
         return KIND_GENRE
     return ""
@@ -332,6 +344,7 @@ def scan(
     wanted = set(kinds)
     result = ScanResult()
     roots, result.missing = _resolve_roots(paths)
+    root_keys = {os.path.normcase(str(r)) for r in roots}
     seen: set[str] = set()
 
     def consider(folder: Path, kind: str) -> None:
@@ -343,6 +356,7 @@ def scan(
         seen.add(key)
         if kind == KIND_GENRE and is_alphabetical_grouping(folder.name):
             result.groupings.append(Skipped(folder, kind, GROUPING_REASON))
+            result.library_root = result.library_root or key in root_keys
             return
         if kind == KIND_ARTIST and is_collection_name(folder.name):
             kind = KIND_GENRE  # 'Various Artists', 'Soundtracks'...: a collection, its note is about.md
@@ -350,6 +364,7 @@ def scan(
                 return
         if kind in (KIND_ARTIST, KIND_GENRE) and is_generic_name(folder.name.lstrip("_")) and not is_collection_name(folder.name):
             result.skipped.append(Skipped(folder, kind, f"'{folder.name}' is not a {kind} folder name"))
+            result.library_root = result.library_root or key in root_keys
             return
         found = existing_note(folder)
         if found:

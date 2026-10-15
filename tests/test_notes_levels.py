@@ -127,11 +127,12 @@ def soundtracks(root):
 
 
 def test_soundtracks_folder_is_a_collection_with_albums_and_no_artist_level(tmp_path):
-    soundtracks(tmp_path)
-    found = level_targets(tmp_path)
+    lib = tmp_path / "Music"
+    soundtracks(lib)
+    found = level_targets(lib)
     assert sorted(found) == [("album", "Blade Runner (1982)"), ("album", "Pulp Fiction (1994)"), ("genre", "Soundtracks")]
     assert ("artist", "Soundtracks") not in found
-    p = proposal_for(tmp_path, ("genre", "Soundtracks"), Fetchers(wiki=genre_wiki(found=False)))
+    p = proposal_for(lib, ("genre", "Soundtracks"), Fetchers(wiki=genre_wiki(found=False)))
     assert p.note_kind == "about" and p.path.endswith("about.md") and p.confidence == Confidence.UNCERTAIN
 
 

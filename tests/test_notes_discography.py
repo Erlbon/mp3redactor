@@ -94,8 +94,8 @@ def test_the_artist_note_has_the_discography_and_nothing_baked_in():
 
 
 def test_a_real_artist_note_from_the_engine_has_no_links_to_navigate_and_no_library_state(tmp_path):
-    ultravox_library(tmp_path)
-    found = scan([tmp_path], kinds=[KIND_ARTIST, KIND_ALBUM, KIND_GENRE])
+    ultravox_library(tmp_path / "Music")  # a library root: the folder you start from gets no note of its own
+    found = scan([tmp_path / "Music"], kinds=[KIND_ARTIST, KIND_ALBUM, KIND_GENRE])
     for proposal in build_proposals(found.targets, ultravox_fetchers()):
         assert proposal.writable
         assert "[[" not in proposal.note_text and "in this library" not in proposal.note_text.lower()

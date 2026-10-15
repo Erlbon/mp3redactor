@@ -65,6 +65,7 @@ def test_a_sidecar_is_not_a_note_of_our_own(tmp_path):
 
 
 def test_collection_names_get_about_md_never_artist_md(tmp_path):
+    tmp_path = tmp_path / "Music"  # a library root (a generic name): the folder you start from gets no note of its own
     make_mp3(tmp_path / "Various Artists" / "Some Compilation" / "01 a.mp3", "a")
     # by default (artist + album) the container is not a target at all; with the genre/collection level it is,
     # as an about.md level, and the album below keeps its own album.md

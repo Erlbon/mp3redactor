@@ -40,7 +40,8 @@ from core.notes_flow import (
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
 from core.notes_kinds import kinds_text, parse_kinds
-from core.notes_scope import ScopeChoice, count_targets, kinds_sentence
+from core.notes_local import LIBRARY_ROOT_MESSAGE
+from core.notes_scope import ScopeChoice, count_targets, folder_caption, folder_info, kinds_sentence
 from core.notes_timing import lookup_sentence, progress_suffix, scope_hint
 from core.notes_local import KIND_ALBUM, KIND_ARTIST
 from redactor_common.core.notes import STATE_LEGACY
@@ -1033,6 +1034,9 @@ def create_notes(
         QMessageBox.warning(parent, title, f"The folders could not be read: {exc}")
         return None
     if not found.targets:
+        if found.only_a_library_root:  # an empty or unreadable folder, or a library root (a generic place name)
+            QMessageBox.information(parent, title, LIBRARY_ROOT_MESSAGE)
+            return None
         why = []
         if found.skipped:
             why.append(f"{len(found.skipped)} folder(s) already have a note and were left alone.")
@@ -1154,6 +1158,25 @@ class _CountThread(QThread):
         except Exception:  # noqa: BLE001 -- only a hint: no counts, no warning
             counts = None
         self.counted.emit(self.key, counts)
+
+
+class _DescribeThread(QThread):
+    """What each folder of the question would get (core/notes_scope.py folder_info), off the GUI thread."""
+
+    described = pyqtSignal(object)  # {path: info}
+
+    def __init__(self, paths: list[str]):
+        super().__init__()
+        self.paths = list(paths)
+
+    def run(self) -> None:
+        infos = {}
+        for path in self.paths:
+            try:
+                infos[path] = folder_info(path)
+            except Exception:  # noqa: BLE001 -- only a caption
+                pass
+        self.described.emit(infos)
 
 
 class NotesScopeDialog(QDialog):
@@ -1278,6 +1301,10 @@ class NotesScopeDialog(QDialog):
         layout.addSpacing(6)
         layout.addLayout(buttons)
 
+        self._base_captions = [label.text() for label in self.captions]
+        self.infos: dict[str, tuple] = {}  # path -> folder_info: what each folder would get
+        self.kind_boxes_connect = [box.toggled.connect(lambda *_: self._update_captions()) for box in self.kind_boxes.values()]
+        self._describe([path for _radio, path in self.radios])
         self.counts: Optional[tuple[int, int, int]] = None  # (artists, albums, genres) of the chosen folder, once known
         self._count_key: Optional[tuple] = None
         self._count_threads: list = []
@@ -1312,6 +1339,28 @@ class NotesScopeDialog(QDialog):
             if radio is button:
                 return path
         return ""
+
+    def _describe(self, paths: list[str]) -> None:
+        thread = _DescribeThread([p for p in paths if p])
+        thread.described.connect(self._described)
+        thread.finished.connect(lambda t=thread: (_running_counts.discard(t), t.deleteLater()))
+        _running_counts.add(thread)
+        thread.start()
+
+    def _described(self, infos) -> None:
+        self.infos.update(infos)
+        self._update_captions()
+
+    def _update_captions(self) -> None:
+        """Under each folder what it would get ('would get a genre note: Ska'), following the ticked kinds."""
+        kinds = self.chosen_kinds() or "artist"
+        for (radio, path), label, base in zip(self.radios, self.captions, self._base_captions):
+            info = self.infos.get(path)
+            if info is not None:
+                text = folder_caption(info, Path(path).name, kinds)
+                label.setText(f"{base[:1].upper() + base[1:]}  -  {text}" if base else text)
+        if self.picked and self.picked in self.infos:
+            self.other_label.setText(f"{self.picked}  -  {folder_caption(self.infos[self.picked], Path(self.picked).name, kinds)}")
 
     def _start_count(self) -> None:
         folder = self.chosen_folder()
@@ -1381,6 +1430,8 @@ class NotesScopeDialog(QDialog):
             self._update_continue()
             return False
         self.picked = folder
+        if folder not in self.infos:
+            self._describe([folder])
         self.other_label.setText(folder)
         self.other_label.setToolTip(folder)
         self._browsing = True

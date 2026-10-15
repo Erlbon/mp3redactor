@@ -31,6 +31,7 @@ from core.notes_flow import (
     write_proposal,
 )
 from core.notes_cache import default_cache
+from core.notes_local import LIBRARY_ROOT_MESSAGE
 from core.notes_kinds import parse_kinds
 from core.notes_timing import lookup_sentence
 from mp3cli import files as cli_files
@@ -147,11 +148,14 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     scan_seconds = time.perf_counter() - scan_started
     for argument in found.missing:
         out.error(f"nothing found for {argument}")
+    if found.only_a_library_root:
+        raise CliError(LIBRARY_ROOT_MESSAGE)
     if not found.targets and not found.skipped and not found.groupings:
         raise CliError("no artist or album folders found")
     dry = args.dry_run or not args.write
     for skipped in found.skipped:
-        row = {"status": "left-alone" if skipped.state else "has-note", "kind": skipped.kind,
+        row = {"status": "left-alone" if skipped.state else ("skipped" if "folder name" in skipped.reason else "has-note"),
+               "kind": skipped.kind,
                "folder": str(skipped.folder), "message": skipped.reason,
                "reasons": [], "candidates": [], "problems": [], "confidence": "", "path": "", "sources": []}
         out.record(row)

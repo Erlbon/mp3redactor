@@ -196,7 +196,7 @@ def test_the_scope_dialog_warns_about_a_big_scope_with_album_notes_and_stays_qui
         QTest.mouseClick(dlg.cancel_button, nd.Qt.MouseButton.LeftButton)
 
     drive(scenario, window.action_registry["create_notes"].trigger)
-    assert seen["counts"] == (60, 120, 0)
+    assert seen["counts"] == (60, 120, 1)  # 60 artists, 120 albums, and the folder itself as a genre folder
     assert seen["artist_only"][0] is False  # the fast choice: nothing to warn about
     visible, text = seen["both"]
     assert visible and text.startswith("About 180 folders: roughly ") and "artist notes only is about 2x faster" in text

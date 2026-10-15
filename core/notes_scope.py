@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
+from pathlib import Path
+
 from core.notes_flow import album_folder_of, artist_folder_of_file
 from core.notes_kinds import parse_kinds
 from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
@@ -36,6 +38,42 @@ def count_targets(folder: str, include_subfolders: bool = True) -> tuple[int, in
     found = scan([folder], include_subfolders=include_subfolders, kinds=ALL_KINDS)
     kinds = [t.kind for t in found.targets]
     return kinds.count(KIND_ARTIST), kinds.count(KIND_ALBUM), kinds.count(KIND_GENRE)
+
+
+def folder_info(path: str) -> tuple[str, bool, str]:
+    """(level, placeholder, existing note) of a folder you might choose: its level as the scan sees it ('genre', 'artist',
+    'album' or '' for an empty or unreadable one), whether its name is a generic place or an alphabetical grouping, and the
+    name of the note it already has ('' for none). Only the folder structure is read."""
+    from core.notes_local import (
+        classify_level, existing_note, is_alphabetical_grouping, is_collection_name, is_generic_name,
+    )
+
+    folder = Path(path)
+    level = classify_level(folder, True, True)
+    placeholder = ((is_generic_name(folder.name.lstrip("_")) or is_alphabetical_grouping(folder.name))
+                   and not is_collection_name(folder.name))
+    note = existing_note(folder)
+    return level, placeholder, Path(note).name if note else ""
+
+
+def folder_caption(info: tuple[str, bool, str], folder_name: str, kinds) -> str:
+    """What the folder would get, in a few words, for the folder question's captions: 'would get a genre note: Ska'."""
+    from core.notes_local import is_collection_name, lookup_name
+
+    level, placeholder, existing = info
+    wanted = parse_kinds(kinds)
+    if level == KIND_ARTIST and is_collection_name(folder_name):
+        level = KIND_GENRE  # 'Various Artists', 'Soundtracks': a collection, its note is about.md
+    if placeholder and level in (KIND_ARTIST, KIND_GENRE, ""):
+        return "a library root: no note of its own here; the folders below get theirs"
+    if not level:
+        return "nothing to write a note for here (empty, or no artist or album folders)"
+    noun = {KIND_GENRE: "a genre note", KIND_ARTIST: "an artist note", KIND_ALBUM: "an album note"}[level]
+    if level not in wanted:
+        return f"a {level} folder ({level} notes are not ticked in What to create)"
+    if existing:
+        return f"already has {existing}: left alone"
+    return f"would get {noun}: {lookup_name(folder_name)}"
 
 
 def kinds_sentence(kinds) -> str:

@@ -85,7 +85,7 @@ def run(window, monkeypatch, folder, fetchers, scenario, must_finish=True):
 
         yield from wait(lambda: scope() is not None, "the scope dialog")
         scope().other_radio.click()
-        set_kinds(scope(), "all")
+        set_kinds(scope(), "artist,album")  # (the folder you pick is a genre folder to the scan: not part of these scenarios)
         click(scope().continue_button)
         yield from scenario()
 
@@ -178,7 +178,7 @@ def test_several_artists_open_the_list_with_the_tick_rules_a_pick_and_a_write(wi
 def test_nothing_to_do_says_so_and_opens_no_page(window, monkeypatch, tmp_path, boxes):
     (tmp_path / "empty").mkdir()
     run(window, monkeypatch, tmp_path, Fetchers(), lambda: iter(()), must_finish=False)
-    assert any("No artist or album folders" in text for _t, text in boxes)
+    assert any("looks like a library root" in text for _t, text in boxes)  # nothing at all to write here
 
 
 def test_create_notes_is_in_the_tools_menu_and_the_context_menu_without_a_shortcut(window):

@@ -11,7 +11,8 @@ from tests.notes_helpers import make_mp3, ultravox_fetchers, ultravox_library
 
 
 def targets_of(root, **kw):
-    return scan([root], kinds=ALL_KINDS, **kw).targets
+    # (the folder you start from is a genre folder to the scan when it holds artist folders: not part of these cases)
+    return [t for t in scan([root], kinds=ALL_KINDS, **kw).targets if t.folder != root]
 
 
 # -- which view -----------------------------------------------------------------------------------------------------

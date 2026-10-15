@@ -336,7 +336,7 @@ heading with the lines `- Ha! Ha! Ha! (1977)`, `- Vienna (1980)`, `- Quartet (19
 with `- The Collection (1984)`.
 
 The levels come from the folder structure (what holds audio is an album, its parent an artist, a folder of artists
-a genre; the folder you start from is the library and gets no note) and from the albums' tags: a folder whose albums are
+a genre; the folder you choose is judged like any other: it gets its own note when it is eligible, but a generic place name such as Music, Bands or Artists, and an alphabetical grouping, never do) and from the albums' tags: a folder whose albums are
 by different artists (Soundtracks, Various Artists) is a collection (`about.md`), never an artist.
 
 | Option | Meaning |
