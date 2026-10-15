@@ -1,0 +1,827 @@
+{
+ "_note": "Excerpts of real MusicBrainz/Wikipedia/Discogs replies recorded 2026-10-15 (spike), trimmed; entries marked synthetic were written by hand in the same shape.",
+ "mb_artist_search_ultravox": {
+  "artists": [
+   {
+    "id": "7e786a4c-c743-4713-9340-a6f12d8515d4",
+    "name": "Ultravox",
+    "score": 100,
+    "type": "Group",
+    "country": "GB",
+    "sort-name": "Ultravox",
+    "life-span": {
+     "begin": "1976"
+    }
+   },
+   {
+    "id": "synthetic-ultravox-2",
+    "name": "Ultravox!",
+    "score": 70,
+    "type": "Group",
+    "country": "GB",
+    "sort-name": "Ultravox!",
+    "life-span": {
+     "begin": "1974"
+    }
+   }
+  ]
+ },
+ "mb_artist_ultravox": {
+  "id": "7e786a4c-c743-4713-9340-a6f12d8515d4",
+  "name": "Ultravox",
+  "type": "Group",
+  "country": "GB",
+  "area": {
+   "name": "United Kingdom"
+  },
+  "life-span": {
+   "begin": "1976",
+   "end": null,
+   "ended": false
+  },
+  "genres": [
+   {
+    "name": "art rock",
+    "id": "b7ef058e-6d83-4ca4-8123-9724bff4648b",
+    "disambiguation": "",
+    "count": 1
+   },
+   {
+    "disambiguation": "",
+    "id": "391a797d-50d7-46df-b380-39ccacd52a09",
+    "name": "new romantic",
+    "count": 3
+   },
+   {
+    "name": "new wave",
+    "id": "56407f9d-3398-4bf3-bbbd-ea372fa5adeb",
+    "disambiguation": "",
+    "count": 6
+   },
+   {
+    "count": 1,
+    "id": "911c7bbb-172d-4df8-9478-dbff4296e791",
+    "name": "pop",
+    "disambiguation": ""
+   },
+   {
+    "id": "797e2e85-5ffd-495c-a757-8b4079052f0e",
+    "name": "pop rock",
+    "disambiguation": "",
+    "count": 2
+   },
+   {
+    "disambiguation": "",
+    "name": "post-punk",
+    "id": "f6d8cadd-6a5e-4ec9-9c2b-996b5332a639",
+    "count": 2
+   },
+   {
+    "disambiguation": "",
+    "name": "synth-pop",
+    "id": "988e91a3-3341-416d-b7f8-7dbef6848dac",
+    "count": 2
+   }
+  ],
+  "tags": [],
+  "relations": [
+   {
+    "begin": null,
+    "type-id": "6b3e3c85-0002-4f34-aca6-80ace0d7e846",
+    "end": null,
+    "target-credit": "",
+    "url": {
+     "resource": "https://www.allmusic.com/artist/mn0000809266",
+     "id": "c6d44f60-95d4-41f2-b170-c76b35f1e9b3"
+    },
+    "attribute-values": {},
+    "target-type": "url",
+    "attribute-ids": {},
+    "ended": false,
+    "direction": "forward",
+    "type": "allmusic",
+    "attributes": [],
+    "source-credit": ""
+   },
+   {
+    "direction": "forward",
+    "type": "discogs",
+    "attributes": [],
+    "source-credit": "",
+    "end": null,
+    "target-credit": "",
+    "begin": null,
+    "type-id": "04a5b104-a4c2-4bac-99a1-7b837c37d9e4",
+    "url": {
+     "id": "1cb03b59-2bfe-49cd-bc33-49bc7287daa8",
+     "resource": "https://www.discogs.com/artist/70735"
+    },
+    "attribute-values": {},
+    "attribute-ids": {},
+    "ended": false,
+    "target-type": "url"
+   },
+   {
+    "attributes": [],
+    "source-credit": "",
+    "direction": "forward",
+    "type": "last.fm",
+    "attribute-values": {},
+    "target-type": "url",
+    "attribute-ids": {},
+    "ended": false,
+    "begin": null,
+    "type-id": "08db8098-c0df-4b78-82c3-c8697b4bba7f",
+    "end": null,
+    "target-credit": "",
+    "url": {
+     "resource": "https://www.last.fm/music/Ultravox",
+     "id": "a0831ce1-1b7d-40ff-8302-44ee20bdb231"
+    }
+   },
+   {
+    "attributes": [],
+    "source-credit": "",
+    "direction": "forward",
+    "type": "official homepage",
+    "attribute-values": {},
+    "ended": false,
+    "attribute-ids": {},
+    "target-type": "url",
+    "target-credit": "",
+    "end": null,
+    "type-id": "fe33d22f-c3b0-4d68-bd53-a856badf2b15",
+    "begin": null,
+    "url": {
+     "resource": "http://www.ultravox.org.uk/",
+     "id": "2d9ca064-a39e-4778-a04a-780fcd904775"
+    }
+   },
+   {
+    "direction": "forward",
+    "type": "wikidata",
+    "attributes": [],
+    "source-credit": "",
+    "type-id": "689870a4-a1e4-4912-b17f-7b2664215698",
+    "begin": null,
+    "target-credit": "",
+    "end": null,
+    "url": {
+     "id": "f7d1ad81-d866-40a6-a473-76676d3f73e5",
+     "resource": "https://www.wikidata.org/wiki/Q316485"
+    },
+    "attribute-values": {},
+    "target-type": "url",
+    "ended": false,
+    "attribute-ids": {}
+   },
+   {
+    "type": "member of band",
+    "direction": "backward",
+    "ended": false,
+    "artist": {
+     "name": "Midge Ure"
+    }
+   },
+   {
+    "type": "member of band",
+    "direction": "backward",
+    "ended": false,
+    "artist": {
+     "name": "Billy Currie"
+    }
+   },
+   {
+    "type": "member of band",
+    "direction": "backward",
+    "ended": false,
+    "artist": {
+     "name": "Chris Cross"
+    }
+   },
+   {
+    "type": "member of band",
+    "direction": "backward",
+    "ended": false,
+    "artist": {
+     "name": "Warren Cann"
+    }
+   },
+   {
+    "type": "member of band",
+    "direction": "backward",
+    "ended": true,
+    "artist": {
+     "name": "John Foxx"
+    }
+   }
+  ]
+ },
+ "mb_rgs_ultravox": {
+  "release-groups": [
+   {
+    "id": "rg-ultravox-0",
+    "title": "Ultravox!",
+    "first-release-date": "1977",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-1",
+    "title": "Ha! Ha! Ha!",
+    "first-release-date": "1977",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-2",
+    "title": "Systems of Romance",
+    "first-release-date": "1978",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-3",
+    "title": "Vienna",
+    "first-release-date": "1980",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-4",
+    "title": "Rage in Eden",
+    "first-release-date": "1981",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-5",
+    "title": "Quartet",
+    "first-release-date": "1982",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-6",
+    "title": "Lament",
+    "first-release-date": "1984",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-7",
+    "title": "U‐Vox",
+    "first-release-date": "1986",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-8",
+    "title": "Revelation",
+    "first-release-date": "1993",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-9",
+    "title": "Ingenuity",
+    "first-release-date": "1994",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-10",
+    "title": "Brilliant",
+    "first-release-date": "2012",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-ultravox-comp",
+    "title": "The Collection",
+    "first-release-date": "1984",
+    "primary-type": "Album",
+    "secondary-types": [
+     "Compilation"
+    ]
+   }
+  ]
+ },
+ "mb_rg_search_vienna": {
+  "release-groups": [
+   {
+    "id": "cd130148-b956-4bde-af35-f7c616263880",
+    "title": "Vienna",
+    "score": 100,
+    "primary-type": "Single",
+    "first-release-date": "1981-01-15",
+    "artist-credit": [
+     {
+      "name": "Ultravox",
+      "joinphrase": ""
+     }
+    ]
+   },
+   {
+    "id": "rg-ultravox-3",
+    "title": "Vienna",
+    "score": 100,
+    "primary-type": "Album",
+    "first-release-date": "1980-07-11",
+    "artist-credit": [
+     {
+      "name": "Ultravox",
+      "joinphrase": ""
+     }
+    ]
+   }
+  ]
+ },
+ "mb_rg_vienna_album": {
+  "id": "rg-ultravox-3",
+  "title": "Vienna",
+  "first-release-date": "1980-07-11",
+  "primary-type": "Album",
+  "genres": [
+   {
+    "name": "art pop",
+    "count": 1
+   },
+   {
+    "name": "new romantic",
+    "count": 1
+   },
+   {
+    "name": "new wave",
+    "count": 3
+   },
+   {
+    "name": "pop",
+    "count": 1
+   }
+  ],
+  "relations": []
+ },
+ "mb_releases_vienna": {
+  "releases": [
+   {
+    "id": "rel-vienna-uk",
+    "title": "Vienna",
+    "status": "Official",
+    "date": "1980-07-11",
+    "country": "GB",
+    "label-info": [
+     {
+      "catalog-number": "CDL 1296",
+      "label": {
+       "name": "Chrysalis"
+      }
+     }
+    ],
+    "media": [
+     {
+      "format": "Vinyl",
+      "track-count": 9
+     }
+    ]
+   },
+   {
+    "id": "rel-vienna-deluxe",
+    "title": "Vienna (Deluxe Edition)",
+    "status": "Official",
+    "date": "2006-05-15",
+    "country": "GB",
+    "label-info": [
+     {
+      "label": {
+       "name": "Chrysalis"
+      }
+     }
+    ],
+    "media": [
+     {
+      "format": "CD",
+      "track-count": 14
+     },
+     {
+      "format": "CD",
+      "track-count": 12
+     }
+    ]
+   }
+  ]
+ },
+ "mb_release_vienna": {
+  "id": "rel-vienna-uk",
+  "title": "Vienna",
+  "status": "Official",
+  "date": "1980-07-11",
+  "country": "GB",
+  "artist-credit": [
+   {
+    "name": "Ultravox",
+    "joinphrase": ""
+   }
+  ],
+  "label-info": [
+   {
+    "catalog-number": "CDL 1296",
+    "label": {
+     "name": "Chrysalis"
+    }
+   }
+  ],
+  "relations": [
+   {
+    "type": "producer",
+    "artist": {
+     "name": "Ultravox"
+    }
+   },
+   {
+    "type": "producer",
+    "artist": {
+     "name": "Conny Plank"
+    }
+   }
+  ],
+  "media": [
+   {
+    "position": 1,
+    "format": "Vinyl",
+    "tracks": [
+     {
+      "position": 1,
+      "number": "1",
+      "title": "Astradyne",
+      "length": 427000,
+      "recording": {
+       "id": "rec-0",
+       "title": "Astradyne",
+       "length": 427000,
+       "relations": [
+        {
+         "type": "instrument",
+         "attributes": [
+          "synthesizer",
+          "viola"
+         ],
+         "artist": {
+          "name": "Billy Currie"
+         }
+        },
+        {
+         "type": "vocal",
+         "attributes": [
+          "lead vocals"
+         ],
+         "artist": {
+          "name": "Midge Ure"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "position": 2,
+      "number": "2",
+      "title": "New Europeans",
+      "length": 245000,
+      "recording": {
+       "id": "rec-1",
+       "title": "New Europeans",
+       "length": 245000,
+       "relations": []
+      }
+     },
+     {
+      "position": 3,
+      "number": "3",
+      "title": "Private Lives",
+      "length": 247000,
+      "recording": {
+       "id": "rec-2",
+       "title": "Private Lives",
+       "length": 247000,
+       "relations": []
+      }
+     },
+     {
+      "position": 4,
+      "number": "4",
+      "title": "Passing Strangers",
+      "length": 230000,
+      "recording": {
+       "id": "rec-3",
+       "title": "Passing Strangers",
+       "length": 230000,
+       "relations": []
+      }
+     },
+     {
+      "position": 5,
+      "number": "5",
+      "title": "Sleepwalk",
+      "length": 192000,
+      "recording": {
+       "id": "rec-4",
+       "title": "Sleepwalk",
+       "length": 192000,
+       "relations": []
+      }
+     },
+     {
+      "position": 6,
+      "number": "6",
+      "title": "Mr. X",
+      "length": 393000,
+      "recording": {
+       "id": "rec-5",
+       "title": "Mr. X",
+       "length": 393000,
+       "relations": []
+      }
+     },
+     {
+      "position": 7,
+      "number": "7",
+      "title": "Western Promise",
+      "length": 318000,
+      "recording": {
+       "id": "rec-6",
+       "title": "Western Promise",
+       "length": 318000,
+       "relations": []
+      }
+     },
+     {
+      "position": 8,
+      "number": "8",
+      "title": "Vienna",
+      "length": 294000,
+      "recording": {
+       "id": "rec-7",
+       "title": "Vienna",
+       "length": 294000,
+       "relations": []
+      }
+     },
+     {
+      "position": 9,
+      "number": "9",
+      "title": "All Stood Still",
+      "length": 262000,
+      "recording": {
+       "id": "rec-8",
+       "title": "All Stood Still",
+       "length": 262000,
+       "relations": []
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "wikidata_ultravox": {
+  "entities": {
+   "Q316485": {
+    "sitelinks": {
+     "enwiki": {
+      "site": "enwiki",
+      "title": "Ultravox"
+     }
+    }
+   }
+  }
+ },
+ "wiki_summary_ultravox": {
+  "type": "standard",
+  "title": "Ultravox",
+  "description": "British new wave band",
+  "extract": "Ultravox were a British new wave band, formed in London in April 1974 as Tiger Lily. Between 1980 and 1986, they scored seven top ten albums and seventeen top 40 singles in the UK, the most successful of which was their 1981 hit \"Vienna\".",
+  "content_urls": {
+   "desktop": {
+    "page": "https://en.wikipedia.org/wiki/Ultravox"
+   }
+  }
+ },
+ "wiki_search_vienna": {
+  "pages": [
+   {
+    "title": "Vienna (Ultravox song)",
+    "description": "1981 single by Ultravox",
+    "excerpt": "\"Vienna\" is a song by Ultravox"
+   },
+   {
+    "title": "Vienna (Ultravox album)",
+    "description": "1980 studio album by Ultravox",
+    "excerpt": "<span>Vienna</span> is the fourth studio album by Ultravox"
+   },
+   {
+    "title": "Vienna",
+    "description": "Capital of Austria",
+    "excerpt": "Vienna is the capital"
+   }
+  ]
+ },
+ "wiki_summary_vienna_album": {
+  "type": "standard",
+  "title": "Vienna (Ultravox album)",
+  "description": "1980 studio album by Ultravox",
+  "extract": "Vienna is the fourth studio album by the British new wave band Ultravox, released on 11 July 1980 by Chrysalis Records. It was the first album recorded by the line-up with Midge Ure.",
+  "content_urls": {
+   "desktop": {
+    "page": "https://en.wikipedia.org/wiki/Vienna_(Ultravox_album)"
+   }
+  }
+ },
+ "wiki_summary_vienna_song": {
+  "type": "standard",
+  "title": "Vienna (Ultravox song)",
+  "description": "1981 single by Ultravox",
+  "extract": "\"Vienna\" is a song by the British new wave band Ultravox.",
+  "content_urls": {
+   "desktop": {
+    "page": "https://en.wikipedia.org/wiki/Vienna_(Ultravox_song)"
+   }
+  }
+ },
+ "mb_artist_search_cristina": {
+  "artists": [
+   {
+    "id": "cd0871f1-0915-4576-8969-a600c098a53d",
+    "name": "Cristina D’Avena",
+    "score": 100,
+    "type": "Person",
+    "country": "IT",
+    "disambiguation": "Italian theme songs singer",
+    "sort-name": "D'Avena, Cristina",
+    "life-span": {
+     "begin": "1964-07-06"
+    },
+    "aliases": [
+     {
+      "name": "Cristina"
+     }
+    ]
+   }
+  ]
+ },
+ "mb_rgs_davena": {
+  "release-groups": [
+   {
+    "id": "rg-davena-0",
+    "title": "Fivelandia 3",
+    "first-release-date": "1985",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-1",
+    "title": "Cristina D’Avena e i tuoi amici in TV 19",
+    "first-release-date": "2006",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-2",
+    "title": "Fivelandia 12",
+    "first-release-date": "1994",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-3",
+    "title": "Cristina D’Avena e i tuoi amici in TV 9",
+    "first-release-date": "1996",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-4",
+    "title": "Fivelandia 1 & 2",
+    "first-release-date": "2006",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-5",
+    "title": "Fivelandia 5 & 6",
+    "first-release-date": "2006",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-6",
+    "title": "Cristina D’Avena i tuoi amici in TV 4",
+    "first-release-date": "1990",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-7",
+    "title": "Cristina D’Avena e i tuoi amici in TV 5",
+    "first-release-date": "1991",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-8",
+    "title": "Greatest Hits",
+    "first-release-date": "2002-12-06",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-9",
+    "title": "Cristina D'Avena e i tuoi Amici in TV Reloaded",
+    "first-release-date": "2019-03-25",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-10",
+    "title": "I tuoi amici in TV, Volume 14",
+    "first-release-date": "",
+    "primary-type": "Album",
+    "secondary-types": []
+   },
+   {
+    "id": "rg-davena-11",
+    "title": "Fivelandia 3 & 4",
+    "first-release-date": "2006",
+    "primary-type": "Album",
+    "secondary-types": []
+   }
+  ]
+ },
+ "discogs_search_cristina": {
+  "results": [
+   {
+    "id": 55646,
+    "title": "Cristina",
+    "uri": "/artist/55646-Cristina"
+   },
+   {
+    "id": 999,
+    "title": "Cristina (2)",
+    "uri": "/artist/999"
+   }
+  ]
+ },
+ "discogs_artist_cristina": {
+  "id": 55646,
+  "name": "Cristina",
+  "profile": "American singer and writer (born January 17, 1956 - died March 31, 2020).\r\nA Harvard drop-out and daughter of a French psychoanalyst and an American illustrator-novelist-playwright, she met [a=Michael Zilkha] when she was working as a freelance writer for the Village Voice, who she later married. Zilkha was heir to England's Mothercare retail empire and was just starting [l=ZE Records] with [a=Michel Esteban]. Zilkha persuaded her to record \"Disco Clone\", a song written by [a=Ronald Melrose], an ex classmate of hers at Harvard. The original recording, produced by [a=John Cale] was the first issue on the ZE label. A later version featured the uncredited [a=Kevin Kline] on vocals.\r\nShe retired her singing career soon after the release of her second album, when she relocated to Texas with Zilkha. After their divorce in 1990, she moved back to New York and contributed occasional book and film reviews to the Times Literary Supplement, as well as articles to Tatler and London Literary Review.",
+  "realname": "Cristina Monet Palaci",
+  "urls": [
+   "http://www.MySpace.com/dollinthebox",
+   "http://www.zerecords.com/artist/12/cristina.html",
+   "http://www.redoverwhite.org/cristina/",
+   "https://en.wikipedia.org/wiki/Cristina_(singer)",
+   "https://cristinamonet.com/"
+  ],
+  "namevariations": [
+   "C. Monet",
+   "Christina",
+   "Christina Monet",
+   "Crist Na Monet",
+   "Cristina Monet",
+   "Cristina Monet-Zilkha",
+   "Cristina Zilkha",
+   "The Girl From Ecuador - Cristina"
+  ],
+  "uri": "https://www.discogs.com/artist/55646-Cristina"
+ },
+ "discogs_releases_cristina": {
+  "releases": [
+   {
+    "title": "Cristina",
+    "year": 1980,
+    "role": "Main",
+    "type": "master"
+   },
+   {
+    "title": "Sleep It Off",
+    "year": 1984,
+    "role": "Main",
+    "type": "master"
+   },
+   {
+    "title": "Disco Clone",
+    "year": 1978,
+    "role": "Main",
+    "type": "release"
+   }
+  ]
+ },
+ "discogs_releases_cristina2": {
+  "releases": [
+   {
+    "title": "Unrelated",
+    "year": 1999,
+    "role": "Main"
+   }
+  ]
+ }
+}

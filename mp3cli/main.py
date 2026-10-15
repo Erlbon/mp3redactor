@@ -12,6 +12,7 @@ argument is a command; the window never starts):
     mp3redactor redact  PATH...                      run the saved Redact recipe
     mp3redactor analyze PATH... [--deep --bpm ...]   integrity, decode, BPM, key, loudness
     mp3redactor m4b     PATH...                      chaptered M4B audiobook per folder
+    mp3redactor notes   PATH... [--write]            draft artist.md / album.md folder notes (report by default)
 
 Every command takes --json (one JSON document), --quiet and --output FILE (the result goes to a file: the
 reliable way to read it from a script, since a windowed exe cannot be waited for by an interactive shell),
@@ -24,7 +25,7 @@ from __future__ import annotations
 from core.version import APP_VERSION
 from redactor_common.cli.main_factory import make_main
 
-from mp3cli import COMMANDS, cmd_analyze, cmd_files, cmd_m4b, cmd_redact, cmd_tags
+from mp3cli import COMMANDS, cmd_analyze, cmd_files, cmd_m4b, cmd_notes, cmd_redact, cmd_tags
 
 PROG = "mp3redactor"
 
@@ -42,6 +43,7 @@ build_parser, main = make_main(
         cmd_redact.add_redact_parser,
         cmd_analyze.add_analyze_parser,
         cmd_m4b.add_m4b_parser,
+        cmd_notes.add_notes_parser,
     ],
     commands=COMMANDS,
 )

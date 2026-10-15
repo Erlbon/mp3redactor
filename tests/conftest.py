@@ -79,6 +79,9 @@ def recycle_bin(monkeypatch, tmp_path):
     from core import history  # Preferences > History > Delete History... sends the journal to the bin
 
     monkeypatch.setattr(history, "_trash", bin_)
+    from core import notes_flow  # undoing a created note (opt-in history) goes to the bin too
+
+    monkeypatch.setattr(notes_flow, "_trash", bin_)
     return bin_
 
 

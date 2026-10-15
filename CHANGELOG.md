@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-15#03 -- Folder notes: the engine and `mp3redactor notes`
+
+- New command line command **`mp3redactor notes PATH... [--kind artist|album|genre|both|all] [--write] [-n] [--no-discogs] [--show-drafts] [-R]`**: drafts the Markdown notes the Pluteus media server shows beside a folder (`artist.md`, `album.md`, and `about.md` for a genre or collection folder). A report by default; `--write` writes only the CONFIDENT matches (`status: draft`), never overwrites, never touches a folder that already has a note of any of the five names in any letter case. Uncertain and unmatched folders are listed with reasons, candidates and the levels they could be. No window yet (the review page comes later).
+- Sources: MusicBrainz (facts, tracklist, label, structured credits), Wikipedia (the introduction: through MusicBrainz' link or its Wikidata item, else a verified search) and, with the saved Discogs token, Discogs (profile, members, credits). A candidate is only believed when the folder's own album titles are in ITS discography (so "Cristina" is not Cristina D'Avena), and an Album beats a Single of the same title.
+- The notes reflect the folder: the artist note lists the albums really there, the album note compares the files with the tracklist (present, missing, extra). Levels come from the folder depth and the albums' tags (Soundtracks / Various Artists are collections, composer-or-performer folders are "unclear" and never written in a batch run).
+- With the opt-in history on, each written note is recorded and can be undone (Recycle Bin, only while unchanged). History stays off by default.
+- New modules: `core/notes_flow.py` (engine), `notes_local.py`, `notes_level.py`, `notes_match.py`, `notes_render.py`, `notes_musicbrainz.py`, `notes_discogs.py`, `wikipedia_lookup.py`.
+- Requires redactor_common 2026-10-15-04.
+
 ## 2026-10-15#02 -- Include Subfolders checkbox on the toolbar
 
 - An **Include Subfolders** checkbox on the toolbar next to Open Folder (the File menu item stays, both stay in step; one saved setting).

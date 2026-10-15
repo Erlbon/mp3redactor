@@ -81,6 +81,7 @@ mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [
                                [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
                                [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
                                [--lookup] [--region STORE] [--min-score N] [-n]
+mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [-n] [--no-discogs] [--show-drafts] [-R]
 ```
 
 The command line uses the same code as the window, so the results are the same. It reads the same settings file
@@ -295,7 +296,40 @@ the match that was used and `filled`, the names of what it filled in.
 | `redact` | `file`, `path`, `status`, `applied`, `needs_review` (step, value, confidence, reason), `failures`, `notes`, `skipped`, `not_saved` | `files`, `failed`, `needs_review`, `cancelled`, `confidence_threshold`, `run_notes` |
 | `redact --list-steps` | `step`, `label`, `enabled` | `confidence_threshold` |
 | `analyze` | `path`, `status`, `problem`, `checks` (per check: `status`, `message` and its values), `save_error` | `files`, `problems`, `checks`, `saved` |
+| `notes` | `folder`, `kind`, `note`, `status` (`would-write`, `written`, `review`, `no-match`, `has-note`, `failed`), `message`, `confidence`, `level`, `level_reasons`, `suggested_levels`, `title`, `reasons`, `sources`, `candidates`, `problems`, `draft` (with `--show-drafts`) | `total`, `confident`, `uncertain`, `none`, `written`, `would_write`, `has_note`, `failed`, `dry_run`, `cancelled` |
 | `m4b` | `folder`, `title`, `output`, `status`, `message`, `chapters`, `minutes`, `match`, `notes` | `books`, `failed`, `dry_run`, `bitrate_kbps` |
+
+### notes
+
+`mp3redactor notes PATH... [--kind KIND] [--write] [-n] [--no-discogs] [--show-drafts] [-R]`
+
+Drafts the short Markdown notes that the Pluteus media server shows beside a folder: `artist.md` in an artist
+folder, `album.md` in an album folder, and (with `--kind genre` or `all`) `about.md` in a genre or collection folder
+(`Music/Genre/Artist/Album (Year)/01 Song.mp3`). **A report by default**: every folder is looked up on MusicBrainz and
+Wikipedia (and Discogs, when a token is saved under Tools > API Keys or in `DISCOGS_TOKEN`; without one the notes are
+just thinner) and listed with how sure the match is; nothing is written. `--write` writes the drafts (`status: draft`
+in the front matter) of the **confident** matches only. A match is confident when at least one of the folder's own album
+titles is found in the candidate's discography (so "Cristina" is not Cristina D'Avena) and nothing equally good
+competes with it. Uncertain and unmatched folders are listed with the reasons, the candidates and the levels they could
+be (`artist`, `genre-collection`, `skip`), and are never written. A note is never overwritten, and a folder that already
+has `artist.md`, `author.md`, `series.md`, `album.md` or `about.md` in any letter case is left alone. The album note
+compares the files in the folder with the tracklist (present, missing, extra); the artist note lists the albums really
+there. The levels come from the folder structure (what holds audio is an album, its parent an artist, a folder of artists
+a genre; the folder you start from is the library and gets no note) and from the albums' tags: a folder whose albums are
+by different artists (Soundtracks, Various Artists) is a collection (`about.md`), never an artist.
+
+| Option | Meaning |
+| --- | --- |
+| `--kind KIND` | `artist`, `album`, `genre` (the `about.md` of a genre or collection folder), `both` (artist + album, the default) or `all`. |
+| `--write` | Write the confident drafts. Without it the command only reports. |
+| `-n`, `--dry-run` | Never write, even with `--write`: show what would be written. |
+| `--no-discogs` | Do not use Discogs even when a token is saved. |
+| `--show-drafts` | Print each draft note (with `--json`: include it in the row). |
+| `-R`, `--no-recurse` | Look only at the folders named, not at the folders below them. |
+
+Exit code 0 when done, 1 when a note could not be written or a lookup failed, 130 when interrupted (what was written
+stays). With the opt-in history on, each written note is recorded and can be undone (moved to the Recycle Bin, only if
+it is unchanged).
 
 ### Exit codes
 

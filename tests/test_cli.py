@@ -492,7 +492,7 @@ def test_m4b_lookup_below_the_minimum_score_is_not_used(tmp_path, capsys, monkey
 def test_a_command_name_starts_the_command_line_and_a_path_starts_the_window():
     from mp3cli import COMMANDS, cli_requested
 
-    assert set(COMMANDS) == {"info", "set", "rename", "move", "convert", "redact", "analyze", "m4b"}
+    assert set(COMMANDS) == {"info", "set", "rename", "move", "convert", "redact", "analyze", "m4b", "notes"}
     assert cli_requested(["mp3redactor.exe", "info", "x.mp3"]) and cli_requested(["mp3redactor.exe", "--version"])
     assert not cli_requested(["mp3redactor.exe"]) and not cli_requested(["mp3redactor.exe", "D:/Music/a.mp3"])
 
