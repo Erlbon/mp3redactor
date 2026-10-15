@@ -44,6 +44,7 @@ from core.notes_review import (
     ReviewSession, choose_view,
 )
 from redactor_common.core.notes import parse_front_matter
+from gui.columns import columns_resizable
 from redactor_common.gui.progress import run_busy
 from redactor_common.gui.work_progress import run_work_with_progress
 
@@ -180,8 +181,7 @@ class ProposalPanel(QWidget):
         self.candidate_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.candidate_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.candidate_table.verticalHeader().setVisible(False)
-        self.candidate_table.horizontalHeader().setStretchLastSection(True)
-        self.candidate_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._candidate_columns_set = False
         self.candidate_table.setMaximumHeight(140)
         self.candidate_table.itemSelectionChanged.connect(self._update_buttons)
         cand_layout.addWidget(self.candidate_table)
@@ -342,7 +342,9 @@ class ProposalPanel(QWidget):
                 table.item(row, col).setToolTip(cand.note or text)
         if self._candidates:
             table.selectRow(0)
-        table.resizeColumnToContents(1)
+        if self._candidates and not self._candidate_columns_set:  # once: a person's dragged widths stay
+            self._candidate_columns_set = True
+            columns_resizable(table, 0)
 
     def selected_candidate(self) -> Optional[Candidate]:
         row = self.candidate_table.currentRow()
@@ -489,10 +491,7 @@ class NotesReviewDialog(QDialog):
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.tree.header().setStretchLastSection(False)
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col in (1, 2, 3):
-            self.tree.header().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        self._tree_columns_set = False
         self.tree.currentItemChanged.connect(self._on_tree_current)
         self.tree.itemChanged.connect(self._on_tree_check)
         self.list_panel = self._make_panel()
@@ -699,6 +698,9 @@ class NotesReviewDialog(QDialog):
             row.setToolTip(0, p.path + ("\nNot tickable: pick a candidate or a level first" if blocked else ""))
             tree.addTopLevelItem(row)
         tree.blockSignals(False)
+        if not self._tree_columns_set:  # once, with the first fill: a person's dragged widths stay on later refills
+            self._tree_columns_set = True
+            columns_resizable(tree, 0)
         self.index = selected
         self._refresh_list_header()
 

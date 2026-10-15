@@ -37,6 +37,7 @@ from core.m4b_builder import (
 )
 from core.mp3_file import MP3File
 from redactor_common.core.rename_pattern import sanitize_filename
+from gui.columns import columns_resizable
 
 COL_NUMBER, COL_TITLE, COL_LENGTH, COL_FILE = range(4)
 SIDECAR_LABEL = "Also write metadata.opf and a cover image beside the audiobook (Audiobookshelf, Calibre)"
@@ -147,13 +148,9 @@ class M4bDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(COL_NUMBER, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_TITLE, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(COL_LENGTH, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_FILE, QHeaderView.ResizeMode.Stretch)
         for f in self._files:
             self._append_row(f)
+        columns_resizable(self.table, COL_TITLE)
         root.addWidget(self.table, 1)
 
         order_row = QHBoxLayout()

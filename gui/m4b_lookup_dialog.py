@@ -24,6 +24,7 @@ from core.audiobook_lookup import (
     AUDIBLE_REGIONS, DEFAULT_REGION, AudiobookLookupError, BookMatch, download_cover, search,
 )
 from redactor_common.gui.background_call import call_in_background
+from gui.columns import columns_resizable
 
 COLUMNS = ["Source", "Title", "Author", "Narrator", "Series", "#", "Year", "Length"]
 COVER_BOX = 160
@@ -77,12 +78,7 @@ class M4bLookupDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        header = self.table.horizontalHeader()
-        for column in range(len(COLUMNS)):
-            header.setSectionResizeMode(
-                column,
-                QHeaderView.ResizeMode.Stretch if column in (1, 2, 3, 4) else QHeaderView.ResizeMode.ResizeToContents,
-            )
+        columns_resizable(self.table, 1)
         self.table.itemSelectionChanged.connect(self._on_selected)
         self.table.itemDoubleClicked.connect(lambda _item: self.accept() if self.selected_match() else None)
         root.addWidget(self.table, 1)
@@ -141,6 +137,7 @@ class M4bLookupDialog(QDialog):
                     gap = match.runtime_minutes - self._runtime
                     item.setToolTip(f"{gap:+.0f} minutes against your files ({_length_text(int(self._runtime))})")
                 self.table.setItem(row, column, item)
+        columns_resizable(self.table, 1)  # once per search: the table was rebuilt
         notes = " ".join(outcome.notes)
         if outcome.matches:
             self.status_label.setText(

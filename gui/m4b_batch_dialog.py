@@ -35,6 +35,7 @@ from core.m4b_builder import (
 from core.mp3_file import MP3File
 from gui.m4b_dialog import SIDECAR_LABEL, SIDECAR_TIP
 from redactor_common.core.rename_pattern import sanitize_filename
+from gui.columns import columns_resizable
 
 LAYOUT_BESIDE = "beside"
 LAYOUT_LIBRARY = "library"
@@ -78,15 +79,6 @@ class M4bBatchDialog(QDialog):
         self.table.setHorizontalHeaderLabels(HEADERS)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        header = self.table.horizontalHeader()
-        for column, mode in (
-            (COL_INCLUDE, QHeaderView.ResizeMode.ResizeToContents), (COL_TITLE, QHeaderView.ResizeMode.Stretch),
-            (COL_AUTHOR, QHeaderView.ResizeMode.Stretch), (COL_NARRATOR, QHeaderView.ResizeMode.Stretch),
-            (COL_SERIES, QHeaderView.ResizeMode.Stretch),
-            (COL_NUMBER, QHeaderView.ResizeMode.ResizeToContents), (COL_CHAPTERS, QHeaderView.ResizeMode.ResizeToContents),
-            (COL_FOLDER, QHeaderView.ResizeMode.Stretch),
-        ):
-            header.setSectionResizeMode(column, mode)
         for row, (book, defaults) in enumerate(zip(books, self._defaults)):
             include = QTableWidgetItem()
             include.setFlags(include.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -101,6 +93,7 @@ class M4bBatchDialog(QDialog):
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row, column, item)
+        columns_resizable(self.table, COL_TITLE)
         root.addWidget(self.table, 1)
         lookup_row = QHBoxLayout()
         self.lookup_btn = QPushButton("Look Up Selected…")

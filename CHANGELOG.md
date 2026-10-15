@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-15#12 -- Every column header can be dragged
+
+- Changed (house rule, 2026-10-15): the tables of the Create Notes review page (the list and the candidate table), the M4B chapter table, the M4B batch table and the audiobook look-up results no longer use Stretch / ResizeToContents header modes; every column is draggable, the last one fills the rest, the starting widths come from the contents (one wide column takes what is left, none starts wider than about half the table). The widths are set once per full rebuild, so a width you dragged is not undone by the next refill. Pinned `redactor_common` to 2026-10-15-05 (`make_columns_resizable`, `lint_resizable_headers`); `tests/test_headers_resizable.py` runs the lint over `gui/` and checks the real dialogs.
+
 ## 2026-10-15#11 -- Create Notes: much faster (artist notes first, no duplicate requests, a disk cache)
 
 - **What to create** in the folder question of Tools > Create Notes: *Artist notes only (recommended, fast)* is now the DEFAULT, then *Artist and album notes (slower)* and *Everything, including genre folders*; your last choice is remembered. Artist-only makes **no album lookups at all** (no album targets are even built); the albums' tags and folder names are still read locally to verify the artist. The review page header says which kinds were looked up. After an artist-only run the page offers **Create the album notes for these artists too** (a Yes at the end of the run, or the button in the list view): it looks up only the albums of the artists whose notes were just written. The command line follows: `mp3redactor notes` without `--kind` now means `--kind artist`; `--kind album|both|genre|all` are unchanged. (Right-click > Create Notes for This Folder keeps asking for the artist and album of the selection.)
