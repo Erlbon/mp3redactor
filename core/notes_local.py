@@ -88,6 +88,26 @@ def is_generic_name(name: str) -> bool:
     return fold_name(name) in GENERIC_FOLDER_NAMES
 
 
+# An ALPHABETICAL GROUPING folder (Bands/D/<Band>/<Album>): a single letter or digit, '#', a range such as 'A-C',
+# 'A - F', '0-9', 'Aa-Az', or a bucket name. It only organises artist folders: it gets no note and no proposal and is
+# listed in the scan summary ('skipped: alphabetical grouping'). Only a folder that sits ABOVE artist folders counts
+# (a band really called 'D' or 'X' that holds albums is an artist folder).
+GROUPING_BUCKET_NAMES = frozenset({"misc", "other", "others", "various"})
+_GROUPING_RANGE = re.compile(r"^([0-9A-Za-zÀ-ɏ]{1,2})\s*[-‐-―]\s*([0-9A-Za-zÀ-ɏ]{1,2})$")
+GROUPING_REASON = "alphabetical grouping"
+
+
+def is_alphabetical_grouping(name: str) -> bool:
+    """Case-insensitive, trailing punctuation ignored ('D', 'd.', '#', 'A-C', 'A - C', '0-9', 'Aa-Az', 'Misc')."""
+    text = (name or "").strip()
+    stripped = text.rstrip(" .,:;!") or text
+    if len(stripped) == 1 and (stripped.isalnum() or stripped == "#"):
+        return True
+    if _GROUPING_RANGE.match(stripped):
+        return True
+    return fold_name(stripped) in GROUPING_BUCKET_NAMES
+
+
 # ---------------------------------------------------------------------------
 # Folders
 # ---------------------------------------------------------------------------
@@ -189,6 +209,7 @@ class Skipped:
 class ScanResult:
     targets: list[Target] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
+    groupings: list[Skipped] = field(default_factory=list)  # alphabetical grouping folders: no note, no proposal
     missing: list[str] = field(default_factory=list)  # arguments that named nothing
 
 
@@ -269,6 +290,9 @@ def scan(
         if kind not in wanted and not (kind == KIND_ARTIST and is_collection_name(folder.name)):
             return
         seen.add(key)
+        if kind == KIND_GENRE and is_alphabetical_grouping(folder.name):
+            result.groupings.append(Skipped(folder, kind, GROUPING_REASON))
+            return
         if kind == KIND_ARTIST and is_collection_name(folder.name):
             kind = KIND_GENRE  # 'Various Artists', 'Soundtracks'...: a collection, its note is about.md
             if kind not in wanted:

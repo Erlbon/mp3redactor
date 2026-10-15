@@ -842,6 +842,8 @@ def create_notes(
         why = []
         if found.skipped:
             why.append(f"{len(found.skipped)} folder(s) already have a note and were left alone.")
+        if found.groupings:
+            why.append(f"{len(found.groupings)} alphabetical grouping folder(s) were skipped.")
         if found.missing:
             why.append("Not found: " + ", ".join(str(m) for m in found.missing))
         QMessageBox.information(
@@ -886,6 +888,8 @@ def create_notes(
         notes.append(f"The lookup stopped early: {failure[0]}")
     if found.skipped:
         notes.append(f"{len(found.skipped)} folder(s) already have a note and are not listed.")
+    if found.groupings:
+        notes.append(f"{len(found.groupings)} alphabetical grouping folder(s) (A, B-C, 0-9...) skipped: no note, no proposal.")
     unreachable = [p for p in session.problems() if p.lower().startswith("could not reach")]
     if unreachable:
         notes.append(f"The internet services could not be reached: {unreachable[0]}")

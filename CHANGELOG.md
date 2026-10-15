@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-15#10 -- Create Notes: alphabetical grouping folders get no note
+
+- Changed: a folder that only groups artist folders alphabetically (`Bands\D\<Band>\<Album>`: a single letter or digit, `#`, a range like `A-C`, `A - F`, `0-9`, `Aa-Az`, or `Misc` / `Other` / `Others` / `Various` above artist folders; case and trailing punctuation ignored) is no longer taken for a genre. It gets **no note and no proposal** (before: an `about.md` proposal that looked `D` up on Wikipedia) and is counted in the summary ("skipped: alphabetical grouping"). A real genre folder (`Rock`) still gets its `about.md` proposal; a band called `D` that holds albums is still an artist folder; `Various Artists` as a collection keeps its rule. `Bands`, `Music`, `Artists` stay unnamed library roots as before.
+
 ## 2026-10-15#09 -- Create Notes: more sources work (Discogs, Wikipedia, the tags)
 
 - New: a **Discogs album candidate can now be chosen** on the review page (it said "only MusicBrainz albums can"). The album note gets the tracklist (vinyl sides A1 / B2 are numbered 1..n, durations kept), label and catalogue number, country, released date, structured credits (producer, written by, musicians, sleeve design, photography; never Discogs' free-text release notes), genres and styles, a verified Wikipedia introduction and a "Facts from Discogs" credit. A Discogs master works too (its main release is used). Needs the Discogs token: without one the Discogs candidates do not exist and the page says "Discogs token not set: add it in Tools > API Keys...".

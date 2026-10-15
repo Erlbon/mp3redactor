@@ -97,12 +97,19 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     found = scan(args.paths, include_subfolders=not args.no_recurse, kinds=kinds)
     for argument in found.missing:
         out.error(f"nothing found for {argument}")
-    if not found.targets and not found.skipped:
+    if not found.targets and not found.skipped and not found.groupings:
         raise CliError("no artist or album folders found")
     dry = args.dry_run or not args.write
     for skipped in found.skipped:
         row = {"status": "has-note", "kind": skipped.kind, "folder": str(skipped.folder), "message": skipped.reason,
                "reasons": [], "candidates": [], "problems": [], "confidence": "", "path": "", "sources": []}
+        out.record(row)
+        _print(out, row)
+
+    for grouping in found.groupings:
+        row = {"status": "grouping", "kind": grouping.kind, "folder": str(grouping.folder),
+               "message": f"skipped: {grouping.reason}", "reasons": [], "candidates": [], "problems": [],
+               "confidence": "", "path": "", "sources": []}
         out.record(row)
         _print(out, row)
 
@@ -166,12 +173,13 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
 
     summary: NotesSummary = summarize(proposals, results, cancelled=cancelled)
     summary_dict = summary.to_dict()
-    summary_dict.update({"has_note": len(found.skipped), "dry_run": dry, "failed": failed, "from_uncertain": guessed})
+    summary_dict.update({"has_note": len(found.skipped), "groupings": len(found.groupings), "dry_run": dry, "failed": failed, "from_uncertain": guessed})
     out.line("")
     out.line(
         f"{summary.total} folder(s) looked up: {summary.confident} confident, {summary.uncertain} uncertain, "
         f"{summary.none} not found; {summary.written} written, {summary.would_write} would be written, "
         f"{len(found.skipped)} already had a note."
+        + (f" {len(found.groupings)} alphabetical grouping folder(s) skipped." if found.groupings else "")
     )
     if guessed:
         out.line(f"{guessed} note(s) {'would be ' if dry else 'were '}written from an UNCERTAIN match (best guess, still "
