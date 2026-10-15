@@ -106,10 +106,15 @@ class Candidate:
     hits: list[str] = field(default_factory=list)  # local albums found in its discography
     score: float = 0.0
     note: str = ""
+    also: str = ""  # a second source that names the SAME artist ('discogs'): one merged candidate, not two lines
+    also_id: str = ""
 
     def to_dict(self) -> dict:
-        return {"source": self.source, "id": self.id, "name": self.name, "detail": self.detail,
-                "hits": list(self.hits), "score": round(self.score, 3), "note": self.note}
+        out = {"source": self.source, "id": self.id, "name": self.name, "detail": self.detail,
+               "hits": list(self.hits), "score": round(self.score, 3), "note": self.note}
+        if self.also:
+            out["also"], out["also_id"] = self.also, self.also_id
+        return out
 
 
 @dataclass
@@ -454,6 +459,26 @@ class NotesEngine:
             self._groups[mbid] = [g for g in self._all_groups[mbid] if (g.primary or "").casefold() in ("album", "ep")]
         return self._groups[mbid]
 
+    @staticmethod
+    def _merge_same_artist(candidates: list[Candidate]) -> list[Candidate]:
+        """A MusicBrainz and a Discogs candidate become ONE line ('musicbrainz + discogs') only when a verifiable fact
+        agrees: a local album found in BOTH discographies. The same name alone proves nothing (two services may each have a
+        'Chainfist' that are different artists): such candidates stay apart and the match stays uncertain. The merged
+        candidate's note says what the two have in common."""
+        merged: list[Candidate] = []
+        for cand in candidates:
+            twin = next((m for m in merged if cand.source == "discogs" and m.source == "musicbrainz" and not m.also
+                         and fold_name(m.name) == fold_name(cand.name) and set(m.hits) & set(cand.hits)), None)
+            if twin is None:
+                merged.append(cand)
+            else:
+                shared = [h for h in twin.hits if h in set(cand.hits)]
+                twin.also, twin.also_id = "discogs", cand.id
+                twin.detail = "; ".join(x for x in (twin.detail, f"Discogs {cand.id}") if x)
+                twin.note = (f"merged with Discogs {cand.id}: both discographies have {', '.join(repr(h) for h in shared)}"
+                             + (f"; {twin.note}" if twin.note else ""))
+        return merged
+
     def resolve_artist(
         self, names: list[str], local_titles: list[list[str]], local_years: list[str],
         partial: Optional[list[str]] = None,
@@ -528,6 +553,7 @@ class NotesEngine:
                 res.reasons += [f"Discogs: {r}" for r in reasons]
             except DiscogsError as exc:
                 res.problems.append(str(exc))
+        res.candidates = self._merge_same_artist(res.candidates)
         return res
 
     # -- artist notes -------------------------------------------------------------------------------------
@@ -547,6 +573,10 @@ class NotesEngine:
                                 name_sim=candidate.score, detail=candidate.detail)
         if candidate.source == "musicbrainz":
             forced.mb = _ArtistFound(evaluation, Confidence.CONFIDENT, groups=self._discography(candidate.id))
+            if candidate.also == "discogs":  # both sources name this artist: members and profile come from Discogs too
+                forced.discogs = _ArtistFound(Evaluation("discogs", candidate.also_id, candidate.name, hits=list(candidate.hits),
+                                                         name_sim=candidate.score, detail=f"Discogs {candidate.also_id}"),
+                                              Confidence.CONFIDENT)
         else:
             forced.discogs = _ArtistFound(evaluation, Confidence.CONFIDENT)
         forced.reasons = [f"chosen by you: {candidate.name} ({candidate.source})"]
@@ -582,6 +612,14 @@ class NotesEngine:
         proposal.problems = list(res.problems)
         proposal.confidence = res.confidence
         if res.confidence != Confidence.CONFIDENT:
+            if res.candidates and not any(c.hits for c in res.candidates):
+                shown = ", ".join(f"'{t[0]}'" for t in titles[:3] if t)
+                two = len({c.source for c in res.candidates}) > 1
+                proposal.reasons.append(
+                    f"why it is uncertain: no local album ({shown}{', ...' if len(titles) > 3 else ''}) was found in "
+                    f"{'either discography' if two else 'the discography of a candidate'}"
+                    + (": the candidates of the two services may be different artists with the same name" if two else "")
+                    + "; pick the one you trust")
             if not res.candidates and not res.problems:
                 proposal.reasons.append("no artist of that name was found")
             if not res.candidates and not res.problems:

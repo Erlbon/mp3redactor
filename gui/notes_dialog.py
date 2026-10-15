@@ -397,7 +397,8 @@ class ProposalPanel(QWidget):
             row = table.rowCount()
             table.insertRow(row)
             hits = ", ".join(cand.hits) if cand.hits else "none"
-            for col, text in enumerate((cand.name, cand.detail, f"{cand.score:.2f}", cand.source, hits)):
+            source = cand.source + (f" + {cand.also}" if cand.also else "")
+            for col, text in enumerate((cand.name, cand.detail, f"{cand.score:.2f}", source, hits)):
                 table.setItem(row, col, QTableWidgetItem(text))
                 table.item(row, col).setToolTip(cand.note or text)
         if self._candidates:
@@ -770,6 +771,57 @@ class NotesReviewDialog(QDialog):
 
     # -- the list --------------------------------------------------------------------------------------------
 
+    def _style_row(self, row: QTreeWidgetItem, i: int, item) -> None:
+        """Everything a row of the list shows, set from the session item `i` (a new row, or one updated in place)."""
+        p = item.proposal
+        level_text = (p.level or p.kind) + (" - update" if p.is_update else "")
+        for column, text in enumerate((short_path(p.folder, self._root), level_text, item.confidence_word, item.state_word)):
+            row.setText(column, text)
+        row.setData(0, Qt.ItemDataRole.UserRole, i)
+        flags = row.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+        if item.tickable:
+            flags |= Qt.ItemFlag.ItemIsUserCheckable
+        else:
+            flags &= ~Qt.ItemFlag.ItemIsUserCheckable
+        row.setFlags(flags)
+        if item.tickable:
+            row.setCheckState(0, Qt.CheckState.Checked if item.ticked else Qt.CheckState.Unchecked)
+        else:  # no checkbox at all: it has to be resolved (candidate / level) before it can be written
+            row.setData(0, Qt.ItemDataRole.CheckStateRole, None)
+        row.setForeground(2, QBrush(QColor(TEXT_COLOURS[p.confidence])))
+        blocked = not item.tickable and item.state == PENDING
+        row.setToolTip(0, p.path + ("\nNot tickable: pick a candidate or a level first" if blocked else ""))
+
+    def _update_rows(self, indices) -> None:
+        """After a pick (candidate, level, best guesses) the rows of those session items are UPDATED IN PLACE: the same
+        row objects, the same positions, the same scroll position and selection; nothing is rebuilt (a rebuild is what made
+        the list jump). With the 'Only uncertain' filter on, a row that became confident leaves the list."""
+        tree = self.tree
+        only_open = self.filter_check.isChecked()
+        tree.blockSignals(True)
+        try:
+            for index in indices:
+                for r in range(tree.topLevelItemCount()):
+                    row = tree.topLevelItem(r)
+                    if row.data(0, Qt.ItemDataRole.UserRole) != index:
+                        continue
+                    item = self.session.items[index]
+                    if only_open and item.proposal.confidence == Confidence.CONFIDENT:
+                        tree.takeTopLevelItem(r)
+                    else:
+                        self._style_row(row, index, item)
+                    break
+        finally:
+            tree.blockSignals(False)
+        current = tree.currentItem()
+        if current is None and tree.topLevelItemCount():
+            tree.setCurrentItem(tree.topLevelItem(0))
+        elif current is not None:
+            self.list_panel.show_item(self.session.items[current.data(0, Qt.ItemDataRole.UserRole)])
+        else:
+            self.list_panel.show_item(None)
+        self._refresh_list_header()
+
     def _fill_tree(self) -> None:
         tree = self.tree
         selected = self.index
@@ -781,22 +833,8 @@ class NotesReviewDialog(QDialog):
             p = item.proposal
             if only_open and p.confidence == Confidence.CONFIDENT:
                 continue
-            level_text = (p.level or p.kind) + (" - update" if p.is_update else "")
-            row = QTreeWidgetItem([short_path(p.folder, self._root), level_text, item.confidence_word, item.state_word])
-            row.setData(0, Qt.ItemDataRole.UserRole, i)
-            flags = row.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
-            if item.tickable:
-                flags |= Qt.ItemFlag.ItemIsUserCheckable
-            else:
-                flags &= ~Qt.ItemFlag.ItemIsUserCheckable
-            row.setFlags(flags)
-            if item.tickable:
-                row.setCheckState(0, Qt.CheckState.Checked if item.ticked else Qt.CheckState.Unchecked)
-            else:  # no checkbox at all: it has to be resolved (candidate / level) before it can be written
-                row.setData(0, Qt.ItemDataRole.CheckStateRole, None)
-            row.setForeground(2, QBrush(QColor(TEXT_COLOURS[p.confidence])))
-            blocked = not item.tickable and item.state == PENDING
-            row.setToolTip(0, p.path + ("\nNot tickable: pick a candidate or a level first" if blocked else ""))
+            row = QTreeWidgetItem()
+            self._style_row(row, i, item)
             tree.addTopLevelItem(row)
         tree.blockSignals(False)
         tree.doItemsLayout()  # the scroll range is only updated by a layout
@@ -871,7 +909,8 @@ class NotesReviewDialog(QDialog):
                 done.append(i)
 
         run_work_with_progress(self, len(indices), "Looking up the best guesses…", work, cancellable=True, title="Create Notes")
-        self._refresh_all()
+        self._update_rows(done)  # the rows that were rebuilt, in place
+        self._update_followup()
 
     def _untick_all(self) -> None:
         for i in range(len(self.session.items)):
@@ -925,7 +964,11 @@ class NotesReviewDialog(QDialog):
             QMessageBox.warning(self, "Create Notes", f"The lookup failed: {exc}")
             return
         self.session.replace(self.index, rebuilt)
-        self._refresh_all()
+        if self.view == VIEW_LIST:
+            self._update_rows([self.index])  # that one row, in place
+            self._update_followup()
+        else:
+            self._refresh_all()
 
     # -- opening ---------------------------------------------------------------------------------------------
 
