@@ -23,13 +23,10 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from core.notes_flow import album_folder_of, artist_folder_of_file
-from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST
+from core.notes_kinds import parse_kinds
+from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
 
 MAX_CHOICES = 5
-
-# 'What to create' in the scope dialog and on the command line: the kinds handed to scan()
-KINDS_OF_CHOICE = {"artist": (KIND_ARTIST,), "both": (KIND_ARTIST, KIND_ALBUM), "all": ALL_KINDS}
-
 
 def count_targets(folder: str, include_subfolders: bool = True) -> tuple[int, int, int]:
     """(artist, album, genre) folders under `folder` that would be looked up (no note yet): what the scope dialog's time
@@ -43,14 +40,15 @@ def count_targets(folder: str, include_subfolders: bool = True) -> tuple[int, in
 
 def kinds_sentence(kinds) -> str:
     """The review page's header sentence: which kinds of notes were looked up."""
-    kinds = tuple(kinds)
+    kinds = parse_kinds(kinds)
     if kinds == (KIND_ARTIST,):
         return "Looked up: artist notes only (no album lookups)."
     if kinds == (KIND_ALBUM,):
         return "Looked up: album notes only."
-    if set(kinds) == {KIND_ARTIST, KIND_ALBUM}:
-        return "Looked up: artist and album notes."
-    return "Looked up: artist, album and genre / collection notes."
+    if kinds == (KIND_GENRE,):
+        return "Looked up: genre / collection notes only (no artist or album lookups, no tags read)."
+    names = [{KIND_ARTIST: "artist", KIND_ALBUM: "album", KIND_GENRE: "genre / collection"}[k] for k in kinds]
+    return "Looked up: " + (", ".join(names[:-1]) + " and " + names[-1]) + " notes."
 
 CAP_OPENED = "the folder you opened"
 CAP_ARTIST = "the artist of the selected files"

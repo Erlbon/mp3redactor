@@ -144,3 +144,12 @@ def cristina_library(root: Path) -> Path:
     make_mp3(artist / "Cristina (1980)" / "01 Disco Clone.mp3", "Disco Clone", "Cristina", "Cristina", 1, "1980")
     make_mp3(artist / "Sleep It Off (1984)" / "01 Blame It on the Night.mp3", "Blame It on the Night", "Cristina", "Sleep It Off", 1, "1984")
     return artist
+
+
+def set_kinds(dialog, kinds: str) -> None:
+    """Ticks exactly these kinds ('artist,genre', or the words both / all) in the folder question's 'What to create'."""
+    from core.notes_kinds import parse_kinds
+
+    wanted = parse_kinds(kinds)
+    for key, box in dialog.kind_boxes.items():
+        box.setChecked(key in wanted)

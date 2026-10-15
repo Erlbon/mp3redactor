@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 from core.discogs_lookup import DiscogsClient  # noqa: E402
 from core.notes_flow import Fetchers  # noqa: E402
 from redactor_common.core.lookup_client import Throttle  # noqa: E402
+from tests.notes_helpers import set_kinds  # noqa: E402,F401
 from tests.notes_helpers import FakeFetch, make_mp3  # noqa: E402
 from tests.test_cover_gui import window  # noqa: E402,F401
 from tests.test_notes_gui import boxes, click, review, wait  # noqa: E402,F401
@@ -78,7 +79,7 @@ def scenario_in_list(window, root, body, kinds="artist"):
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
         dlg = scope_dialog()
         next(r for r, p in dlg.radios if p == str(root)).click()
-        dlg.kind_radios[kinds].click()
+        set_kinds(dlg, kinds)
         click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")
         page = review()

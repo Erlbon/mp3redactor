@@ -135,7 +135,8 @@ from gui.notes_dialog import create_notes
 from core.notes_flow import live_fetchers, selection_scope
 from core.notes_cache import default_cache
 from core.notes_local import ALL_KINDS
-from core.notes_scope import KINDS_OF_CHOICE, scope_choices
+from core.notes_kinds import parse_kinds
+from core.notes_scope import scope_choices
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
@@ -1023,7 +1024,7 @@ class MainWindow(QMainWindow):
         self.settings.notes_last_folder = folder
         self.settings.notes_kinds = kinds
         save_settings(self.settings)
-        self._run_create_notes([folder], self.settings.include_subfolders, KINDS_OF_CHOICE[kinds], outdated)
+        self._run_create_notes([folder], self.settings.include_subfolders, parse_kinds(kinds), outdated)
 
     def create_notes_for_selection(self) -> None:
         """Right-click "Create Notes for This Folder...": for each selected file its ALBUM folder and the ARTIST

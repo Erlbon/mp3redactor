@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 from core.notes_flow import Fetchers  # noqa: E402
 from gui.notes_dialog import NotesReviewDialog  # noqa: E402
+from tests.notes_helpers import set_kinds  # noqa: E402,F401
 from tests.notes_helpers import FakeFetch, make_mp3, musicbrainz_routes, ultravox_fetchers, wikipedia_routes, RECORDED  # noqa: E402
 from tests.test_cover_gui import window  # noqa: E402,F401
 
@@ -84,7 +85,7 @@ def run(window, monkeypatch, folder, fetchers, scenario, must_finish=True):
 
         yield from wait(lambda: scope() is not None, "the scope dialog")
         scope().other_radio.click()
-        scope().kind_radios["all"].click()
+        set_kinds(scope(), "all")
         click(scope().continue_button)
         yield from scenario()
 

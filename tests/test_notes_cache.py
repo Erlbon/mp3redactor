@@ -336,7 +336,7 @@ def test_settings_remember_the_kinds_choice_and_the_cache_switch(tmp_path):
     s.notes_kinds, s.notes_cache_enabled = "both", False
     save_settings(s, tmp_path)
     back = load_settings(tmp_path)
-    assert back.notes_kinds == "both" and back.notes_cache_enabled is False
+    assert back.notes_kinds == "artist,album" and back.notes_cache_enabled is False
     ini = next(tmp_path.glob("*.ini"))
     ini.write_text(ini.read_text(encoding="utf-8").replace("notes_kinds = both", "notes_kinds = nonsense"), encoding="utf-8")
     assert load_settings(tmp_path).notes_kinds == "artist"

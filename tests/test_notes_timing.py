@@ -20,6 +20,7 @@ from core.notes_local import KIND_ARTIST  # noqa: E402
 from core.notes_timing import (  # noqa: E402
     ALBUM_SECONDS, ARTIST_SECONDS, clock, estimate, format_duration, lookup_sentence, progress_suffix, scope_hint,
 )
+from tests.notes_helpers import set_kinds  # noqa: E402,F401
 from tests.notes_helpers import FakeFetch, make_mp3, ultravox_fetchers, ultravox_library  # noqa: E402
 from tests.test_cover_gui import window  # noqa: E402,F401
 from tests.test_notes_gui import boxes, click, review, wait  # noqa: E402,F401
@@ -188,9 +189,9 @@ def test_the_scope_dialog_warns_about_a_big_scope_with_album_notes_and_stays_qui
         yield from wait(lambda: dlg.counts is not None, "the folder count", 30)
         seen["counts"] = dlg.counts
         seen["artist_only"] = (dlg.hint_label.isVisibleTo(dlg), dlg.hint_label.text())
-        dlg.kind_radios["both"].click()
+        set_kinds(dlg, "both")
         seen["both"] = (dlg.hint_label.isVisibleTo(dlg), dlg.hint_label.text())
-        dlg.kind_radios["artist"].click()
+        set_kinds(dlg, "artist")
         seen["back"] = dlg.hint_label.isVisibleTo(dlg)
         QTest.mouseClick(dlg.cancel_button, nd.Qt.MouseButton.LeftButton)
 

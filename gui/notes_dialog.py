@@ -39,6 +39,7 @@ from core.notes_flow import (
 )
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
+from core.notes_kinds import kinds_text, parse_kinds
 from core.notes_scope import ScopeChoice, count_targets, kinds_sentence
 from core.notes_timing import lookup_sentence, progress_suffix, scope_hint
 from core.notes_local import KIND_ALBUM, KIND_ARTIST
@@ -1166,10 +1167,10 @@ class NotesScopeDialog(QDialog):
 
     MAX_PATH_CHARS = 70
 
-    KIND_CHOICES = (
-        ("artist", "Artist notes only (recommended, fast)"),
-        ("both", "Artist and album notes (slower)"),
-        ("all", "Everything, including genre folders"),
+    KIND_CHECKS = (
+        ("genre", "Genre / collection notes (fast: about one Wikipedia lookup per folder, no tags read)"),
+        ("artist", "Artist notes (about 5 requests each)"),
+        ("album", "Album notes (slower: about 4 requests each)"),
     )
 
     def __init__(self, parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
@@ -1233,14 +1234,14 @@ class NotesScopeDialog(QDialog):
         what_font.setBold(True)
         what.setFont(what_font)
         layout.addWidget(what)
-        self.kind_group = QButtonGroup(self)
-        self.kind_radios: dict[str, QRadioButton] = {}
-        for key, text in self.KIND_CHOICES:
-            radio = QRadioButton(text)
-            radio.setChecked(key == (kinds if kinds in dict(self.KIND_CHOICES) else "artist"))
-            self.kind_group.addButton(radio)
-            self.kind_radios[key] = radio
-            layout.addWidget(radio)
+        self.kind_boxes: dict[str, QCheckBox] = {}
+        wanted = parse_kinds(kinds)
+        for key, text in self.KIND_CHECKS:
+            box = QCheckBox(text)
+            box.setChecked(key in wanted)
+            box.toggled.connect(lambda *_: (self._update_hint(), self._update_continue()))
+            self.kind_boxes[key] = box
+            layout.addWidget(box)
 
         # Notes made by an older version of this app: never on by itself, never remembered
         layout.addSpacing(6)
@@ -1248,7 +1249,7 @@ class NotesScopeDialog(QDialog):
         self.hint_label.setWordWrap(True)
         self.hint_label.setStyleSheet("background:#fff6d6; color:#4d3600; border:1px solid #e6cf85; padding:3px 8px;")
         self.hint_label.setVisible(False)
-        layout.insertWidget(layout.indexOf(self.kind_radios["all"]) + 1, self.hint_label)
+        layout.insertWidget(layout.indexOf(self.kind_boxes["album"]) + 1, self.hint_label)
         self.outdated_box = QCheckBox(OUTDATED_CHECK_TEXT)
         self.outdated_box.setChecked(False)
         self.outdated_box.setToolTip("Lists the notes this app wrote in an older shape that nobody edited, and the notes "
@@ -1283,7 +1284,6 @@ class NotesScopeDialog(QDialog):
         self._count_timer = QTimer(self)
         self._count_timer.setSingleShot(True)
         self._count_timer.timeout.connect(self._start_count)
-        self.kind_group.buttonToggled.connect(lambda *_: self._update_hint())
         self.group.buttonToggled.connect(lambda *_: self._count_timer.start(150))
         self.include_box.toggled.connect(lambda *_: self._count_timer.start(150))
         self._count_timer.start(0)
@@ -1336,16 +1336,17 @@ class NotesScopeDialog(QDialog):
         self._update_hint()
 
     def _update_hint(self) -> None:
-        text = scope_hint(*self.counts, self.chosen_kinds()) if self.counts else ""
+        text = scope_hint(*self.counts, self.chosen_kinds()) if self.counts and self.chosen_kinds() else ""
         self.hint_label.setText(text)
         self.hint_label.setVisible(bool(text))
 
     def chosen_kinds(self) -> str:
-        """'artist', 'both' or 'all'."""
-        return next((key for key, radio in self.kind_radios.items() if radio.isChecked()), "artist")
+        """The ticked kinds as a comma list ('artist,genre'); '' when nothing is ticked."""
+        ticked = [key for key, box in self.kind_boxes.items() if box.isChecked()]
+        return kinds_text(ticked) if ticked else ""
 
     def _update_continue(self) -> None:
-        self.continue_button.setEnabled(bool(self.chosen_folder()))
+        self.continue_button.setEnabled(bool(self.chosen_folder()) and bool(self.chosen_kinds()))
 
     def _update_include_note(self) -> None:
         self.include_note.setText("Everything below the folder is looked at."

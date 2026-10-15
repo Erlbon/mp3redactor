@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-15#17 -- Create Notes: "What to create" is three check boxes, genre-only is cheap
+
+- Changed: **What to create** in the folder question is now three **check boxes** instead of three exclusive choices: *Genre / collection notes* (fast: about one Wikipedia lookup per folder), *Artist notes* (default on) and *Album notes* (default off); your last choice is remembered (the old `artist` / `both` / `all` values still read). Ticking only *Genre / collection notes* does **no artist or album lookups and no tag reading**: only the folder structure is walked, then Wikipedia is asked once per genre folder. Measured on the real engine with live Wikipedia (a `Bands\Ska\<3 artists>\<2 albums>` tree, genre only, started at `Bands`): **2 requests, 0.4 s, 0 tag reads** (before, ticking "Everything" on a real "Ska" folder with 101 folders took 886 requests and 14 minutes for that one note). Continue needs at least one box; the hint under the boxes now reflects the choice ("About 4 genre / collection folders: about 2 s (one Wikipedia lookup each, no tags read)"), and still warns about album notes for a big scope.
+- Changed: `notes --kind` takes the same in combination: `--kind genre`, `--kind artist,genre`; `artist`, `album`, `genre`, `both` and `all` keep working.
+
 ## 2026-10-15#16 -- Create Notes: where the time goes, and a third less of it
 
 The user's real run (a Discogs token, a library on a share) was "painfully slow". Measured on a scratch tree of 30 artists x 3 albums x 12 tagged files with the REAL MusicBrainz and Wikipedia, artist notes only, ten well-known bands (Discogs simulated at 0.4 s per request, one request per second):

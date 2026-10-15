@@ -31,13 +31,23 @@ from core.notes_flow import (
     write_proposal,
 )
 from core.notes_cache import default_cache
+from core.notes_kinds import parse_kinds
 from core.notes_timing import lookup_sentence
 from mp3cli import files as cli_files
 from redactor_common.core.notes import STATE_LEGACY
 from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
 from redactor_common.cli import EXIT_INTERRUPTED, EXIT_OK, EXIT_PARTIAL, CliError, Output, add_common_options
 
-KIND_CHOICES = ("both", KIND_ARTIST, KIND_ALBUM, KIND_GENRE, "all")
+KIND_WORDS = ("both", KIND_ARTIST, KIND_ALBUM, KIND_GENRE, "all")
+
+
+def kind_argument(text: str) -> tuple:
+    """--kind: one word (artist, album, genre, both, all) or several joined by commas (artist,genre)."""
+    words = [w.strip().lower() for w in text.replace(";", ",").split(",") if w.strip()]
+    bad = [w for w in words if w not in KIND_WORDS]
+    if not words or bad:
+        raise argparse.ArgumentTypeError(f"invalid kind {', '.join(bad) or text!r}: use {', '.join(KIND_WORDS)}, or a list like artist,genre")
+    return parse_kinds(words)
 
 
 def make_cache(args: argparse.Namespace):
@@ -70,9 +80,10 @@ def add_notes_parser(sub) -> None:
         "-R", "--no-recurse", action="store_true",
         help="look only at the folders named, not the folders below them",
     )
-    parser.add_argument("--kind", choices=KIND_CHOICES, default=KIND_ARTIST, help="which notes: artist (the default: "
-                                                             "fast, no album lookups at all), album, genre (about.md of a genre or collection folder), "
-                                                             "both = artist + album or all = all three")
+    parser.add_argument("--kind", type=kind_argument, default=(KIND_ARTIST,), metavar="KIND",
+                        help="which notes: artist (the default: fast, no album lookups at all), album, genre (about.md "
+                             "of a genre or collection folder: about one Wikipedia lookup per folder, no tags read), "
+                             "both = artist + album, all = all three, or several joined by commas (artist,genre)")
     parser.add_argument("--update", action="store_true",
                         help="also list the notes made by an older version of this app (stamped, an older format, "
                              "nobody edited them) and, with --write, replace ONLY those (the old note goes to the "
@@ -129,7 +140,7 @@ def _print(out: Output, row: dict) -> None:
 
 
 def run_notes(args: argparse.Namespace, out: Output) -> int:
-    kinds = {"both": (KIND_ARTIST, KIND_ALBUM), "all": ALL_KINDS}.get(args.kind, (args.kind,))
+    kinds = args.kind
     update = args.update or args.update_legacy
     scan_started = time.perf_counter()
     found = scan(args.paths, include_subfolders=not args.no_recurse, kinds=kinds, include_outdated=update)

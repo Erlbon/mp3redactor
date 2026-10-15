@@ -40,9 +40,9 @@ time.
   the Pluteus media server shows beside a folder: `artist.md`, `album.md`, and `about.md` for a genre or collection
   folder. Tools > Create Notes always asks which folder first, as a short list (the folder you opened, the artist /
   album of the selected files, one level up, the last folder, the library folder, or Another folder; the first is ticked,
-  Enter continues, the selection is never used silently) and **what to create**: *Artist notes only* (recommended, fast: no
-  album lookups at all; the default and remembered), *Artist and album notes* (slower) or *Everything, including genre
-  folders*. After an artist-only run the review page offers **Create the album notes for these artists too**. The right-click
+  Enter continues, the selection is never used silently) and **what to create**, as three check boxes (your last choice is remembered): *Genre / collection notes* (fast: about one
+  Wikipedia lookup per folder, no artist or album lookups and no tags read), *Artist notes* (the default: no album
+  lookups at all) and *Album notes* (slower). After an artist-only run the review page offers **Create the album notes for these artists too**. The right-click
   entry takes each selected file's album folder AND the artist folder above it. The lookups (MusicBrainz, Wikipedia and, with the Discogs token saved under Tools > API
   Keys, Discogs) run under a progress dialog you can cancel; what was looked up so far is still reviewed. The review
   page has two views, chosen from what was found and switchable: one note at a time (one artist or album: Skip, Write
@@ -341,7 +341,7 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 
 | Option | Meaning |
 | --- | --- |
-| `--kind KIND` | `artist`, `album`, `genre` (the `about.md` of a genre or collection folder), `both` (artist + album) or `all`. The default is `artist`: fast, no album lookups at all (the albums' tags and folder names are still read locally to verify the artist). |
+| `--kind KIND` | `artist`, `album`, `genre` (the `about.md` of a genre or collection folder: about one Wikipedia lookup per folder, no artist or album lookups, no tags read), `both` (artist + album), `all`, or several joined by commas (`artist,genre`). The default is `artist`: fast, no album lookups at all (the albums' tags and folder names are still read locally to verify the artist). |
 | `--write` | Write the confident drafts. Without it the command only reports. |
 | `--include-uncertain` | With `--write`: also write the uncertain matches from the engine's best candidate, as drafts. Never over an existing note, never for "nothing found", never when the level is unclear (listed with the reason). Marked `from_uncertain` in the report and in `--json`. |
 | `-n`, `--dry-run` | Never write, even with `--write`: show what would be written. |

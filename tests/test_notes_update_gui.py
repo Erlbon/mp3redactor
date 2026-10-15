@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 from core.notes_render import CURRENT_NOTE_FORMAT  # noqa: E402
 from gui.notes_dialog import LEGACY_WARNING, OUTDATED_CHECK_TEXT  # noqa: E402
 from redactor_common.core.notes import STATE_CURRENT, note_status  # noqa: E402
+from tests.notes_helpers import set_kinds  # noqa: E402,F401
 from tests.notes_helpers import make_mp3, ultravox_fetchers, ultravox_library  # noqa: E402
 from tests.test_cover_gui import window  # noqa: E402,F401
 from tests.test_notes_gui import boxes, click, review, wait  # noqa: E402,F401
@@ -58,7 +59,7 @@ def test_the_checkbox_is_off_by_default_and_without_it_no_old_note_is_listed(win
         seen["checked"] = dlg.outdated_box.isChecked()
         radio = next(r for r, p in dlg.radios if p == str(tmp_path))
         radio.click()
-        dlg.kind_radios["both"].click()
+        set_kinds(dlg, "both")
         click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")
         seen["listed"] = listed(review())
@@ -82,7 +83,7 @@ def test_with_the_checkbox_the_outdated_and_legacy_notes_are_listed_as_updates_n
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
         dlg = scope_dialog()
         next(r for r, p in dlg.radios if p == str(tmp_path)).click()
-        dlg.kind_radios["both"].click()
+        set_kinds(dlg, "both")
         dlg.outdated_box.setChecked(True)
         click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")
@@ -145,7 +146,7 @@ def test_the_legacy_warning_shows_on_the_legacy_item_and_a_no_to_the_question_wr
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
         dlg = scope_dialog()
         next(r for r, p in dlg.radios if p == str(tmp_path)).click()
-        dlg.kind_radios["both"].click()
+        set_kinds(dlg, "both")
         dlg.outdated_box.setChecked(True)
         click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from core.notes_kinds import parse_kinds
+
 MB_SECONDS = 1.1  # the throttle of core/musicbrainz_lookup.py
 WIKI_SECONDS = 0.3
 ARTIST_MB, ARTIST_WIKI = 3, 2  # requests per artist note (measured)
@@ -73,23 +75,31 @@ def lookup_sentence(folders: int, elapsed: float, requests: int, from_cache: int
             f"({_plural(requests, 'request')}, {from_cache} from the cache).")
 
 
-def estimate(artists: int, albums: int, genres: int, kinds: str) -> float:
-    """Seconds for `kinds` ('artist' / 'both' / 'all') over that many folders to look up."""
-    seconds = artists * ARTIST_SECONDS
-    if kinds in ("both", "all"):
-        seconds += albums * ALBUM_SECONDS
-    if kinds == "all":
-        seconds += genres * GENRE_SECONDS
-    return seconds
+def estimate(artists: int, albums: int, genres: int, kinds) -> float:
+    """Seconds for the chosen `kinds` (see core/notes_kinds.py) over that many folders to look up."""
+    kinds = parse_kinds(kinds)
+    return ((artists * ARTIST_SECONDS if "artist" in kinds else 0.0) + (albums * ALBUM_SECONDS if "album" in kinds else 0.0)
+            + (genres * GENRE_SECONDS if "genre" in kinds else 0.0))
 
 
-def scope_hint(artists: int, albums: int, genres: int, kinds: str) -> str:
-    """The scope dialog's one-line warning, or '' when the choice is small or already the fast one. Only a hint."""
-    folders = artists + (albums if kinds in ("both", "all") else 0) + (genres if kinds == "all" else 0)
-    if folders <= HINT_MIN_FOLDERS or kinds == "artist" or albums == 0:  # no album notes to warn about
+def scope_hint(artists: int, albums: int, genres: int, kinds) -> str:
+    """The scope dialog's one-line hint: how many folders the choice looks up and about how long it takes; a warning (with
+    the faster choice) when album notes make a big scope slow. Only a hint, never blocking."""
+    kinds = parse_kinds(kinds)
+    folders = ((artists if "artist" in kinds else 0) + (albums if "album" in kinds else 0)
+               + (genres if "genre" in kinds else 0))
+    if kinds == ("genre",):  # one Wikipedia lookup per folder, nothing else
+        if genres <= 0:
+            return ""
+        return (f"About {genres} genre / collection folder{'s' if genres != 1 else ''}: about "
+                f"{format_duration(max(estimate(0, 0, genres, kinds), 1))} (one Wikipedia lookup each, no tags read).")
+    if folders <= HINT_MIN_FOLDERS or "album" not in kinds or albums == 0:  # no album notes to warn about
         return ""
-    slow, fast = estimate(artists, albums, genres, kinds), estimate(artists, albums, genres, "artist")
+    slow = estimate(artists, albums, genres, kinds)
+    kinds_without = tuple(k for k in kinds if k != "album")
+    fast = estimate(artists, albums, genres, kinds_without)
     text = f"About {folders} folders: roughly {format_duration(slow)} with album notes"
     if fast > 0 and slow / fast >= 1.5:
-        text += f"; artist notes only is about {slow / fast:.0f}x faster"
+        without = "artist notes only" if kinds_without == ("artist",) else "without the album notes"
+        text += f"; {without} is about {slow / fast:.0f}x faster"
     return text + " (a rough guess: a folder that is not found takes longer)."

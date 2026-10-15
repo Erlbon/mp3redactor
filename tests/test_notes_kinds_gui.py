@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from core.notes_scope import kinds_sentence  # noqa: E402
+from tests.notes_helpers import set_kinds  # noqa: E402,F401
 from tests.notes_helpers import ultravox_fetchers, ultravox_library  # noqa: E402
 from tests.test_cover_gui import window  # noqa: E402,F401
 from tests.test_notes_gui import Script, boxes, click, review, wait  # noqa: E402,F401
@@ -37,7 +38,8 @@ def test_artist_notes_only_is_the_default_and_looks_no_albums_up(window, tmp_pat
     def scenario():
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
         dlg = scope_dialog()
-        seen["labels"] = [r.text() for r in dlg.kind_radios.values()]
+        seen["labels"] = [b.text() for b in dlg.kind_boxes.values()]
+        seen["ticked"] = [k for k, b in dlg.kind_boxes.items() if b.isChecked()]
         seen["checked"] = dlg.chosen_kinds()
         click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")
@@ -46,8 +48,9 @@ def test_artist_notes_only_is_the_default_and_looks_no_albums_up(window, tmp_pat
         review().done(0)
 
     drive(scenario, window.action_registry["create_notes"].trigger)
-    assert seen["labels"] == ["Artist notes only (recommended, fast)", "Artist and album notes (slower)",
-                              "Everything, including genre folders"]
+    assert seen["labels"] == ["Genre / collection notes (fast: about one Wikipedia lookup per folder, no tags read)",
+                              "Artist notes (about 5 requests each)", "Album notes (slower: about 4 requests each)"]
+    assert seen["ticked"] == ["artist"]  # artist notes on, album notes and genre notes off
     assert seen["checked"] == "artist" and seen["kinds"] == ["artist"]
     assert kinds_sentence(("artist",)) in seen["banner"] and "5 requests" in seen["banner"] and "Looked up 1 folder in" in seen["banner"]
     assert not [u for u in fetchers.mb.urls if "release-group/rg-" in u or "ws/2/release/" in u]
@@ -61,14 +64,14 @@ def test_the_choice_is_used_and_remembered_for_the_next_time(window, tmp_path, b
 
     def first():
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
-        scope_dialog().kind_radios["both"].click()
+        set_kinds(scope_dialog(), "both")
         click(scope_dialog().continue_button)
         yield from wait(lambda: review() is not None, "the review page")
         seen["kinds"] = item_kinds(review())
         review().done(0)
 
     drive(first, window.action_registry["create_notes"].trigger)
-    assert seen["kinds"] == ["album", "album", "artist"] and window.settings.notes_kinds == "both"
+    assert seen["kinds"] == ["album", "album", "artist"] and window.settings.notes_kinds == "artist,album"
 
     def second():
         yield from wait(lambda: scope_dialog() is not None, "the scope dialog")
@@ -76,7 +79,7 @@ def test_the_choice_is_used_and_remembered_for_the_next_time(window, tmp_path, b
         click(scope_dialog().cancel_button)
 
     drive(second, window.action_registry["create_notes"].trigger)
-    assert seen["default_now"] == "both"
+    assert seen["default_now"] == "artist,album"
 
 
 def test_everything_includes_the_genre_level(window, tmp_path, boxes):
@@ -94,7 +97,7 @@ def test_everything_includes_the_genre_level(window, tmp_path, boxes):
         dlg = scope_dialog()
         radio = next(r for r, p in dlg.radios if p == str(tmp_path))
         radio.click()
-        dlg.kind_radios["all"].click()
+        set_kinds(dlg, "all")
         click(dlg.continue_button)
         yield from wait(lambda: review() is not None, "the review page")
         seen["kinds"] = item_kinds(review())

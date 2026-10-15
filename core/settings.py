@@ -203,7 +203,7 @@ class Settings:
     # This computer only (not part of Export Settings).
     notes_last_folder: str = ""
     notes_dialog_size: str = ""
-    notes_kinds: str = "artist"  # Tools > Create Notes "What to create": artist / both / all (the last choice)
+    notes_kinds: str = "artist"  # Tools > Create Notes "What to create": a comma list of artist / album / genre (the last choice)
     notes_discogs_always: bool = False  # ask Discogs for every artist (slower); off: only when MusicBrainz has no match
     notes_skip_singles: bool = False  # leave the singles out of the artist note's discography (faster)
     notes_cache_enabled: bool = True  # the disk cache of the notes lookups (public service answers only)
@@ -331,8 +331,11 @@ class Settings:
 
 
 def _kinds_choice(value: str) -> str:
-    """A hand-edited bad value means the default (artist notes only)."""
-    return value if value in ("artist", "both", "all") else "artist"
+    """The remembered 'What to create': a comma list of artist / album / genre (the old 'both' and 'all' still read); a
+    hand-edited bad value means the default (artist notes only)."""
+    from core.notes_kinds import kinds_text
+
+    return kinds_text(value)
 
 
 def _get_bool(section, key: str, default: bool) -> bool:
