@@ -273,7 +273,7 @@ def test_preferences_dialog_maps_shared_keys_onto_existing_settings_fields():
     settings = Settings(ascii_filenames=False, rename_zero_pad=False, rename_zero_pad_width=2, auto_number_padding=2)
     saved = []
     dlg = build_preferences_dialog(settings, saved.append)
-    assert dlg.page_titles() == ["Filenames", "Library", "Fixing", "History", "Tools"]
+    assert dlg.page_titles() == ["Filenames", "Library", "Fixing", "History", "Create Notes", "Tools"]
     dlg.set_value("ascii_filenames", True)
     dlg.set_value("zero_pad_numbers", True)
     dlg.set_value("zero_pad_width", 12)  # mp3 allows up to 99 digits

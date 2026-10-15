@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from core import notes_discogs as nd
+from core.notes_cache import CachedDiscogs, CachedFetch, RequestStats, ResponseCache
 from core import notes_musicbrainz as nmb
 from core import wikipedia_lookup as wp
 from core.discogs_lookup import DiscogsClient, DiscogsError, load_token
@@ -303,9 +304,16 @@ class NotesEngine:
     """Builds proposals. One engine per run: it caches what it fetched (an artist's discography is fetched once
     however many of that artist's folders are asked about)."""
 
-    def __init__(self, fetchers: Optional[Fetchers] = None, loader: Optional[Loader] = None):
+    def __init__(self, fetchers: Optional[Fetchers] = None, loader: Optional[Loader] = None,
+                 cache: Optional[ResponseCache] = None):
         self.fetchers = fetchers or Fetchers()
         self.loader = loader
+        # The request layer (core/notes_cache.py): a per-engine memo (the same URL is never asked twice in a run) and,
+        # when a ResponseCache is given, the persistent cache (a repeated or resumed run is answered from disk).
+        self.stats = RequestStats()
+        self._mb = CachedFetch(self.fetchers.mb or nmb._fetch(), "mb", cache, self.stats)
+        self._wiki = CachedFetch(self.fetchers.wiki or wp.default_fetch(), "wiki", cache, self.stats)
+        self._discogs = CachedDiscogs(self.fetchers.discogs, cache, self.stats) if self.fetchers.discogs else None
         self._artists: dict[tuple, _Resolution] = {}
         self._levels: dict[str, tuple[LocalArtist, LevelDecision]] = {}
         self._groups: dict[str, list[nmb.ReleaseGroup]] = {}
@@ -407,7 +415,7 @@ class NotesEngine:
         One extra request per artist, cached; when it fails the albums and EPs already fetched are used."""
         if mbid not in self._all_groups:
             try:
-                self._all_groups[mbid] = nmb.browse_all_release_groups(mbid, self.fetchers.mb)
+                self._all_groups[mbid] = nmb.browse_all_release_groups(mbid, self._mb)
             except nmb.MusicBrainzError:
                 return fallback
         return self._all_groups[mbid]
@@ -420,8 +428,12 @@ class NotesEngine:
     # -- artist resolution --------------------------------------------------------------------------------
 
     def _discography(self, mbid: str) -> list[nmb.ReleaseGroup]:
+        """The artist's albums and EPs, for the matching. They are taken from the FULL list of release groups that the
+        artist note needs anyway (one browse, memoized), not asked for a second time with a type filter."""
         if mbid not in self._groups:
-            self._groups[mbid] = nmb.browse_release_groups(mbid, self.fetchers.mb)
+            if mbid not in self._all_groups:
+                self._all_groups[mbid] = nmb.browse_all_release_groups(mbid, self._mb)
+            self._groups[mbid] = [g for g in self._all_groups[mbid] if (g.primary or "").casefold() in ("album", "ep")]
         return self._groups[mbid]
 
     def resolve_artist(
@@ -441,7 +453,7 @@ class NotesEngine:
         try:
             hits: list[nmb.ArtistHit] = []
             for name in [*names[:2], *partial[:1]]:
-                for hit in nmb.search_artists(name, self.fetchers.mb):
+                for hit in nmb.search_artists(name, self._mb):
                     if hit.id not in [h.id for h in hits]:
                         hits.append(hit)
             scored = []
@@ -474,7 +486,7 @@ class NotesEngine:
         except nmb.MusicBrainzError as exc:
             res.problems.append(str(exc))
         # -- Discogs
-        client = self.fetchers.discogs
+        client = self._discogs
         if client is not None and not client.rate_limited:
             try:
                 dhits = nd.search_artists(client, names[0])
@@ -564,7 +576,7 @@ class NotesEngine:
         footer: list[str] = []
         if mb is not None:
             try:
-                detail = nmb.artist_detail(mb.evaluation.id, self.fetchers.mb)
+                detail = nmb.artist_detail(mb.evaluation.id, self._mb)
                 sources.append("musicbrainz")
                 footer.append(note_text.musicbrainz_credit())
             except nmb.MusicBrainzError as exc:
@@ -572,7 +584,7 @@ class NotesEngine:
         info: Optional[nd.DiscogsArtist] = None
         if res.discogs_ok is not None and self.fetchers.discogs is not None:
             try:
-                info = nd.artist_info(self.fetchers.discogs, int(res.discogs_ok.evaluation.id))
+                info = nd.artist_info(self._discogs, int(res.discogs_ok.evaluation.id))
                 sources.append("discogs")
             except DiscogsError as exc:
                 proposal.problems.append(str(exc))
@@ -587,7 +599,7 @@ class NotesEngine:
             try:
                 page = wp.find_page(
                     "artist", name, linked_title=hint_title, wikidata_id=wikidata,
-                    context_terms=[t for names_ in titles for t in names_], fetch=self.fetchers.wiki,
+                    context_terms=[t for names_ in titles for t in names_], fetch=self._wiki,
                     notes=proposal.reasons)
             except wp.WikipediaError as exc:
                 page = None
@@ -641,7 +653,7 @@ class NotesEngine:
             discography = group_discography(self._full_discography(mb.evaluation.id, mb.groups))
         elif info is not None and self.fetchers.discogs is not None:
             try:
-                discography = group_discogs_discography(self._discogs_entries(self.fetchers.discogs, info.id))
+                discography = group_discogs_discography(self._discogs_entries(self._discogs, info.id))
             except DiscogsError as exc:
                 discography = []
                 proposal.problems.append(str(exc))
@@ -679,7 +691,7 @@ class NotesEngine:
         page = None
         if self.fetchers.wikipedia:
             try:
-                page = wp.find_page("genre", name, fetch=self.fetchers.wiki, notes=proposal.reasons)
+                page = wp.find_page("genre", name, fetch=self._wiki, notes=proposal.reasons)
             except wp.WikipediaError as exc:
                 proposal.problems.append(str(exc))
         if page is None:
@@ -737,7 +749,7 @@ class NotesEngine:
             return None
         try:
             return wp.find_page("soundtrack" if soundtrack else kind, work_title(name) if soundtrack else name,
-                                artist=artist, context_terms=context, fetch=self.fetchers.wiki, notes=proposal.reasons)
+                                artist=artist, context_terms=context, fetch=self._wiki, notes=proposal.reasons)
         except wp.WikipediaError as exc:
             proposal.problems.append(str(exc))
             return None
@@ -750,7 +762,7 @@ class NotesEngine:
         sleeve design and photography; never the free-text release notes), genres and styles, a verified
         Wikipedia introduction, and a Discogs credit. A chosen candidate is believed; the overlap with the local
         files is reported."""
-        client = self.fetchers.discogs
+        client = self._discogs
         if client is None:
             proposal.confidence = Confidence.UNCERTAIN
             proposal.problems.append(DISCOGS_MISSING)
@@ -820,7 +832,7 @@ class NotesEngine:
         if not self.fetchers.wikipedia:
             return None
         try:
-            return wp.find_page("page", force.id, linked_title=force.id, fetch=self.fetchers.wiki)
+            return wp.find_page("page", force.id, linked_title=force.id, fetch=self._wiki)
         except wp.WikipediaError:
             return None
 
@@ -938,10 +950,10 @@ class NotesEngine:
             searched: list[nmb.ReleaseGroup] = []
             for title in local.titles[:2]:
                 searched = nmb.search_release_groups(
-                    names[0] if names else "", title, self.fetchers.mb, primary_album=True, soundtrack=soundtrack)
+                    names[0] if names else "", title, self._mb, primary_album=True, soundtrack=soundtrack)
                 if not searched:
                     searched = nmb.search_release_groups(
-                        names[0] if names else "", title, self.fetchers.mb, primary_album=False, soundtrack=soundtrack)
+                        names[0] if names else "", title, self._mb, primary_album=False, soundtrack=soundtrack)
                 if searched:
                     break
             pool = searched
@@ -962,7 +974,7 @@ class NotesEngine:
         best = scored[0] if scored else None
         discogs_info: Optional[nd.DiscogsAlbumInfo] = None
         discogs_hits: list = []
-        client = self.fetchers.discogs
+        client = self._discogs
         if client is not None and not client.rate_limited and names:
             try:
                 discogs_hits = nd.search_album(client, names[0], local.titles[0], local.year, limit=8)
@@ -1017,12 +1029,14 @@ class NotesEngine:
         group_detail: dict = {}
         release: Optional[nmb.ReleaseDetail] = None
         try:
-            group_detail = nmb.release_group_detail(group.id, self.fetchers.mb)
-            summaries = nmb.releases_of_group(group.id, self.fetchers.mb)
+            group_detail = nmb.release_group_detail(group.id, self._mb)
+            summaries = nmb.releases_from_group_detail(group_detail)
+            if summaries is None:  # a reply without the releases: the separate list
+                summaries = nmb.releases_of_group(group.id, self._mb)
             first = (group_detail.get("first-release-date") or group.first_date) if group_detail else group.first_date
             chosen = _pick_release(summaries, local.track_count, first)
             if chosen is not None:
-                release = nmb.fetch_release_detail(chosen.id, self.fetchers.mb)
+                release = nmb.fetch_release_detail(chosen.id, self._mb)
         except nmb.MusicBrainzError as exc:
             # a thin note written because a service was busy would say "no tracklist" wrongly: try again later
             proposal.problems.append(str(exc))
@@ -1064,11 +1078,11 @@ class NotesEngine:
                 if soundtrack:  # the soundtrack's article, or the film / game / series it belongs to
                     page = wp.find_page(
                         "soundtrack", work_title(title), linked_title=hint_title, wikidata_id=wikidata,
-                        fetch=self.fetchers.wiki, notes=proposal.reasons)
+                        fetch=self._wiki, notes=proposal.reasons)
                 else:
                     page = wp.find_page(
                         "album", title, artist=artist_name, linked_title=hint_title, wikidata_id=wikidata,
-                        fetch=self.fetchers.wiki, notes=proposal.reasons)
+                        fetch=self._wiki, notes=proposal.reasons)
             except wp.WikipediaError as exc:
                 page = None
                 proposal.problems.append(str(exc))
@@ -1216,12 +1230,13 @@ def build_proposals(
     targets: list[Target], fetchers: Optional[Fetchers] = None, progress: Optional[Progress] = None,
     cancel: Optional[Callable[[], bool]] = None, loader: Optional[Loader] = None,
     on_proposal: Optional[Callable[[Proposal], None]] = None, engine: Optional[NotesEngine] = None,
+    cache: Optional[ResponseCache] = None,
 ) -> list[Proposal]:
     """One Proposal per target, in order. `progress(done, total, label)` is called before each target;
     `cancel()` returning True ends the run early (the proposals built so far are returned); `on_proposal(p)` is
     called as each one is ready (the command line writes it there, so an interrupted run keeps what it did).
     Network only; this function writes no file."""
-    engine = engine or NotesEngine(fetchers, loader)  # a caller that keeps the engine can rebuild with its caches
+    engine = engine or NotesEngine(fetchers, loader, cache)  # a caller that keeps the engine can rebuild with its caches
     proposals: list[Proposal] = []
     for index, target in enumerate(targets):
         if cancel is not None and cancel():

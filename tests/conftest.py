@@ -118,3 +118,14 @@ def fake_keyring(tmp_path, monkeypatch):
     secret_store.set_backend(None)
     secret_store.set_fallback_dir(None)
     secret_store.set_allow_unencrypted_fallback(False)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_notes_cache(monkeypatch, tmp_path_factory):
+    """The notes lookup cache (core/notes_cache.py) lives next to the settings; every test gets its own file in a
+    separate temporary folder, so no test reads or writes the real one."""
+    from core import notes_cache
+
+    folder = tmp_path_factory.mktemp("notes_cache")
+    monkeypatch.setattr(notes_cache, "cache_path", lambda: folder / notes_cache.CACHE_FILE_NAME)
+    monkeypatch.setattr(notes_cache, "_default", None)

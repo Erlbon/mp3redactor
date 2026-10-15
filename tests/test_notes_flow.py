@@ -57,7 +57,7 @@ def test_artist_search_is_polite_and_cached_across_the_run(tmp_path):
     build_proposals(list(targets(tmp_path).values()), fetchers)
     mb = fetchers.mb
     assert mb.count(r"ws/2/artist\?query") == 1  # artist and both albums share one resolution
-    assert mb.count(r"ws/2/release-group\?artist=") == 2  # albums + EPs for the matching, the full list for the note: each once
+    assert mb.count(r"ws/2/release-group\?artist=") == 1  # ONE browse of the artist's release groups: the matching filters albums + EPs from it
     assert mb.count(r"ws/2/artist/[^?]+\?") == 1
 
 

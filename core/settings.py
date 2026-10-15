@@ -203,6 +203,8 @@ class Settings:
     # This computer only (not part of Export Settings).
     notes_last_folder: str = ""
     notes_dialog_size: str = ""
+    notes_kinds: str = "artist"  # Tools > Create Notes "What to create": artist / both / all (the last choice)
+    notes_cache_enabled: bool = True  # the disk cache of the notes lookups (public service answers only)
 
     def saved_rename_pattern(self) -> str:
         """The dedicated rename pattern; before one was ever saved, the most
@@ -264,6 +266,8 @@ class Settings:
             "musicbrainz_options": self.musicbrainz_options,
             "notes_last_folder": self.notes_last_folder,
             "notes_dialog_size": self.notes_dialog_size,
+            "notes_kinds": self.notes_kinds,
+            "notes_cache_enabled": str(self.notes_cache_enabled),
         }
         config[HISTORY_SECTION] = {"enabled": str(self.history_enabled)}
         return config
@@ -315,7 +319,14 @@ class Settings:
             musicbrainz_options=section.get("musicbrainz_options", fallback=""),
             notes_last_folder=section.get("notes_last_folder", fallback=""),
             notes_dialog_size=section.get("notes_dialog_size", fallback=""),
+            notes_kinds=_kinds_choice(section.get("notes_kinds", fallback="artist")),
+            notes_cache_enabled=_get_bool(section, "notes_cache_enabled", True),
         )
+
+
+def _kinds_choice(value: str) -> str:
+    """A hand-edited bad value means the default (artist notes only)."""
+    return value if value in ("artist", "both", "all") else "artist"
 
 
 def _get_bool(section, key: str, default: bool) -> bool:

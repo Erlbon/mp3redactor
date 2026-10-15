@@ -29,13 +29,16 @@ from redactor_common.core.preferences import (
 from PyQt6.QtWidgets import QMessageBox
 from redactor_common.gui.preferences_dialog import PreferencesDialog
 
-from core import history
+from core import history, notes_cache
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
 
 KEY_LIBRARY_ROOT = "library_root"
 KEY_DELETE_BACKUP = "delete_backup_after_fix"
 KEY_HISTORY = "history_enabled"
+KEY_NOTES_CACHE = "notes_cache_enabled"
+NOTES_CACHE_LABEL = "Keep the answers of the Create Notes lookups on disk (a repeated or resumed run is then instant)"
+CLEAR_NOTES_CACHE_LABEL = "Clear the notes lookup cache…"
 HISTORY_LABEL = "Keep a history of tag changes (lets you undo a Save or Redact later)"
 DELETE_HISTORY_LABEL = "Delete History…"
 
@@ -48,6 +51,7 @@ FIELD_BY_KEY = {
     KEY_LIBRARY_ROOT: "library_root",
     KEY_DELETE_BACKUP: "delete_backup_after_fix",
     KEY_HISTORY: "history_enabled",
+    KEY_NOTES_CACHE: "notes_cache_enabled",
 }
 
 
@@ -57,6 +61,16 @@ def history_help() -> str:
         "new text of each changed tag field (never covers or other images), so Tools > History can put the "
         "old values back later. It keeps the last 90 days or 50,000 changes, whichever is less, in "
         f"{history.journal_path()}. You can switch it off again at any time; Delete History sends the file to the Recycle Bin."
+    )
+
+
+def notes_cache_help() -> str:
+    return (
+        "On by default. Tools > Create Notes keeps the answers of MusicBrainz, Wikipedia and Discogs for 30 days "
+        "(one day for 'not found' and empty results; errors never) in "
+        f"{notes_cache.cache_path()}, at most 200 MB, so repeating or resuming a run does not ask the services "
+        "again. It holds only those public answers and the artist and album names that were looked up, nothing "
+        "else about you; it is never stored in a library folder. Switch it off to ask every time."
     )
 
 
@@ -86,6 +100,15 @@ def preference_sections() -> list[PrefSection]:
                 DELETE_HISTORY_LABEL, delete_history,
                 help="Sends the history file to the Recycle Bin at once (asks first). It is not a setting, "
                      "so OK and Cancel do not undo it.",
+            ),),
+        ),
+        PrefSection(
+            "notes", "Create Notes",
+            (PrefSpec(KEY_NOTES_CACHE, NOTES_CACHE_LABEL, "bool", True, help=notes_cache_help()),),
+            actions=(PrefAction(
+                CLEAR_NOTES_CACHE_LABEL, clear_notes_cache,
+                help="Deletes every stored answer at once (asks first). It is not a setting, so OK and Cancel "
+                     "do not undo it.",
             ),),
         ),
     ]
@@ -150,3 +173,21 @@ def delete_history(parent) -> None:
         QMessageBox.warning(parent, "Delete History", f"Not deleted: {problem}")
     else:
         QMessageBox.information(parent, "Delete History", "The history was moved to the Recycle Bin.")
+
+
+def clear_notes_cache(parent) -> None:
+    """Preferences > Create Notes > Clear the notes lookup cache... (a PrefAction): asks, then empties the cache."""
+    path = notes_cache.cache_path()
+    if not path.exists():
+        QMessageBox.information(parent, "Clear the notes lookup cache", "There is nothing in the cache.")
+        return
+    answer = QMessageBox.question(
+        parent, "Clear the notes lookup cache",
+        f"Delete every stored answer of the Create Notes lookups?\n{path}\n\n"
+        "The next lookups ask MusicBrainz, Wikipedia and Discogs again.",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+    )
+    if answer != QMessageBox.StandardButton.Yes:
+        return
+    count = notes_cache.clear_default_cache()
+    QMessageBox.information(parent, "Clear the notes lookup cache", f"Removed {count} stored answer(s).")

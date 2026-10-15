@@ -84,6 +84,7 @@ def run(window, monkeypatch, folder, fetchers, scenario, must_finish=True):
 
         yield from wait(lambda: scope() is not None, "the scope dialog")
         scope().other_radio.click()
+        scope().kind_radios["all"].click()
         click(scope().continue_button)
         yield from scenario()
 

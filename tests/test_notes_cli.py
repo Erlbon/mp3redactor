@@ -42,7 +42,7 @@ def run_json(capsys, *argv):
 
 def test_default_is_a_report_and_writes_nothing(tmp_path, capsys, services):
     artist = ultravox_library(tmp_path)
-    code, out, _err = run(capsys, "notes", str(tmp_path))
+    code, out, _err = run(capsys, "notes", str(tmp_path), "--kind", "both")
     assert code == 0
     assert "would-write" in out and "3 folder(s) looked up: 3 confident" in out
     assert not list(tmp_path.rglob("*.md"))
@@ -56,7 +56,7 @@ def test_write_writes_confident_drafts_only_and_never_overwrites(tmp_path, capsy
     services["fetchers"].mb.routes.insert(0, (r"ws/2/artist\?query=artist%3A%22Nobody", {"artists": []}))
     services["fetchers"].mb.routes.insert(0, (r"ws/2/artist\?query=artist%3A%22Mystery", {"artists": []}))
     services["fetchers"].mb.routes.insert(0, (r"ws/2/release-group\?query=.*Unknown", {"release-groups": []}))
-    code, document = run_json(capsys, "notes", str(tmp_path), "--write")
+    code, document = run_json(capsys, "notes", str(tmp_path), "--write", "--kind", "both")
     assert code == 0
     by = {(r["kind"], r["folder"].split("\\")[-1].split("/")[-1]): r for r in document["results"]}
     assert by[("artist", "Ultravox")]["status"] == "written"
@@ -68,14 +68,14 @@ def test_write_writes_confident_drafts_only_and_never_overwrites(tmp_path, capsy
     assert text.startswith("---\n") and "status: draft" in text
     # a second run finds the notes already there: nothing is touched
     before = text
-    code, again = run_json(capsys, "notes", str(tmp_path), "--write")
+    code, again = run_json(capsys, "notes", str(tmp_path), "--write", "--kind", "both")
     assert code == 0 and again["written"] == 0 and again["has_note"] >= 3
     assert (artist / "artist.md").read_text(encoding="utf-8") == before
 
 
 def test_dry_run_overrides_write(tmp_path, capsys, services):
     ultravox_library(tmp_path)
-    code, document = run_json(capsys, "notes", str(tmp_path), "--write", "--dry-run")
+    code, document = run_json(capsys, "notes", str(tmp_path), "--write", "--dry-run", "--kind", "both")
     assert code == 0 and document["dry_run"] is True and document["would_write"] == 3 and document["written"] == 0
     assert not list(tmp_path.rglob("*.md"))
 
@@ -162,7 +162,7 @@ def test_ctrl_c_ends_with_130_and_keeps_what_was_written(tmp_path, capsys, servi
         return real(url)
 
     services["fetchers"].mb = interrupting
-    code, out, err = run(capsys, "notes", str(tmp_path), "--write", "--json")
+    code, out, err = run(capsys, "notes", str(tmp_path), "--write", "--json", "--kind", "both")
     document = json.loads(out)
     assert code == 130 and document["cancelled"] is True
     assert any(r["status"] == "written" for r in document["results"])

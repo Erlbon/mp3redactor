@@ -37,7 +37,8 @@ from core.notes_flow import (
 )
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
-from core.notes_scope import ScopeChoice
+from core.notes_scope import ScopeChoice, kinds_sentence
+from core.notes_local import KIND_ALBUM, KIND_ARTIST
 from core.notes_review import (
     CONFIDENCE_WORDS, ERROR, EXISTS, PENDING, SKIPPED, TOO_LARGE, VIEW_LIST, VIEW_ONE, WRITTEN, ReviewItem,
     ReviewSession, choose_view,
@@ -93,6 +94,10 @@ def _shrinkable(*labels: QLabel) -> None:
         label.setWordWrap(True)
         label.setMinimumWidth(0)
         label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+
+def _plural_n(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
 def _flat_button(text: str) -> QPushButton:
@@ -377,10 +382,11 @@ class NotesReviewDialog(QDialog):
         on_size: Optional[Callable[[int, int], None]] = None,
         open_path: Callable[[str], None] = open_in_system, history_note: str = "",
         best_guess: Optional[Callable[[Proposal], Optional[Candidate]]] = None,
-        why_not: Optional[Callable[[Proposal, Candidate], str]] = None,
+        why_not: Optional[Callable[[Proposal, Candidate], str]] = None, offer_albums: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle("Create Notes")
+        self.followup: list[str] = []  # the artist folders whose album notes the person asked for next
         self._best_guess = best_guess or (lambda _proposal: None)
         self.session = session
         self.view = view
@@ -417,6 +423,13 @@ class NotesReviewDialog(QDialog):
         self.banner_label.setVisible(bool(banner))
 
         _shrinkable(self.header_label, self.banner_label)
+        self._offer_albums = offer_albums
+        self.followup_button = QPushButton("Create the album notes for these artists too")
+        self.followup_button.setAutoDefault(False)
+        self.followup_button.setToolTip("Closes this page and looks up only the albums of the artists whose notes "
+                                        "were just written.")
+        self.followup_button.setVisible(False)
+        self.followup_button.clicked.connect(self._followup_clicked)
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_one_page())
         self.stack.addWidget(self._build_list_page())
@@ -424,6 +437,7 @@ class NotesReviewDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self.banner_label)
+        layout.addWidget(self.followup_button, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.stack, 1)
 
         self._fill_tree()
@@ -566,6 +580,18 @@ class NotesReviewDialog(QDialog):
         else:
             self._fill_tree()
             self._select_tree_index(self.index)
+        self._update_followup()
+
+    def _written_artist_folders(self) -> list[str]:
+        return [str(i.proposal.folder) for i in self.session.items if i.state == WRITTEN and i.proposal.kind == "artist"]
+
+    def _update_followup(self) -> None:
+        self.followup_button.setVisible(self._offer_albums and bool(self._written_artist_folders()))
+
+    def _followup_clicked(self) -> None:
+        self.followup = self._written_artist_folders()
+        if self.followup:
+            self.accept()
 
     # -- one at a time ---------------------------------------------------------------------------------------
 
@@ -585,6 +611,7 @@ class NotesReviewDialog(QDialog):
         remaining = sum(1 for i in items if i.tickable)
         self.write_all_button.setText(f"Write all remaining confident ({remaining})")
         self.write_all_button.setEnabled(remaining > 0)
+        self._update_followup()
 
     def go_back(self) -> None:
         if self.index > 0:
@@ -627,6 +654,15 @@ class NotesReviewDialog(QDialog):
 
     def _finish(self) -> None:
         self._summary_box()
+        folders = self._written_artist_folders() if self._offer_albums and not self.followup else []
+        if folders:  # the page is closing: the one click for the albums of the artists just written
+            answer = QMessageBox.question(
+                self, "Create Notes",
+                f"{_plural_n(len(folders), 'artist note')} written.\n\nCreate the album notes for "
+                f"{'this artist' if len(folders) == 1 else 'these artists'} too? (slower: one lookup per album)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if answer == QMessageBox.StandardButton.Yes:
+                self.followup = folders
         self.accept()
 
     def _summary_box(self) -> None:
@@ -755,6 +791,7 @@ class NotesReviewDialog(QDialog):
         self._summary_box()
         self._fill_tree()
         self._select_tree_index(self.index)
+        self._update_followup()
 
     # -- choices (candidate / level) -------------------------------------------------------------------------
 
@@ -828,13 +865,13 @@ def parse_size(text: str) -> Optional[tuple[int, int]]:
 def create_notes(
     parent: QWidget, paths: list, include_subfolders: bool, make_fetchers: Callable[[], Fetchers],
     size_text: str = "", on_size: Optional[Callable[[str], None]] = None,
-    open_path: Callable[[str], None] = open_in_system,
+    open_path: Callable[[str], None] = open_in_system, kinds: tuple = ALL_KINDS, cache=None,
 ) -> Optional[NotesReviewDialog]:
     """Scan `paths`, look every folder up under a cancellable progress dialog, then open the review page. Returns
     the (closed) dialog, or None when there was nothing to review."""
     title = "Create Notes"
     try:
-        found = run_busy(parent, "Looking at the folders…", lambda: scan(paths, include_subfolders, kinds=ALL_KINDS), title=title)
+        found = run_busy(parent, "Looking at the folders…", lambda: scan(paths, include_subfolders, kinds=kinds), title=title)
     except Exception as exc:  # noqa: BLE001
         QMessageBox.warning(parent, title, f"The folders could not be read: {exc}")
         return None
@@ -852,7 +889,7 @@ def create_notes(
         return None
 
     fetchers = make_fetchers()
-    engine = NotesEngine(fetchers)
+    engine = NotesEngine(fetchers, cache=cache)
     targets = found.targets
     built: list[Proposal] = []
     failure: list[str] = []
@@ -879,7 +916,7 @@ def create_notes(
                                 else "Nothing could be looked up." + (f"\n\n{failure[0]}" if failure else ""))
         return None
     session = ReviewSession(built)
-    notes = []
+    notes = [kinds_sentence(kinds)]
     if fetchers.discogs is None:
         notes.append(DISCOGS_NOTE)
     if cancelled:
@@ -893,6 +930,7 @@ def create_notes(
     unreachable = [p for p in session.problems() if p.lower().startswith("could not reach")]
     if unreachable:
         notes.append(f"The internet services could not be reached: {unreachable[0]}")
+    notes.append(f"Lookups: {engine.stats.summary()}.")
     from core.history import history_enabled
 
     dialog = NotesReviewDialog(
@@ -900,8 +938,11 @@ def create_notes(
         banner="  ".join(notes), parent=parent, size=parse_size(size_text),
         on_size=(lambda w, h: on_size(f"{w}x{h}")) if on_size else None, open_path=open_path,
         history_note="Recorded in Tools > History (it is switched on)." if history_enabled() else "",
-        best_guess=engine.best_guess, why_not=engine.why_cannot_choose)
+        best_guess=engine.best_guess, why_not=engine.why_cannot_choose, offer_albums=kinds == (KIND_ARTIST,))
     dialog.exec()
+    if dialog.followup:  # 'Create the album notes for these artists too': only those artists' albums
+        return create_notes(parent, dialog.followup, True, make_fetchers, size_text, on_size, open_path,
+                            kinds=(KIND_ALBUM,), cache=cache)
     return dialog
 
 
@@ -923,13 +964,20 @@ class NotesScopeDialog(QDialog):
 
     MAX_PATH_CHARS = 70
 
+    KIND_CHOICES = (
+        ("artist", "Artist notes only (recommended, fast)"),
+        ("both", "Artist and album notes (slower)"),
+        ("all", "Everything, including genre folders"),
+    )
+
     def __init__(self, parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
-                 on_include_changed: Optional[Callable[[bool], None]] = None, start: str = ""):
+                 on_include_changed: Optional[Callable[[bool], None]] = None, start: str = "", kinds: str = "artist"):
         super().__init__(parent)
         self.setWindowTitle("Create Notes: which folder?")
         self.start = start
         self._on_include_changed = on_include_changed
         self.folder = ""
+        self.kinds = kinds
         self.picked = ""
         self._previous: Optional[QRadioButton] = None
         self._browsing = False
@@ -974,6 +1022,22 @@ class NotesScopeDialog(QDialog):
         if not choices:
             self.other_radio.setChecked(True)
         self._previous = self.group.checkedButton()
+
+        # What to create: artist notes are the big get and most of the lookups are albums
+        layout.addSpacing(6)
+        what = QLabel("What to create")
+        what_font = what.font()
+        what_font.setBold(True)
+        what.setFont(what_font)
+        layout.addWidget(what)
+        self.kind_group = QButtonGroup(self)
+        self.kind_radios: dict[str, QRadioButton] = {}
+        for key, text in self.KIND_CHOICES:
+            radio = QRadioButton(text)
+            radio.setChecked(key == (kinds if kinds in dict(self.KIND_CHOICES) else "artist"))
+            self.kind_group.addButton(radio)
+            self.kind_radios[key] = radio
+            layout.addWidget(radio)
 
         self.include_box = QCheckBox("Include subfolders")
         self.include_box.setChecked(include_subfolders)
@@ -1022,6 +1086,10 @@ class NotesScopeDialog(QDialog):
                 return path
         return ""
 
+    def chosen_kinds(self) -> str:
+        """'artist', 'both' or 'all'."""
+        return next((key for key, radio in self.kind_radios.items() if radio.isChecked()), "artist")
+
     def _update_continue(self) -> None:
         self.continue_button.setEnabled(bool(self.chosen_folder()))
 
@@ -1069,17 +1137,20 @@ class NotesScopeDialog(QDialog):
 
     def _continue(self) -> None:
         self.folder = self.chosen_folder()
+        self.kinds = self.chosen_kinds()
         if self.folder:
             self.accept()
 
 
 def ask_scope(parent: QWidget, choices: list[ScopeChoice], include_subfolders: bool,
-              on_include_changed: Optional[Callable[[bool], None]] = None, start: str = "") -> str:
-    """The folder to create notes for ("" = cancelled)."""
-    dialog = NotesScopeDialog(parent, choices, include_subfolders, on_include_changed, start)
+              on_include_changed: Optional[Callable[[bool], None]] = None, start: str = "",
+              kinds: str = "artist") -> tuple[str, str]:
+    """(folder, kinds): the folder to create notes for ("" = cancelled) and what to create ('artist' / 'both' /
+    'all')."""
+    dialog = NotesScopeDialog(parent, choices, include_subfolders, on_include_changed, start, kinds)
     if dialog.exec() != QDialog.DialogCode.Accepted:
-        return ""
-    return dialog.folder
+        return "", kinds
+    return dialog.folder, dialog.kinds
 
 
 def ask_folder(parent: QWidget, start: str) -> str:

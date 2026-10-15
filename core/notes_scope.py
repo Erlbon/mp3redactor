@@ -23,8 +23,24 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from core.notes_flow import album_folder_of, artist_folder_of_file
+from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST
 
 MAX_CHOICES = 5
+
+# 'What to create' in the scope dialog and on the command line: the kinds handed to scan()
+KINDS_OF_CHOICE = {"artist": (KIND_ARTIST,), "both": (KIND_ARTIST, KIND_ALBUM), "all": ALL_KINDS}
+
+
+def kinds_sentence(kinds) -> str:
+    """The review page's header sentence: which kinds of notes were looked up."""
+    kinds = tuple(kinds)
+    if kinds == (KIND_ARTIST,):
+        return "Looked up: artist notes only (no album lookups)."
+    if kinds == (KIND_ALBUM,):
+        return "Looked up: album notes only."
+    if set(kinds) == {KIND_ARTIST, KIND_ALBUM}:
+        return "Looked up: artist and album notes."
+    return "Looked up: artist, album and genre / collection notes."
 
 CAP_OPENED = "the folder you opened"
 CAP_ARTIST = "the artist of the selected files"

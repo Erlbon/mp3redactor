@@ -38,8 +38,11 @@ time.
   folder), with optional Audible / Open Library lookup and an Audiobookshelf-style library layout.
 - **Create Notes** (Tools > Create Notes, or right-click > Create Notes for This Folder) drafts the short Markdown notes
   the Pluteus media server shows beside a folder: `artist.md`, `album.md`, and `about.md` for a genre or collection
-  folder. Tools > Create Notes always asks which folder first (a library, artist or album folder, following Include
-  Subfolders; the selected files' artist folder is offered as a one-click suggestion, never used silently); the right-click
+  folder. Tools > Create Notes always asks which folder first, as a short list (the folder you opened, the artist /
+  album of the selected files, one level up, the last folder, the library folder, or Another folder; the first is ticked,
+  Enter continues, the selection is never used silently) and **what to create**: *Artist notes only* (recommended, fast: no
+  album lookups at all; the default and remembered), *Artist and album notes* (slower) or *Everything, including genre
+  folders*. After an artist-only run the review page offers **Create the album notes for these artists too**. The right-click
   entry takes each selected file's album folder AND the artist folder above it. The lookups (MusicBrainz, Wikipedia and, with the Discogs token saved under Tools > API
   Keys, Discogs) run under a progress dialog you can cancel; what was looked up so far is still reviewed. The review
   page has two views, chosen from what was found and switchable: one note at a time (one artist or album: Skip, Write
@@ -92,7 +95,7 @@ mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [
                                [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
                                [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
                                [--lookup] [--region STORE] [--min-score N] [-n]
-mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--no-discogs] [--show-drafts] [-R]
+mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--no-discogs] [--no-cache] [--show-drafts] [-R]
 ```
 
 The command line uses the same code as the window, so the results are the same. It reads the same settings file
@@ -312,7 +315,7 @@ the match that was used and `filled`, the names of what it filled in.
 
 ### notes
 
-`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--no-discogs] [--show-drafts] [-R]`
+`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--no-discogs] [--no-cache] [--show-drafts] [-R]`
 
 Drafts the short Markdown notes that the Pluteus media server shows beside a folder: `artist.md` in an artist
 folder, `album.md` in an album folder, and (with `--kind genre` or `all`) `about.md` in a genre or collection folder
@@ -338,13 +341,20 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 
 | Option | Meaning |
 | --- | --- |
-| `--kind KIND` | `artist`, `album`, `genre` (the `about.md` of a genre or collection folder), `both` (artist + album, the default) or `all`. |
+| `--kind KIND` | `artist`, `album`, `genre` (the `about.md` of a genre or collection folder), `both` (artist + album) or `all`. The default is `artist`: fast, no album lookups at all (the albums' tags and folder names are still read locally to verify the artist). |
 | `--write` | Write the confident drafts. Without it the command only reports. |
 | `--include-uncertain` | With `--write`: also write the uncertain matches from the engine's best candidate, as drafts. Never over an existing note, never for "nothing found", never when the level is unclear (listed with the reason). Marked `from_uncertain` in the report and in `--json`. |
 | `-n`, `--dry-run` | Never write, even with `--write`: show what would be written. |
 | `--no-discogs` | Do not use Discogs even when a token is saved. |
+| `--no-cache` | Do not use the disk cache of earlier answers (see below): every lookup is asked again. |
 | `--show-drafts` | Print each draft note (with `--json`: include it in the row). |
 | `-R`, `--no-recurse` | Look only at the folders named, not at the folders below them. |
+
+**The lookup cache.** The answers of MusicBrainz, Wikipedia and Discogs (public data, plus the artist and album names asked
+about) are kept for 30 days (one day for "not found" and empty results, errors never) in `mp3redactor_notes_cache.sqlite` next to the
+settings file, at most 200 MB, so a repeated, cancelled or resumed run is answered from disk. Preferences > Create Notes
+switches it off and has **Clear the notes lookup cache**; the same URL is never asked twice within one run either way. The
+last line of a run says how many requests were made and how many came from the cache.
 
 Exit code 0 when done, 1 when a note could not be written or a lookup failed, 130 when interrupted (what was written
 stays). With the opt-in history on, each written note is recorded and can be undone (moved to the Recycle Bin, only if
@@ -352,9 +362,8 @@ it is unchanged).
 
 ### Creating notes for a whole library
 
-- **In the app:** Tools > Create Notes..., then **Choose another folder...** and pick the library root (the question
-  starts at the library root or where you last looked; the selected files' artist folder is only offered as a
-  suggestion), with **Include Subfolders** on (toolbar). On the review page switch to the list view, check the
+- **In the app:** Tools > Create Notes..., then pick the library root in the list (or **Another folder...**), with
+  **Include subfolders** ticked and *Artist notes only* chosen for the fast first pass. On the review page switch to the list view, check the
   confident pre-ticks, optionally **Tick best guesses** (uncertain matches rebuilt around their top candidate: they
   can be wrong, they are still drafts), then **Write N ticked notes**.
 - **On the command line:** `mp3redactor notes <library root> --kind artist --write` writes the confident artist notes;

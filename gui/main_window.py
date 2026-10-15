@@ -133,7 +133,9 @@ from gui.m4b_dialog import M4bDialog
 from gui.notes_dialog import ask_scope as ask_notes_scope
 from gui.notes_dialog import create_notes
 from core.notes_flow import live_fetchers, selection_scope
-from core.notes_scope import scope_choices
+from core.notes_cache import default_cache
+from core.notes_local import ALL_KINDS
+from core.notes_scope import KINDS_OF_CHOICE, scope_choices
 from gui.preferences import build_preferences_dialog
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
@@ -1012,14 +1014,16 @@ class MainWindow(QMainWindow):
         choices = scope_choices(
             [mp3.path for mp3 in self.files], [mp3.path for mp3 in self._selected_files()],
             self.settings.last_directory, self.settings.notes_last_folder, self.settings.library_root)
-        folder = ask_notes_scope(
+        folder, kinds = ask_notes_scope(
             self, choices, self.settings.include_subfolders, self.action_include_subfolders.setChecked,
-            resolve_start_directory(self.settings.notes_last_folder or self.settings.last_directory))
+            resolve_start_directory(self.settings.notes_last_folder or self.settings.last_directory),
+            self.settings.notes_kinds)
         if not folder:
             return
         self.settings.notes_last_folder = folder
+        self.settings.notes_kinds = kinds
         save_settings(self.settings)
-        self._run_create_notes([folder], self.settings.include_subfolders)
+        self._run_create_notes([folder], self.settings.include_subfolders, KINDS_OF_CHOICE[kinds])
 
     def create_notes_for_selection(self) -> None:
         """Right-click "Create Notes for This Folder...": for each selected file its ALBUM folder and the ARTIST
@@ -1032,14 +1036,15 @@ class MainWindow(QMainWindow):
         folders = [str(f) for f in selection_scope(mp3.path for mp3 in files)]
         self._run_create_notes(folders, False)
 
-    def _run_create_notes(self, paths: list, include_subfolders: bool) -> None:
+    def _run_create_notes(self, paths: list, include_subfolders: bool, kinds: tuple = ALL_KINDS) -> None:
         def remember_size(text: str) -> None:
             self.settings.notes_dialog_size = text
             save_settings(self.settings)
 
         create_notes(
             self, paths, include_subfolders, self.notes_fetchers or live_fetchers,
-            size_text=self.settings.notes_dialog_size, on_size=remember_size,
+            size_text=self.settings.notes_dialog_size, on_size=remember_size, kinds=kinds,
+            cache=default_cache(self.settings.notes_cache_enabled),
         )
 
     # -- find duplicates ---------------------------------------------------

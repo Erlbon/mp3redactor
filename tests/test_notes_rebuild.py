@@ -41,11 +41,9 @@ def test_the_rebuild_reuses_the_cached_discography(tmp_path):
     fetchers = ultravox_fetchers()
     engine = NotesEngine(fetchers)
     [uncertain] = build_proposals([by_key(tmp_path)[("artist", "Ultravox & Friends")]], engine=engine)
-    albums = r"ws/2/release-group\?artist=.*type=album"
-    before, all_before = fetchers.mb.count(albums), fetchers.mb.count(r"ws/2/release-group\?artist=")
+    before = fetchers.mb.count(r"ws/2/release-group\?artist=")
     engine.rebuild(uncertain, candidate=uncertain.candidates[0])
-    assert fetchers.mb.count(albums) == before  # the albums + EPs list is not fetched again
-    assert fetchers.mb.count(r"ws/2/release-group\?artist=") == all_before + 1  # only the note's full list is new
+    assert fetchers.mb.count(r"ws/2/release-group\?artist=") == before  # the browse of that artist is already in memory: no new request
 
 
 def test_choosing_a_release_group_for_a_folder_that_does_not_match_the_tracklist(tmp_path):

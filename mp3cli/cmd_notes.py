@@ -28,10 +28,24 @@ from core.notes_flow import (
     STATUS_SKIPPED, Confidence, Fetchers, NotesEngine, NotesSummary, Proposal, build_proposals, live_fetchers, scan, summarize,
     write_proposal,
 )
+from core.notes_cache import default_cache
+from mp3cli import files as cli_files
 from core.notes_local import ALL_KINDS, KIND_ALBUM, KIND_ARTIST, KIND_GENRE
 from redactor_common.cli import EXIT_INTERRUPTED, EXIT_OK, EXIT_PARTIAL, CliError, Output, add_common_options
 
 KIND_CHOICES = ("both", KIND_ARTIST, KIND_ALBUM, KIND_GENRE, "all")
+
+
+def make_cache(args: argparse.Namespace):
+    """The disk cache of the lookups (core/notes_cache.py), or None for --no-cache / the Preferences switch off.
+    The tests replace this one function."""
+    if args.no_cache:
+        return None
+    try:
+        enabled = cli_files.settings().notes_cache_enabled
+    except Exception:  # noqa: BLE001 -- an unreadable settings file means the default (on)
+        enabled = True
+    return default_cache(enabled)
 
 
 def make_fetchers(use_discogs: bool) -> Fetchers:
@@ -52,8 +66,11 @@ def add_notes_parser(sub) -> None:
         "-R", "--no-recurse", action="store_true",
         help="look only at the folders named, not the folders below them",
     )
-    parser.add_argument("--kind", choices=KIND_CHOICES, default="both", help="which notes: artist, album, genre (about.md of a genre or collection folder), both = artist + album "
-                                                             "(default) or all = all three")
+    parser.add_argument("--kind", choices=KIND_CHOICES, default=KIND_ARTIST, help="which notes: artist (the default: "
+                                                             "fast, no album lookups at all), album, genre (about.md of a genre or collection folder), "
+                                                             "both = artist + album or all = all three")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="do not use the disk cache of earlier answers (the lookups are all asked again)")
     parser.add_argument("--write", action="store_true", help="write the drafts of the confident matches (default: report only)")
     parser.add_argument(
         "--include-uncertain", action="store_true",
@@ -119,7 +136,7 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     failed = 0
     cancelled = False
 
-    engine = NotesEngine(make_fetchers(not args.no_discogs))
+    engine = NotesEngine(make_fetchers(not args.no_discogs), cache=make_cache(args))
 
     def handle(proposal: Proposal) -> None:
         nonlocal failed, guessed
@@ -187,6 +204,9 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     left = summary.uncertain + summary.none
     if left > 0:
         out.line("Uncertain and unmatched folders were not written; review them (the candidates are listed above).")
+    out.line(f"Requests: {engine.stats.summary()}.")
+    summary_dict["requests"] = engine.stats.requests
+    summary_dict["from_cache"] = engine.stats.from_cache
     out.finish(summary_dict)
     if cancelled:
         return EXIT_INTERRUPTED

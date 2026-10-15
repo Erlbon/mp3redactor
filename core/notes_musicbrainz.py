@@ -225,13 +225,27 @@ def search_release_groups(
 
 
 def release_group_detail(rgid: str, fetch: Optional[Callable] = None) -> dict:
-    return _get(f"release-group/{rgid}", fetch or _fetch(), inc="url-rels+genres+tags+annotation")
+    """The release group with its genres / links AND (inc=releases+media) the releases with date, country, status and
+    track counts: one request instead of two (see releases_from_group_detail)."""
+    return _get(f"release-group/{rgid}", fetch or _fetch(), inc="url-rels+genres+tags+annotation+releases+media")
+
+
+def releases_from_group_detail(detail: dict) -> Optional[list[ReleaseSummary]]:
+    """The releases a release-group lookup (inc=releases+media) already carried, or None when the reply has no
+    `releases` key at all (then releases_of_group() is the fallback). MusicBrainz lists at most 25 there."""
+    if not isinstance(detail, dict) or not isinstance(detail.get("releases"), list):
+        return None
+    return _summaries(detail["releases"])
 
 
 def releases_of_group(rgid: str, fetch: Optional[Callable] = None) -> list[ReleaseSummary]:
     data = _get("release", fetch or _fetch(), **{"release-group": rgid, "inc": "labels+media", "limit": 100})
+    return _summaries(data.get("releases", []))
+
+
+def _summaries(releases) -> list[ReleaseSummary]:
     out = []
-    for r in data.get("releases", []):
+    for r in releases:
         if not r.get("id"):
             continue
         info = (r.get("label-info") or [{}])[0] or {}
