@@ -206,6 +206,7 @@ class Settings:
     notes_kinds: str = "artist"  # Tools > Create Notes "What to create": a comma list of artist / album / genre (the last choice)
     notes_discogs_always: bool = False  # ask Discogs for every artist (slower); off: only when MusicBrainz has no match
     notes_skip_singles: bool = False  # leave the singles out of the artist note's discography (faster)
+    notes_debug_log: bool = False  # the troubleshooting log of the Create Notes list (core/notes_debug.py); off
     notes_cache_enabled: bool = True  # the disk cache of the notes lookups (public service answers only)
 
     def saved_rename_pattern(self) -> str:
@@ -270,6 +271,7 @@ class Settings:
             "notes_dialog_size": self.notes_dialog_size,
             "notes_kinds": self.notes_kinds,
             "notes_cache_enabled": str(self.notes_cache_enabled),
+            "notes_debug_log": str(self.notes_debug_log),
             "notes_discogs_always": str(self.notes_discogs_always),
             "notes_skip_singles": str(self.notes_skip_singles),
         }
@@ -325,6 +327,7 @@ class Settings:
             notes_dialog_size=section.get("notes_dialog_size", fallback=""),
             notes_kinds=_kinds_choice(section.get("notes_kinds", fallback="artist")),
             notes_cache_enabled=_get_bool(section, "notes_cache_enabled", True),
+            notes_debug_log=_get_bool(section, "notes_debug_log", False),
             notes_discogs_always=_get_bool(section, "notes_discogs_always", False),
             notes_skip_singles=_get_bool(section, "notes_skip_singles", False),
         )

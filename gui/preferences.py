@@ -29,7 +29,7 @@ from redactor_common.core.preferences import (
 from PyQt6.QtWidgets import QMessageBox
 from redactor_common.gui.preferences_dialog import PreferencesDialog
 
-from core import history, notes_cache
+from core import history, notes_cache, notes_debug
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
 
@@ -37,6 +37,9 @@ KEY_LIBRARY_ROOT = "library_root"
 KEY_DELETE_BACKUP = "delete_backup_after_fix"
 KEY_HISTORY = "history_enabled"
 KEY_NOTES_CACHE = "notes_cache_enabled"
+KEY_NOTES_DEBUG = "notes_debug_log"
+NOTES_DEBUG_LABEL = "Log the Create Notes list for troubleshooting"
+DELETE_NOTES_LOG_LABEL = "Delete the troubleshooting log…"
 KEY_NOTES_DISCOGS = "notes_discogs_always"
 KEY_NOTES_SKIP_SINGLES = "notes_skip_singles"
 NOTES_DISCOGS_LABEL = "Also ask Discogs for every artist (slower, adds members and profile)"
@@ -56,6 +59,7 @@ FIELD_BY_KEY = {
     KEY_DELETE_BACKUP: "delete_backup_after_fix",
     KEY_HISTORY: "history_enabled",
     KEY_NOTES_CACHE: "notes_cache_enabled",
+    KEY_NOTES_DEBUG: "notes_debug_log",
     KEY_NOTES_DISCOGS: "notes_discogs_always",
     KEY_NOTES_SKIP_SINGLES: "notes_skip_singles",
 }
@@ -121,8 +125,16 @@ def preference_sections() -> list[PrefSection]:
                            "albums and EPs (compilations, live albums and soundtracks included) are asked for, which saves "
                            "requests only for such artists (an artist with fewer than 100 release groups costs the same). "
                            "The note then has no Singles section."),
-             PrefSpec(KEY_NOTES_CACHE, NOTES_CACHE_LABEL, "bool", True, help=notes_cache_help()),),
+             PrefSpec(KEY_NOTES_CACHE, NOTES_CACHE_LABEL, "bool", True, help=notes_cache_help()),
+             PrefSpec(KEY_NOTES_DEBUG, NOTES_DEBUG_LABEL, "bool", False,
+                      help="Off by default. When on, the review list of Create Notes writes what it does (the number of rows, "
+                           "the scroll values, which row is current, the folder NAMES of the rows it changes: no file contents, "
+                           "no notes) to mp3redactor_notes_debug.log next to the settings file, so that you can send it if the "
+                           "list misbehaves. Also on with the environment variable MP3REDACTOR_NOTES_DEBUG=1."),),
             actions=(PrefAction(
+                DELETE_NOTES_LOG_LABEL, delete_notes_log,
+                help="Deletes the troubleshooting log at once. It is not a setting, so OK and Cancel do not undo it.",
+            ), PrefAction(
                 CLEAR_NOTES_CACHE_LABEL, clear_notes_cache,
                 help="Deletes every stored answer at once (asks first). It is not a setting, so OK and Cancel "
                      "do not undo it.",
@@ -141,6 +153,8 @@ def settings_backend(settings: Settings, save: Callable[[Settings], None]) -> Ca
         for key, value in values.items():
             setattr(settings, FIELD_BY_KEY[key], value)
         save(settings)
+        if KEY_NOTES_DEBUG in values:
+            notes_debug.set_enabled(settings.notes_debug_log)  # the running app follows at once
         if KEY_HISTORY in values:
             history.set_history_enabled(settings.history_enabled)  # the running app follows at once
 
@@ -208,3 +222,12 @@ def clear_notes_cache(parent) -> None:
         return
     count = notes_cache.clear_default_cache()
     QMessageBox.information(parent, "Clear the notes lookup cache", f"Removed {count} stored answer(s).")
+
+
+def delete_notes_log(parent) -> None:
+    """Preferences > Create Notes > Delete the troubleshooting log... (a PrefAction)."""
+    if not notes_debug.log_exists():
+        QMessageBox.information(parent, "Delete the troubleshooting log", "There is no troubleshooting log.")
+        return
+    problem = notes_debug.delete_log()
+    QMessageBox.information(parent, "Delete the troubleshooting log", problem or "The troubleshooting log was deleted.")

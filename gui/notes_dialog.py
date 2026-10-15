@@ -39,6 +39,7 @@ from core.notes_flow import (
 )
 from core.notes_level import SUGGEST_ALBUM, SUGGEST_ARTIST, SUGGEST_COLLECTION, SUGGEST_SKIP
 from core.notes_local import ALL_KINDS
+from core import notes_debug
 from core.notes_kinds import kinds_text, parse_kinds
 from core.notes_local import LIBRARY_ROOT_MESSAGE
 from core.notes_scope import ScopeChoice, count_targets, folder_caption, folder_info, kinds_sentence
@@ -600,7 +601,7 @@ class NotesReviewDialog(QDialog):
         self.list_panel = self._make_panel()
 
         self.filter_check = QCheckBox("Only uncertain or not found")
-        self.filter_check.toggled.connect(lambda _on: self._fill_tree())
+        self.filter_check.toggled.connect(self._filter_toggled)
         self.tick_all_button = _flat_button("Tick all confident")
         self.untick_all_button = _flat_button("Untick all")
         self.tick_guesses_button = _flat_button("Tick best guesses")
@@ -616,6 +617,12 @@ class NotesReviewDialog(QDialog):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addWidget(self.filter_check)
         left_layout.addWidget(self.tree, 1)
+        self.row_hint = QLabel()  # the path of the current row and why it cannot be ticked: stable, under the list
+        self.row_hint.setStyleSheet("color:#666666;")
+        self.row_hint.setFixedHeight(2 * self.row_hint.fontMetrics().lineSpacing() + 4)  # two lines, always: the list never moves
+        self.row_hint.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.row_hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        left_layout.addWidget(self.row_hint)
 
         from PyQt6.QtWidgets import QScrollArea, QSplitter
 
@@ -804,6 +811,39 @@ class NotesReviewDialog(QDialog):
 
     # -- the list --------------------------------------------------------------------------------------------
 
+    def _filter_toggled(self, _on: bool) -> None:
+        """'Only uncertain or not found': the list is rebuilt, and the row that was current stays current (a rebuild empties
+        the selection: the panel went on showing one folder while no row of the list was highlighted)."""
+        self._fill_tree()
+        self._select_tree_index(self.index)
+        self._log("filter", on=_on)
+
+    def _log(self, step: str, touched=(), **fields) -> None:
+        """The opt-in troubleshooting log (core/notes_debug.py): counts, scroll values, indexes and folder NAMES only."""
+        if not notes_debug.enabled():
+            return
+        tree = self.tree
+        current = tree.currentItem()
+        notes_debug.record(
+            step, rows=tree.topLevelItemCount(), scroll=(tree.verticalScrollBar().value(), tree.horizontalScrollBar().value()),
+            current=current.data(0, Qt.ItemDataRole.UserRole) if current is not None else None, index=self.index,
+            touched=[self.session.items[i].proposal.folder.name for i in touched if 0 <= i < len(self.session.items)], **fields)
+
+    def _update_row_hint(self) -> None:
+        """Under the list, for the row that is current: its path, and why it has no tick box. (It was a tooltip on the
+        row: it popped up at the mouse on every row the mouse crossed, and its last line seemed to follow the mouse.)"""
+        row = self.tree.currentItem()
+        if row is None:
+            self.row_hint.setText("")
+            return
+        item = self.session.items[row.data(0, Qt.ItemDataRole.UserRole)]
+        metrics = self.row_hint.fontMetrics()
+        width = max(self.row_hint.width(), 240)
+        lines = [metrics.elidedText(item.proposal.path, Qt.TextElideMode.ElideMiddle, width)]  # one line, never wrapped
+        if not item.tickable and item.state == PENDING:
+            lines.append("Not tickable yet: pick a candidate or a level first.")
+        self.row_hint.setText("\n".join(lines))
+
     def _style_row(self, row: QTreeWidgetItem, i: int, item) -> None:
         """Everything a row of the list shows, set from the session item `i` (a new row, or one updated in place)."""
         p = item.proposal
@@ -822,8 +862,7 @@ class NotesReviewDialog(QDialog):
         else:  # no checkbox at all: it has to be resolved (candidate / level) before it can be written
             row.setData(0, Qt.ItemDataRole.CheckStateRole, None)
         row.setForeground(2, QBrush(QColor(TEXT_COLOURS[p.confidence])))
-        blocked = not item.tickable and item.state == PENDING
-        row.setToolTip(0, p.path + ("\nNot tickable: pick a candidate or a level first" if blocked else ""))
+        # no tooltip on the rows: see _update_row_hint()
 
     def _update_rows(self, indices) -> None:
         """After a pick (candidate, level, best guesses) the rows of those session items are UPDATED IN PLACE: the same
@@ -854,6 +893,8 @@ class NotesReviewDialog(QDialog):
         else:
             self.list_panel.show_item(None)
         self._refresh_list_header()
+        self._update_row_hint()
+        self._log("update_rows", touched=list(indices))
 
     def _fill_tree(self) -> None:
         tree = self.tree
@@ -878,6 +919,8 @@ class NotesReviewDialog(QDialog):
             columns_resizable(tree, 0)
         self.index = selected
         self._refresh_list_header()
+        self._update_row_hint()
+        self._log("fill_tree")
 
     def _select_tree_index(self, index: int) -> None:
         for r in range(self.tree.topLevelItemCount()):
@@ -896,6 +939,8 @@ class NotesReviewDialog(QDialog):
             return
         self.index = current.data(0, Qt.ItemDataRole.UserRole)
         self.list_panel.show_item(self.session.items[self.index])
+        self._update_row_hint()
+        self._log("current", touched=[self.index])
 
     def _on_tree_check(self, row, column) -> None:
         if column != 0:
