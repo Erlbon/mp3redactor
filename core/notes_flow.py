@@ -56,6 +56,10 @@ from core.notes_render import (
     render_album_note, render_artist_note, render_genre_note, wikipedia_credits,
 )
 from redactor_common.core import note_text
+from redactor_common.core.notes_model import KIND_NOTE, STATUS_SKIPPED, Candidate, NotesSummary  # noqa: F401 -- the shared model
+from redactor_common.core.notes_model import Proposal as _Proposal
+from redactor_common.core.notes_model import summarize as _summarize
+from redactor_common.core.notes_model import text_sha, undo_note_entry as _undo_note_entry, write_proposal as _write_proposal
 from redactor_common.core.notes import (
     STATUS_ERROR, STATUS_WRITTEN, NoteState, NoteWriteResult, normalize_note_text, note_path, replace_note, write_note,
 )
@@ -70,8 +74,6 @@ __all__ = [
 LEVEL_LOCAL_TAGS = "local-tags"  # rebuild(level=...): the explicit minimal note from the tags (never automatic)
 DISCOGS_MISSING = "Discogs token not set: add it in Tools > API Keys... to build from Discogs candidates"
 WIKIPEDIA_OFF = "Wikipedia lookups are switched off for this run"
-STATUS_SKIPPED = "skipped"  # write_proposal's own status: an uncertain/none proposal is never written
-KIND_NOTE = "note"  # the journal's kind for a created note (not a tag change: never "restorable" as one)
 MAX_CANDIDATES = 4
 MAX_MEMBERS = 8
 
@@ -101,143 +103,31 @@ def live_fetchers(use_discogs: bool = True) -> Fetchers:
 
 
 @dataclass
-class Candidate:
-    """One artist / release the engine considered, kept for the review page."""
+class Proposal(_Proposal):
+    """The shared draft of one note (redactor_common.core.notes_model) plus what only a music folder has."""
 
-    source: str  # "musicbrainz" / "discogs"
-    id: str
-    name: str
-    detail: str = ""
-    hits: list[str] = field(default_factory=list)  # local albums found in its discography
-    score: float = 0.0
-    note: str = ""
-    also: str = ""  # a second source that names the SAME artist ('discogs'): one merged candidate, not two lines
-    also_id: str = ""
-
-    def to_dict(self) -> dict:
-        out = {"source": self.source, "id": self.id, "name": self.name, "detail": self.detail,
-               "hits": list(self.hits), "score": round(self.score, 3), "note": self.note}
-        if self.also:
-            out["also"], out["also_id"] = self.also, self.also_id
-        return out
-
-
-@dataclass
-class Proposal:
-    target: Target
-    confidence: Confidence = Confidence.NONE
-    note_text: str = ""  # the draft; only built for a confident proposal
-    title: str = ""
-    reasons: list[str] = field(default_factory=list)
-    sources: list[str] = field(default_factory=list)
-    candidates: list[Candidate] = field(default_factory=list)
     local: Optional[LocalArtist | LocalAlbum | LocalGenre] = None
-    problems: list[str] = field(default_factory=list)  # network errors and the like, in plain words
     # The LEVEL decision (core/notes_level.py): 'artist', 'album', 'genre', 'collection' (an about.md folder found
     # from the tags: Soundtracks, Various Artists...) or 'unclear'. `suggested_levels` is what a review page may offer.
     level: str = ""
     level_reasons: list[str] = field(default_factory=list)
     suggested_levels: list[str] = field(default_factory=list)
-    kind_override: str = ""  # the note kind when the level differs from the scan's guess (collection -> about)
     genres: list[str] = field(default_factory=list)  # a genre / collection note: the genres the folder covers, as looked up
-    # An UPDATE proposal: the folder already has an older note of ours (state outdated-untouched or legacy, read by
-    # scan(include_outdated=True)); `note_text` is the new draft, this is what the old note was when it was looked at.
-    old_state: Optional[NoteState] = None
-
-    @property
-    def is_update(self) -> bool:
-        return self.old_state is not None
-
-    @property
-    def old_text(self) -> str:
-        return self.old_state.text if self.old_state else ""
-
-    @property
-    def folder(self) -> Path:
-        return self.target.folder
-
-    @property
-    def kind(self) -> str:
-        return self.target.kind
-
-    @property
-    def note_kind(self) -> str:
-        """The note file's kind: artist / album / about."""
-        return self.kind_override or self.target.note_kind
-
-    @property
-    def path(self) -> str:
-        return note_path(self.target.folder, self.note_kind)
-
-    @property
-    def writable(self) -> bool:
-        return self.confidence == Confidence.CONFIDENT and bool(self.note_text)
 
     def to_dict(self, with_text: bool = True) -> dict:
-        out = {
-            "folder": str(self.folder), "kind": self.kind, "note": self.path, "confidence": self.confidence.value,
-            "title": self.title, "reasons": list(self.reasons), "sources": list(self.sources),
-            "level": self.level, "level_reasons": list(self.level_reasons),
-            "suggested_levels": list(self.suggested_levels), "note_kind": self.note_kind,
-            "candidates": [c.to_dict() for c in self.candidates], "problems": list(self.problems),
-            "action": "update" if self.is_update else "create",
-        }
+        out = super().to_dict(with_text)
+        out.update({"level": self.level, "level_reasons": list(self.level_reasons),
+                    "suggested_levels": list(self.suggested_levels)})
         if self.genres:
             out["genres"] = list(self.genres)
-        if self.old_state is not None:
-            out["old_state"] = self.old_state.kind
-            out["old_generator"] = self.old_state.generator
-        if with_text:
-            out["draft"] = self.note_text
         return out
-
-
-@dataclass
-class NotesSummary:
-    total: int = 0
-    confident: int = 0
-    uncertain: int = 0
-    none: int = 0
-    written: int = 0
-    would_write: int = 0
-    exists: int = 0
-    failed: int = 0
-    not_written: int = 0  # uncertain / none: left for review
-    updates: int = 0  # proposals that would refresh an older note of ours
-    cancelled: bool = False
-    problems: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return dict(self.__dict__)
 
 
 def summarize(
     proposals: list[Proposal], results: Optional[dict[str, NoteWriteResult]] = None, cancelled: bool = False,
 ) -> NotesSummary:
-    """Counts for a report. `results` maps a note path to its write_proposal() result (dry-run results count as
-    'would_write')."""
-    summary = NotesSummary(total=len(proposals), cancelled=cancelled)
-    for proposal in proposals:
-        summary.updates += 1 if proposal.is_update else 0
-        setattr(summary, proposal.confidence.value, getattr(summary, proposal.confidence.value) + 1)
-        for problem in proposal.problems:
-            if problem not in summary.problems:
-                summary.problems.append(problem)
-        result = (results or {}).get(proposal.path)
-        if result is None:
-            continue
-        if result.status == STATUS_WRITTEN:
-            if result.dry_run:
-                summary.would_write += 1
-            else:
-                summary.written += 1
-        elif result.status == "exists":
-            summary.exists += 1
-        elif result.status == STATUS_SKIPPED:
-            summary.not_written += 1
-        else:
-            summary.failed += 1
-    return summary
+    """Counts for a report (the shared summarize)."""
+    return _summarize(proposals, results, cancelled)
 
 
 # ---------------------------------------------------------------------------
@@ -1809,27 +1699,14 @@ def build_proposals(
 # ---------------------------------------------------------------------------
 
 def _sha(text: str) -> str:
-    return hashlib.sha256(normalize_note_text(text).encode("utf-8")).hexdigest()
+    return text_sha(text)
 
 
 def write_proposal(proposal: Proposal, dry_run: bool = False, allow_uncertain: bool = False) -> NoteWriteResult:
-    """Writes the draft of a CONFIDENT proposal (an uncertain / none one is refused with status 'skipped' unless
-    a person chose it: `allow_uncertain`). Never overwrites (redactor_common's write_note: any existing .md note
-    of any of the five names, any letter case, makes the result 'exists'). With the opt-in history on, a written
-    note is recorded so it can be undone (undo_note_entry)."""
-    if proposal.confidence != Confidence.CONFIDENT and not allow_uncertain:
-        return NoteWriteResult(
-            STATUS_SKIPPED, proposal.path, f"not written: the match is {proposal.confidence.value}", dry_run)
-    if not proposal.note_text:
-        return NoteWriteResult(STATUS_SKIPPED, proposal.path, "there is no draft to write", dry_run)
-    if proposal.is_update:  # refresh an older note of ours: only while it is still what was looked at, old one to the Recycle Bin
-        result = replace_note(proposal.folder, proposal.note_kind, proposal.note_text, expect=proposal.old_state,
-                              dry_run=dry_run)
-    else:
-        result = write_note(proposal.folder, proposal.note_kind, proposal.note_text, dry_run=dry_run)
-    if result.ok and not dry_run:
-        record_note_created(result.path, proposal.note_text, replaced=bool(result.replaced))
-    return result
+    """Writes the draft of a CONFIDENT proposal (the shared write_proposal: an uncertain / none one is refused with
+    status 'skipped' unless a person chose it, an existing note is never overwritten). With the opt-in history on, a
+    written note is recorded so it can be undone (undo_note_entry)."""
+    return _write_proposal(proposal, dry_run, allow_uncertain, record=record_note_created)
 
 
 def record_note_created(path: str, text: str, replaced: bool = False) -> None:
@@ -1854,33 +1731,10 @@ def _trash(path: str) -> None:
 
 
 def undo_note_entry(entry, journal=None) -> str:
-    """Undoes a journal entry of a created note: the file goes to the Recycle Bin, but ONLY if it still holds
-    exactly what was written (an edited note is the person's now). Returns '' or a plain-language problem."""
-    if getattr(entry, "kind", "") != KIND_NOTE:
-        return "this entry is not a created note"
-    match = re.match(r"sha256:([0-9a-f]{64})$", getattr(entry, "note", "") or "")
-    if not match:
-        return "the entry has no checksum, so the file cannot be checked"
-    path = entry.path
-    if not os.path.isfile(path):
-        return "the note is no longer there"
-    try:
-        with open(path, "rb") as handle:
-            current = hashlib.sha256(handle.read()).hexdigest()
-    except OSError as exc:
-        return f"the note could not be read ({exc})"
-    if current != match.group(1):
-        return "the note was changed after it was created; it is left alone"
-    try:
-        _trash(path)
-    except Exception as exc:  # noqa: BLE001 -- TrashError, OSError
-        return f"the note could not be moved to the Recycle Bin ({exc})"
+    """Undoes a journal entry of a created note (the shared undo: Recycle Bin, only if it still holds exactly what
+    was written). Returns '' or a plain-language problem."""
     if journal is None:
         from core.history import get_journal
 
         journal = get_journal()
-    try:
-        journal.mark_restored(entry.id, None)
-    except Exception:  # noqa: BLE001 -- the undo itself happened
-        pass
-    return ""
+    return _undo_note_entry(entry, journal, trash=lambda path: _trash(path))

@@ -20,17 +20,13 @@ from __future__ import annotations
 import difflib
 import re
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum  # noqa: F401
 from typing import Iterable, Optional
 
 from core.notes_local import fold_name
 from core.notes_numbers import compare_key
+from redactor_common.core.notes_model import Confidence  # noqa: E402,F401 -- the one definition, shared
 
-
-class Confidence(str, Enum):
-    CONFIDENT = "confident"
-    UNCERTAIN = "uncertain"
-    NONE = "none"
 
 
 # ---------------------------------------------------------------------------

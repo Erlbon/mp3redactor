@@ -1,8 +1,10 @@
 """
 core/wikipedia_lookup.py
 
-A small, generic Wikipedia client for the folder notes (core/notes_flow.py): the lead paragraph of the
-article about a band or an album, found the way a person would find it.
+The Wikipedia client for the folder notes (core/notes_flow.py): the lead paragraph of the article about a band or an
+album, found the way a person would find it. The fetching and parsing (summary, search, Wikidata) is redactor_common's
+(redactor_common/core/wikipedia.py, shared with videoredactor); what stays here is what is about MUSIC: which article
+counts as the band / album / genre, and how MusicBrainz links lead to it.
 
 Finding the page, in this order:
   1. the title MusicBrainz links (a "wikipedia" url-relation), or the English sitelink of its "wikidata"
@@ -13,41 +15,27 @@ Finding the page, in this order:
      artist, and, for an artist found only by search, either mention one of the local album titles or carry
      the artist's name as its own title.
 
-Network rules: Wikimedia asks for a descriptive User-Agent (app name + version + a URL); every call goes
-through one process-wide throttle. `fetch` is the injectable `fetch(url) -> bytes` of redactor_common's
-lookup_client, so tests never touch the network. A missing page (404) is None, not an error.
-
-Nothing in here is about MP3: epubredactor / cbzredactor / videoredactor will want the same client, so it is a
-candidate for redactor_common once a second app needs it.
+`fetch` is the injectable `fetch(url) -> bytes`, so tests never touch the network. A missing page (404) is None,
+not an error.
 """
 
 from __future__ import annotations
 
 import re
-import unicodedata
-from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
-from urllib.parse import quote, unquote, urlencode, urlsplit
 
 from core.notes_numbers import compare_key
 from core.version import APP_VERSION
-from redactor_common.core.lookup_client import Throttle, fetch_json, make_default_fetch, throttled
+from redactor_common.core import wikipedia as _w
+from redactor_common.core.wikipedia import (  # noqa: F401 -- re-exported: the engine and the tests import them from here
+    MAX_EXTRACT_CHARS, MIN_REQUEST_INTERVAL, Page, SearchHit, WikipediaError, language_of_url, title_from_url,
+    trim_extract,
+)
 
-SUMMARY_URL = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}"
-SEARCH_URL = "https://{lang}.wikipedia.org/w/rest.php/v1/search/title"
-WIKIDATA_URL = "https://www.wikidata.org/w/api.php"
 USER_AGENT = f"mp3redactor/{APP_VERSION} ( https://github.com/Erlbon )"
-MIN_REQUEST_INTERVAL = 0.35
-_SOURCE_NAME = "Wikipedia"
-MAX_EXTRACT_CHARS = 1200
-
-
-class WikipediaError(Exception):
-    """Searching or fetching from Wikipedia failed (not "there is no such page")."""
-
-
-_throttle = Throttle(MIN_REQUEST_INTERVAL)
-_default_fetch = throttled(make_default_fetch(USER_AGENT, timeout=30.0), _throttle)
+_default_fetch = _w.make_fetch(USER_AGENT)
+_fold = _w.fold
+_verified = _w.usable
 
 
 def default_fetch() -> Callable:
@@ -55,128 +43,23 @@ def default_fetch() -> Callable:
     return _default_fetch
 
 
-def _get(url: str, fetch: Optional[Callable]) -> Optional[dict]:
-    return fetch_json(
-        url, fetch or _default_fetch, error_cls=WikipediaError, source_name=_SOURCE_NAME, ignore_404=True,
-        retry_429=(2.0, 5.0),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Pages
-# ---------------------------------------------------------------------------
-
-@dataclass
-class Page:
-    """The lead of one article."""
-
-    title: str
-    extract: str = ""
-    description: str = ""
-    url: str = ""
-    kind: str = "standard"  # Wikipedia's page type; "disambiguation" pages are never used
-    via: str = ""  # how it was found: "musicbrainz link", "wikidata", "search"
-
-    @property
-    def is_disambiguation(self) -> bool:
-        return self.kind == "disambiguation"
-
-
-@dataclass
-class SearchHit:
-    title: str
-    description: str = ""
-    excerpt: str = ""
-
-
-def title_from_url(url: str) -> str:
-    """'Vienna_(Ultravox_album)' as 'Vienna (Ultravox album)' from an en.wikipedia.org/wiki/ link, else ''."""
-    parts = urlsplit(url or "")
-    host = (parts.hostname or "").lower()
-    if not host.endswith("wikipedia.org") or not parts.path.startswith("/wiki/"):
-        return ""
-    return unquote(parts.path[len("/wiki/"):]).replace("_", " ").strip()
-
-
-def language_of_url(url: str) -> str:
-    host = (urlsplit(url or "").hostname or "").lower()
-    return host.split(".")[0] if host.endswith(".wikipedia.org") else ""
-
-
 def get_summary(title: str, fetch: Optional[Callable] = None, lang: str = "en") -> Optional[Page]:
-    """The summary (lead paragraph, short description, link) of the article `title`, or None when there is no
-    such article."""
-    title = (title or "").strip()
-    if not title:
-        return None
-    url = SUMMARY_URL.format(lang=lang, title=quote(title.replace(" ", "_"), safe="_,.:'!*~-()"))
-    data = _get(url, fetch)
-    if not isinstance(data, dict) or not data.get("title"):
-        return None
-    page_url = ((data.get("content_urls") or {}).get("desktop") or {}).get("page") or ""
-    return Page(
-        title=str(data["title"]), extract=str(data.get("extract") or "").strip(),
-        description=str(data.get("description") or "").strip(), url=page_url, kind=str(data.get("type") or "standard"),
-    )
+    return _w.get_summary(title, fetch or _default_fetch, lang)
 
 
 def search_titles(query: str, fetch: Optional[Callable] = None, limit: int = 5, lang: str = "en") -> list[SearchHit]:
-    """The pages whose TITLE matches `query` (REST search/title), best first."""
-    if not (query or "").strip():
-        return []
-    url = SEARCH_URL.format(lang=lang) + "?" + urlencode({"q": query, "limit": limit})
-    data = _get(url, fetch) or {}
-    hits = []
-    for page in data.get("pages", []) if isinstance(data.get("pages"), list) else []:
-        if isinstance(page, dict) and page.get("title"):
-            hits.append(SearchHit(
-                title=str(page["title"]), description=str(page.get("description") or ""),
-                excerpt=re.sub(r"<[^>]+>", "", str(page.get("excerpt") or "")),
-            ))
-    return hits
+    return _w.search_titles(query, fetch or _default_fetch, limit, lang)
 
 
 def title_from_wikidata(entity_id: str, fetch: Optional[Callable] = None, lang: str = "en") -> str:
-    """The article title of a Wikidata item in `lang` ('' if it has none)."""
-    if not re.fullmatch(r"Q\d+", entity_id or ""):
-        return ""
-    url = WIKIDATA_URL + "?" + urlencode({
-        "action": "wbgetentities", "ids": entity_id, "props": "sitelinks", "sitefilter": f"{lang}wiki", "format": "json",
-    })
-    data = _get(url, fetch) or {}
-    entity = (data.get("entities") or {}).get(entity_id) or {}
-    return str((entity.get("sitelinks") or {}).get(f"{lang}wiki", {}).get("title") or "")
+    return _w.title_from_wikidata(entity_id, fetch or _default_fetch, lang)
 
 
 def wikidata_identifiers(title: str = "", entity_id: str = "", fetch: Optional[Callable] = None, lang: str = "en") -> dict:
     """What a Wikipedia article's Wikidata item says about the artist elsewhere: {'qid', 'musicbrainz' (P434, the MusicBrainz
     artist id), 'discogs' (P1953, the Discogs artist id)}; empty strings for what the item does not have. By the article
-    `title` (one request: wbgetentities with sites / titles) or by the item id. Raises WikipediaError only when the service
-    cannot be reached."""
-    params = {"action": "wbgetentities", "props": "claims", "format": "json"}
-    if entity_id:
-        if not re.fullmatch(r"Q\d+", entity_id):
-            return {"qid": "", "musicbrainz": "", "discogs": ""}
-        params["ids"] = entity_id
-    elif title:
-        params.update({"sites": f"{lang}wiki", "titles": title})
-    else:
-        return {"qid": "", "musicbrainz": "", "discogs": ""}
-    data = _get(WIKIDATA_URL + "?" + urlencode(params), fetch) or {}
-    found = {"qid": "", "musicbrainz": "", "discogs": ""}
-    for qid, entity in (data.get("entities") or {}).items():
-        if not isinstance(entity, dict) or "missing" in entity or not str(qid).startswith("Q"):
-            continue
-        found["qid"] = str(qid)
-        claims = entity.get("claims") or {}
-        for prop, key in (("P434", "musicbrainz"), ("P1953", "discogs")):
-            for claim in claims.get(prop) or []:
-                value = (((claim.get("mainsnak") or {}).get("datavalue") or {}).get("value"))
-                if isinstance(value, str) and value.strip():
-                    found[key] = value.strip()
-                    break
-        break
-    return found
+    `title` (one request) or by the item id. Raises WikipediaError only when the service cannot be reached."""
+    return _w.wikidata_claims({"P434": "musicbrainz", "P1953": "discogs"}, title, entity_id, fetch or _default_fetch, lang)
 
 
 ARTIST_SUFFIXES = ("band", "musician", "singer", "group", "rapper", "duo", "DJ")
@@ -201,12 +84,6 @@ def find_artist_page(name: str, context_terms: Iterable[str] = (), fetch: Option
 # ---------------------------------------------------------------------------
 # Verifying a page
 # ---------------------------------------------------------------------------
-
-def _fold(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text or "")
-    text = "".join(c for c in text if not unicodedata.combining(c)).casefold().replace("&", " and ")
-    return re.sub(r"[\W_]+", " ", text).strip()
-
 
 _MUSIC_WORDS = re.compile(
     r"\b(band|singer|musician|group|duo|trio|quartet|rapper|songwriter|vocalist|composer|orchestra|ensemble|dj|"
@@ -268,23 +145,9 @@ def looks_like(page: Page, kind: str, name: str, artist: str = "", context_terms
     return title_core == _fold(name) or _mentions(head, name)
 
 
-def trim_extract(text: str, limit: int = MAX_EXTRACT_CHARS) -> str:
-    """`text` cut at a sentence end within `limit` characters (whole text when it is shorter)."""
-    text = re.sub(r"\s+", " ", text or "").strip()
-    if len(text) <= limit:
-        return text
-    cut = text[:limit]
-    ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", cut)]
-    return cut[: ends[-1]] if ends else cut.rsplit(" ", 1)[0] + "..."
-
-
 # ---------------------------------------------------------------------------
 # Finding the page
 # ---------------------------------------------------------------------------
-
-def _verified(page: Optional[Page]) -> Optional[Page]:
-    return page if page is not None and not page.is_disambiguation and page.extract else None
-
 
 def find_page(
     kind: str, name: str, *, artist: str = "", linked_title: str = "", wikidata_id: str = "",

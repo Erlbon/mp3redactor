@@ -17,9 +17,10 @@ it is a hint, never a promise.
 
 from __future__ import annotations
 
-from typing import Iterable
-
 from core.notes_kinds import parse_kinds
+from redactor_common.core.notes_timing import (  # noqa: F401 -- re-exported: the dialog, the CLI and the tests import them from here
+    MIN_DONE_FOR_ESTIMATE, RECENT, clock, format_duration, lookup_sentence, progress_suffix,
+)
 
 MB_SECONDS = 1.1  # the throttle of core/musicbrainz_lookup.py
 WIKI_SECONDS = 0.3
@@ -30,49 +31,6 @@ ARTIST_SECONDS = ARTIST_MB * MB_SECONDS + ARTIST_WIKI * WIKI_SECONDS
 ALBUM_SECONDS = ALBUM_MB * MB_SECONDS + ALBUM_WIKI * WIKI_SECONDS
 GENRE_SECONDS = GENRE_WIKI * WIKI_SECONDS
 HINT_MIN_FOLDERS = 100  # the scope dialog warns above this many folders
-MIN_DONE_FOR_ESTIMATE = 3
-RECENT = 12  # how many of the latest folders the remaining time is averaged over
-
-
-def format_duration(seconds: float) -> str:
-    """'35 s', '4 min', '1 h 41 min' (rounded: nobody needs the seconds of an hour)."""
-    seconds = max(0.0, float(seconds))
-    if seconds < 60:
-        return f"{int(round(seconds))} s"
-    minutes = int(round(seconds / 60))
-    if minutes < 60:
-        return f"{minutes} min"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours} h {minutes:02d} min" if minutes else f"{hours} h"
-
-
-def clock(seconds: float) -> str:
-    """H:MM:SS."""
-    total = int(round(max(0.0, float(seconds))))
-    return f"{total // 3600}:{total % 3600 // 60:02d}:{total % 60:02d}"
-
-
-def progress_suffix(done: int, total: int, elapsed: float, durations: Iterable[float]) -> str:
-    """The timing words for the progress label, or '' while it would be a silly guess (fewer than 3 folders done, or
-    nothing left). The time left is the average of the RECENT folders times the folders left: a folder answered from the
-    cache is fast and counts as fast, so a resumed run's estimate falls as it goes."""
-    recent = [d for d in list(durations)[-RECENT:] if d >= 0]
-    left = total - done
-    if done < MIN_DONE_FOR_ESTIMATE or left <= 0 or not recent:
-        return ""
-    remaining = left * (sum(recent) / len(recent))
-    if remaining < 15:
-        return f", {format_duration(elapsed)} elapsed, almost done"
-    return f", {format_duration(elapsed)} elapsed, about {format_duration(remaining)} left"
-
-
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}" if n == 1 else f"{n} {word}s"
-
-
-def lookup_sentence(folders: int, elapsed: float, requests: int, from_cache: int) -> str:
-    return (f"Looked up {_plural(folders, 'folder')} in {clock(elapsed)} "
-            f"({_plural(requests, 'request')}, {from_cache} from the cache).")
 
 
 def estimate(artists: int, albums: int, genres: int, kinds) -> float:

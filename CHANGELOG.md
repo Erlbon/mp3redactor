@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-16#01 -- Create Notes: the request cache, timing, review rules, proposal model and Wikipedia client now come from redactor_common
+
+No change in what the app does: videoredactor is getting the same Create Notes, so the generic parts moved into redactor_common (2026-10-16#01) and this app uses them instead of its own copies.
+- Changed: `ResponseCache`, `CachedFetch`, `RequestStats` (the secret-parameter filter of CachedFetch is new there, unused here), `PhaseTimer`, the duration / progress wording, `ReviewSession`, `Confidence` / `Candidate` / `Proposal` / `summarize` / `write_proposal` / `undo_note_entry` and the Wikipedia fetching (summary, search, Wikidata) are shared. What stays in this app is the music: the MusicBrainz and Discogs engines, `looks_like` for bands and albums, the level decision, the scope hint numbers and `CachedDiscogs`.
+- Tests: the 1472 existing tests pass unchanged apart from where the notes cache's default instance lives (tests/conftest.py).
+
 ## 2026-10-15#26 -- Create Notes: Look up by link for genre folders, and picking a level builds at once
 
 - New: **Look up by link** now also appears on a genre / collection row. Paste the Wikipedia article about the genre (for example https://en.wikipedia.org/wiki/Ska_punk): the note is built from that article's introduction and the credit, believed like a picked candidate ("chosen by you from a link"). Any other kind of link is refused next to the field in plain words, and nothing is fetched then. Before, the box was hidden for these rows, so there was no way to say which article a genre means when the name search did not find it.

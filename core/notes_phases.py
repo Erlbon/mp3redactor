@@ -1,85 +1,24 @@
 """
-core/notes_phases.py -- where the time of a Create Notes run goes, phase by phase (Qt-free, thread-safe).
-
-A run is walked folders (scan), tags read from the files (tags: files and seconds), requests to MusicBrainz, Discogs and
-Wikipedia (seconds INCLUDING the throttle waits and the waits for a busy service; answers from the cache or from memory cost
-nothing and are counted apart), and the notes written. Each phase adds its seconds and its count to a PhaseTimer; the review
-banner, the command line and the log show the result, so a slow run says what it was slow at.
-
-With the lookups of two services running side by side the phases add up to more than the clock on the wall: the sum is
-work, the sentence 'Looked up N folders in H:MM:SS' is the wall clock.
+core/notes_phases.py -- where the time of a Create Notes run goes, phase by phase. The timer is redactor_common's
+(redactor_common/core/notes_phases.py); this file names mp3redactor's phases: walked folders (scan), tags read from the
+files, requests to MusicBrainz, Discogs and Wikipedia (seconds INCLUDING the throttle waits and the waits for a busy
+service), and the notes written.
 """
 
 from __future__ import annotations
 
-import threading
-import time
-from collections import defaultdict
-from contextlib import contextmanager
+from redactor_common.core.notes_phases import BUSY, PhaseSet, mmss  # noqa: F401 -- re-exported
+from redactor_common.core.notes_phases import PhaseTimer as _SharedTimer
 
 SCAN, TAGS, MUSICBRAINZ, DISCOGS, WIKIPEDIA, WRITE = "scan", "tags", "musicbrainz", "discogs", "wikipedia", "write"
-BUSY = "busy"  # the part of MusicBrainz' time spent waiting for a service that said it was busy (503), not a phase of its own
-ORDER = (SCAN, TAGS, MUSICBRAINZ, DISCOGS, WIKIPEDIA, WRITE)
-LABELS = {SCAN: "scan", TAGS: "tags", MUSICBRAINZ: "MusicBrainz", DISCOGS: "Discogs", WIKIPEDIA: "Wikipedia", WRITE: "writing"}
-UNITS = {SCAN: "folders", TAGS: "files", MUSICBRAINZ: "requests", DISCOGS: "requests", WIKIPEDIA: "requests", WRITE: "notes"}
+PHASES = PhaseSet(
+    {SCAN: "scan", TAGS: "tags", MUSICBRAINZ: "MusicBrainz", DISCOGS: "Discogs", WIKIPEDIA: "Wikipedia", WRITE: "writing"},
+    {SCAN: "folders", TAGS: "files", MUSICBRAINZ: "requests", DISCOGS: "requests", WIKIPEDIA: "requests", WRITE: "notes"},
+    busy_phase=MUSICBRAINZ)
+ORDER = PHASES.order
+LABELS, UNITS = PHASES.labels, PHASES.units
 
 
-def mmss(seconds: float) -> str:
-    """m:ss, or h:mm:ss from an hour on."""
-    total = int(round(max(0.0, float(seconds))))
-    if total >= 3600:
-        return f"{total // 3600}:{total % 3600 // 60:02d}:{total % 60:02d}"
-    return f"{total // 60}:{total % 60:02d}"
-
-
-class PhaseTimer:
+class PhaseTimer(_SharedTimer):
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._seconds: dict[str, float] = defaultdict(float)
-        self._counts: dict[str, int] = defaultdict(int)
-
-    def add(self, phase: str, seconds: float, count: int = 1) -> None:
-        with self._lock:
-            self._seconds[phase] += max(0.0, seconds)
-            self._counts[phase] += count
-
-    @contextmanager
-    def phase(self, phase: str, count: int = 1):
-        start = time.perf_counter()
-        try:
-            yield
-        finally:
-            self.add(phase, time.perf_counter() - start, count)
-
-    def seconds(self, phase: str) -> float:
-        with self._lock:
-            return self._seconds.get(phase, 0.0)
-
-    def count(self, phase: str) -> int:
-        with self._lock:
-            return self._counts.get(phase, 0)
-
-    def _used(self) -> list[str]:
-        with self._lock:
-            return [p for p in ORDER if self._seconds.get(p, 0.0) > 0 or self._counts.get(p, 0) > 0]
-
-    def time_line(self) -> str:
-        """'Time: scan 0:12, tags 8:40, MusicBrainz 21:10, Discogs 25:30, Wikipedia 1:20' (the phases that did something)."""
-        parts = [f"{LABELS[p]} {mmss(self.seconds(p))}" + self._busy_note(p) for p in self._used()]
-        return "Time: " + ", ".join(parts) if parts else ""
-
-    def _busy_note(self, phase: str) -> str:
-        if phase != MUSICBRAINZ or self.count(BUSY) == 0:
-            return ""
-        return f" (of it {mmss(self.seconds(BUSY))} waiting for a busy service, {self.count(BUSY)}x)"
-
-    def detail(self) -> str:
-        """The same with the counts: 'tags 8:40 (1080 files), MusicBrainz 21:10 (402 requests)'."""
-        return "Time: " + ", ".join(
-            f"{LABELS[p]} {mmss(self.seconds(p))} ({self.count(p)} {UNITS[p]})" + self._busy_note(p) for p in self._used())
-
-    def to_dict(self) -> dict:
-        out = {p: {"seconds": round(self.seconds(p), 2), "count": self.count(p)} for p in self._used()}
-        if self.count(BUSY):
-            out[BUSY] = {"seconds": round(self.seconds(BUSY), 2), "count": self.count(BUSY)}
-        return out
+        super().__init__(PHASES)
