@@ -601,6 +601,8 @@ class NotesReviewDialog(QDialog):
         self.session = session
         self.view = view
         self.index = 0
+        self._busy = False  # a lookup / rebuild is running under its progress dialog: no second one may start
+        self.status_text = ""
         self.last_summary = ""
         self._rebuild = rebuild
         self._can_choose = can_choose
@@ -1078,6 +1080,8 @@ class NotesReviewDialog(QDialog):
     def _tick_best_guesses(self) -> None:
         """Rebuilds every uncertain proposal that has a usable top candidate and a clear level around that
         candidate (engine.rebuild), under a progress dialog; the rebuilt notes are ticked. Nothing is written."""
+        if self._busy:
+            return  # a second click (or Enter) while the first run is still going
         indices = self.guess_indices()
         if not indices:
             QMessageBox.information(self, "Create Notes", "No uncertain match has a candidate and a clear level to guess from.")
@@ -1099,7 +1103,11 @@ class NotesReviewDialog(QDialog):
                 self.session.replace(i, rebuilt)
                 done.append(i)
 
-        run_work_with_progress(self, len(indices), "Looking up the best guesses…", work, cancellable=True, title="Create Notes")
+        self._busy = True
+        try:
+            run_work_with_progress(self, len(indices), "Looking up the best guesses…", work, cancellable=True, title="Create Notes")
+        finally:
+            self._busy = False
         self._update_rows(done)  # the rows that were rebuilt, in place
         self._update_followup()
 
@@ -1154,7 +1162,12 @@ class NotesReviewDialog(QDialog):
 
     def _resolve(self, candidate: Optional[Candidate], level: str, genres: Optional[list] = None,
                  link: Optional[str] = None) -> None:
-        item = self.session.items[self.index]
+        if self._busy or not self.session.items:
+            return  # a second click (or Enter) while the first lookup is still running
+        # The row this choice was made on, captured BEFORE the call: the selection can move while it runs (2026-10-16
+        # review: row B was overwritten with A's rebuilt note). The window is also disabled during the call.
+        index = max(0, min(self.index, len(self.session.items) - 1))
+        item = self.session.items[index]
         what = (candidate.name if candidate else ("the link" if link else (", ".join(genres) if genres
                                                                             else LEVEL_LABELS.get(level, level))))
         extra = {}  # (a rebuild callable without these keeps working)
@@ -1162,6 +1175,7 @@ class NotesReviewDialog(QDialog):
             extra["genres"] = genres
         if link is not None:
             extra["link"] = link
+        self._busy = True
         try:
             rebuilt = run_busy(self, f"Looking up {what}…", lambda: self._rebuild(item.proposal, candidate, level, **extra),
                                title="Create Notes")
@@ -1171,9 +1185,16 @@ class NotesReviewDialog(QDialog):
         except Exception as exc:  # noqa: BLE001 -- shown as one readable message, never a traceback
             QMessageBox.warning(self, "Create Notes", f"The lookup failed: {exc}")
             return
-        self.session.replace(self.index, rebuilt)
+        finally:
+            self._busy = False
+        if index >= len(self.session.items) or self.session.items[index] is not item:
+            self.status_text = "The row changed while it was being looked up: that result was dropped. Choose again."
+            self.banner_label.setText(self.status_text)
+            self.banner_label.setVisible(True)
+            return
+        self.session.replace(index, rebuilt)
         if self.view == VIEW_LIST:
-            self._update_rows([self.index])  # that one row, in place
+            self._update_rows([index])  # that one row, in place
             self._update_followup()
         else:
             self._refresh_all()
@@ -1329,6 +1350,7 @@ def create_notes(
         best_guess=engine.best_guess, why_not=engine.why_cannot_choose, offer_albums=kinds == (KIND_ARTIST,),
         lookup_note=lookup_note)
     dialog.exec()
+    dialog.deleteLater()  # parented to `parent`: otherwise it (and the whole ReviewSession) lives as long as the window
     if dialog.followup:  # 'Create the album notes for these artists too': only those artists' albums
         return create_notes(parent, dialog.followup, True, make_fetchers, size_text, on_size, open_path,
                             kinds=(KIND_ALBUM,), cache=cache, include_outdated=include_outdated,
@@ -1659,9 +1681,12 @@ def ask_scope(parent: QWidget, choices: list[ScopeChoice], include_subfolders: b
     """(folder, kinds, include_outdated): the folder to create notes for ("" = cancelled), what to create ('artist'
     / 'both' / 'all') and whether to also review notes made by an older version (always off at first)."""
     dialog = NotesScopeDialog(parent, choices, include_subfolders, on_include_changed, start, kinds)
-    if dialog.exec() != QDialog.DialogCode.Accepted:
-        return "", kinds, False
-    return dialog.folder, dialog.kinds, dialog.outdated
+    try:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return "", kinds, False
+        return dialog.folder, dialog.kinds, dialog.outdated
+    finally:
+        dialog.deleteLater()  # parented to `parent`: one dialog per call would pile up for the life of the window
 
 
 def ask_folder(parent: QWidget, start: str) -> str:
