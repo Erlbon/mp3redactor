@@ -6,20 +6,20 @@ import pytest
 from core.notes_flow import Confidence, Fetchers, NotesEngine, build_proposals, scan
 from core.notes_level import artist_key, names_agree
 from core.notes_match import discography_hits, name_similarity, titles_match, track_overlap
-from core.notes_numbers import compare_key, title_variants
+from core.notes_numbers import compare_key, set_norwegian_numbers, title_variants
 from tests.notes_helpers import FakeFetch, make_mp3
 
 MADNESS = "11111111-2222-4333-8444-555555555555"
 
 
 @pytest.mark.parametrize("a,b", [
-    ("Seven", "7"), ("Four", "4"), ("Sju", "7"), ("Syv", "7"), ("Åtte", "8"), ("Fire", "4"), ("Tre", "3"), ("Ett", "1"),
+    ("Seven", "7"), ("Four", "4"), ("Sju", "7"), ("Syv", "7"), ("Åtte", "8"), ("Ett", "1"),
     ("Twenty", "20"), ("Part II", "Part 2"), ("Pt. 2", "Part Two"), ("Part Two", "Part II"), ("Vol. 1", "Volume One"),
     ("Volume 1", "Vol 1"), ("Vol 7", "Volume Seven"), ("No. 1", "Number One"), ("#1", "Number One"), ("Nr. 3", "No. 3"),
     ("First", "1st"), ("Second", "2nd"), ("Third Album", "3rd Album"), ("Ten Years After", "10 Years After"),
     ("Three Dog Night", "3 Dog Night"), ("Maroon Five", "Maroon 5"), ("Two Unlimited", "2 Unlimited"),
     ("Rock & Roll", "Rock and Roll"), ("Rock og Roll", "Rock and Roll"), ("Rocky IV", "Rocky 4"), ("Mk II", "Mk 2"),
-    ("Sinfonia XX", "Sinfonia 20"),
+    ("Sinfonia XIX", "Sinfonia 19"),
 ])
 def test_number_words_numerals_and_romans_compare_equal(a, b):
     assert compare_key(a) == compare_key(b)
@@ -31,6 +31,32 @@ def test_number_words_numerals_and_romans_compare_equal(a, b):
 ])
 def test_things_that_only_look_like_numbers_stay_apart(a, b):
     assert compare_key(a) != compare_key(b)
+
+
+@pytest.mark.parametrize("a,b", [
+    ("Fire", "Four"), ("Fire", "4"), ("Ten", "Ti"), ("To", "Two"), ("To", "2"), ("En Vogue", "1 Vogue"), ("The xx", "20"),
+    ("Born to Run", "Born 2 Run"), ("Tre", "3"), ("Fem", "5"), ("Ni", "9"),
+])
+def test_everyday_words_are_not_numbers_review_2026_10_16(a, b):
+    """compare_key('Fire') == compare_key('Four') == compare_key('4') used to hold (Norwegian words folded always):
+    'Ten' == 'Ti', 'To' == 'Two', 'En Vogue' == '1 Vogue', 'The xx' == '20', 'Born to Run' == 'Born 2 Run'."""
+    assert compare_key(a) != compare_key(b)
+
+
+def test_the_xx_stays_xx_and_its_title_comparison_too():
+    assert compare_key("The xx") == "the xx" and compare_key("xx") == "xx"
+    assert not titles_match("xx", "20")
+
+
+def test_norwegian_words_fold_only_when_switched_on():
+    try:
+        set_norwegian_numbers(True)
+        assert compare_key("Fire") == compare_key("4") and compare_key("Tre") == compare_key("3")
+        assert compare_key("To") == compare_key("2") and compare_key("Ti") == compare_key("10")
+        assert title_variants("Fire") == ["Fire", "4"]
+    finally:
+        set_norwegian_numbers(False)
+    assert compare_key("Fire") != compare_key("4") and title_variants("Fire") == ["Fire"]
 
 
 def test_the_single_letters_i_v_and_x_stay_letters():

@@ -50,6 +50,35 @@ def album_key(title: str) -> str:
     return _LEADING_THE.sub("", compare_key(text))
 
 
+# Titles that name a KIND of album, not one album: every discography has them, so finding one in an artist's discography
+# identifies nobody ('Greatest Hits' + 'Live' are on Queen's, and on 20 other artists'). Keys as album_key() gives them.
+GENERIC_ALBUM_TITLES = frozenset({
+    "greatest hits", "best of", "very best of", "hits", "live", "demo", "demos", "unplugged", "collection", "anthology",
+    "singles", "compilation", "remixes", "remixed", "remastered", "untitled", "self titled", "selftitled", "eponymous",
+    "debut", "first album", "album", "ep", "live in concert", "the collection", "unreleased", "rarities", "b sides",
+    "the singles", "the albums", "complete", "essential", "the essential", "gold", "platinum", "platinum collection",
+})
+_GENERIC_TITLE_PATTERNS = (
+    re.compile(r"^(?:vol|disc|disk|cd|part|no|number|side) ?\d+$"),
+    re.compile(r"^(?:greatest hits|best of|very best of|hits|live|demos?|collection|anthology|singles)(?: (?:vol|volume|part|disc|cd) \d+)$"),
+    re.compile(r"^(?:greatest hits|best of|very best of|essential|gold) .{0,12}$"),
+)
+
+
+def is_generic_album_title(title: str, artist_names: Iterable[str] = ()) -> bool:
+    """A title that does not point at one album: 'Greatest Hits', 'The Best Of', 'Live', 'Demo', 'Unplugged', 'Collection',
+    'Anthology', 'Singles', 'Remixes', 'Untitled', 'Vol. 2', 'Disc 1', a title that is just a generic place name ('Music'), or
+    the self-titled case (the album has the artist's own name: any artist might have one)."""
+    from core.notes_local import is_generic_name
+
+    key = album_key(title)
+    if not key:
+        return True
+    if key in GENERIC_ALBUM_TITLES or any(p.match(key) for p in _GENERIC_TITLE_PATTERNS) or is_generic_name(title):
+        return True
+    return any(key == album_key(name) for name in artist_names if name)
+
+
 def titles_match(a: str, b: str, threshold: float = 0.93) -> bool:
     ka, kb = album_key(a), album_key(b)
     if not ka or not kb:
@@ -159,6 +188,10 @@ def decide_artist(evaluations: list[Evaluation]) -> tuple[Optional[Evaluation], 
         return top, Confidence.UNCERTAIN, reasons + [f"the name '{top.name}' is only a loose match"]
     if second is not None and second.hits:
         if len(second.hits) == len(top.hits) and top.name_sim - second.name_sim < 0.2:
+            if top.name_sim == 1.0 and second.name_sim == 1.0:
+                return top, Confidence.UNCERTAIN, reasons + [
+                    f"two artists with this name hold the album: '{top.name}' ({top.detail}) and '{second.name}' "
+                    f"({second.detail}) fit the folder equally well; pick the one you trust"]
             return top, Confidence.UNCERTAIN, reasons + [
                 f"'{second.name}' ({second.detail}) fits the folder equally well"]
     return top, Confidence.CONFIDENT, reasons

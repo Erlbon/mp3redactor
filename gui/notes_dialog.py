@@ -1258,6 +1258,10 @@ def create_notes(
         QMessageBox.warning(parent, title, f"The folders could not be read: {exc}")
         return None
     if not found.targets:
+        wrong = found.wrong_level_message("tick it under 'What to create'")
+        if wrong:  # an album folder asked for artist notes only: say so, it is not a library root
+            QMessageBox.information(parent, title, wrong)
+            return None
         if found.only_a_library_root:  # an empty or unreadable folder, or a library root (a generic place name)
             QMessageBox.information(parent, title, LIBRARY_ROOT_MESSAGE)
             return None

@@ -22,6 +22,7 @@ recorded fixtures.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import hashlib
 import os
 import re
@@ -49,7 +50,7 @@ from core.notes_local import (
 )
 from core.notes_match import (
     Confidence, Evaluation, album_key, decide_artist, discography_hits, era_conflict, name_similarity,
-    score_release_group, titles_match, track_overlap,
+    is_generic_album_title, score_release_group, titles_match, track_overlap,
 )
 from core.notes_render import (
     H_OTHER, LOCAL_ONLY_CREDIT, TrackInfo, discogs_facts_credit, group_discogs_discography, group_discography,
@@ -181,8 +182,25 @@ def _tracks_from_mb(detail: nmb.ReleaseDetail) -> list[TrackInfo]:
     return [TrackInfo(t.disc, t.position, t.title, t.seconds) for t in detail.tracks]
 
 
+@dataclass
+class GuessCandidate(Candidate):
+    """A candidate the ENGINE picked as its best guess (NotesEngine.best_guess). rebuild() builds around it like around any
+    candidate but keeps every safety check, and its reasons say 'best guess' instead of 'chosen by you'."""
+
+
 def _chosen(candidate: "Candidate") -> str:
+    if isinstance(candidate, GuessCandidate):
+        return "best guess"
     return "chosen by you from a link" if candidate.note.startswith("from a link") else "chosen by you"
+
+
+def _can_stop_asking(sim: float, wanted: int, found: list, era: str, later_sims: list[float]) -> bool:
+    """Stop evaluating candidates once an exact-name one holds EVERY local album, except when that is a single album and
+    another candidate with the same exact name is still to come: two bands called 'Mirage' may each have a 'Mirage' album
+    (and 'Greatest Hits', 'Live' and 'Demo' are on any discography), so decide_artist must see the namesake and say so."""
+    if not (sim == 1.0 and wanted and len(found) == wanted and not era):
+        return False
+    return wanted >= 2 or not any(later == 1.0 for later in later_sims)
 
 
 @dataclass
@@ -439,21 +457,60 @@ class NotesEngine:
             return "" if self.fetchers.wikipedia else WIKIPEDIA_OFF
         return f"No note can be built from a {candidate.source} candidate."
 
+    GUESS_MIN_ALBUM_SCORE = 0.75  # an album candidate below this fits too poorly to be a guess (the engine's own bar)
+
     def best_guess(self, proposal: Proposal) -> Optional[Candidate]:
-        """The candidate to use for an UNCERTAIN proposal when the person wants the engine's best guess: its top
-        candidate the engine can build a note around. None (no guess) for a confident or nothing-found proposal,
-        for a genre / collection folder, when the level is unclear (an artist folder whose level is not 'artist'),
-        or when there is no usable candidate."""
+        """The candidate to use for an UNCERTAIN proposal when the person wants the engine's best guess, or None. The guess is
+        the engine's own top candidate and only an ACCEPTABLE one: an artist candidate with at least one of the local albums in
+        its discography (ranked like the engine does, by hits then name), an album candidate whose title matches a local album
+        and that scores at least GUESS_MIN_ALBUM_SCORE; never one that ties with a rival, never an era conflict. No guess for a
+        confident or nothing-found proposal, a genre / collection folder, an unclear level. A guess keeps EVERY safety check of the
+        engine (the track-overlap veto, the no-artist check): it is a GuessCandidate, rebuilt as 'best guess', not as 'chosen by
+        you'. Only a candidate the person picks is believed past those checks. `why_no_guess` says why there is none."""
+        return self._guess(proposal)[0]
+
+    def why_no_guess(self, proposal: Proposal) -> str:
+        """The plain reason `best_guess` has nothing for this proposal ('' when it has one)."""
+        return self._guess(proposal)[1]
+
+    def _guess(self, proposal: Proposal) -> tuple[Optional["GuessCandidate"], str]:
         if proposal.confidence != Confidence.UNCERTAIN or proposal.kind not in (KIND_ARTIST, KIND_ALBUM):
-            return None
+            return None, "only an uncertain artist or album match has a best guess"
         if proposal.kind == KIND_ARTIST and proposal.level != LEVEL_ARTIST:
-            return None
+            return None, "the level is unclear"
         if proposal.kind == KIND_ALBUM and proposal.level not in (LEVEL_ALBUM, ""):
-            return None
-        for candidate in proposal.candidates:
-            if self.can_choose(proposal, candidate):
-                return candidate
-        return None
+            return None, "the level is unclear"
+        usable = [c for c in proposal.candidates if self.can_choose(proposal, c)]
+        if not usable:
+            return None, "no usable candidate"
+        if proposal.kind == KIND_ARTIST:
+            ranked = sorted((c for c in usable if c.hits and not str(c.note).startswith("a local album from")),
+                            key=lambda c: (len(c.hits), c.score), reverse=True)
+            if not ranked:
+                return None, "no candidate has any of the local albums in its discography"
+            top = ranked[0]
+            tie = next((c for c in ranked[1:] if (len(c.hits), c.score) == (len(top.hits), top.score)), None)
+        else:
+            local = proposal.local
+            titles = list(getattr(local, "titles", []) or [])
+            fits = []
+            for c in usable:
+                if c.score < self.GUESS_MIN_ALBUM_SCORE or c.source not in ("musicbrainz", "discogs"):
+                    continue  # (a Wikipedia article scores 0.5: it names no release, so it is never a guess)
+                if c.source == "musicbrainz":
+                    group = self._seen_groups.get(c.id)
+                    if group is None or not any(titles_match(t, group.title) for t in titles):
+                        continue
+                fits.append(c)
+            if not fits:
+                return None, f"no candidate has a title that matches and a score of at least {self.GUESS_MIN_ALBUM_SCORE:.2f}"
+            fits.sort(key=lambda c: c.score, reverse=True)
+            top = fits[0]
+            tie = next((c for c in fits[1:] if abs(c.score - top.score) < 0.05), None)
+        if tie is not None:
+            return None, f"'{top.name}' and '{tie.name}' fit equally well"
+        guess = GuessCandidate(**{f.name: getattr(top, f.name) for f in dataclasses.fields(top)})
+        return guess, ""
 
     def set_genres(self, folder: str, genres: list[str]) -> None:
         """The genres a genre / collection folder covers, when they are not what its name says ('1.61 - Ska' covers ska and
@@ -506,7 +563,9 @@ class NotesEngine:
             proposal = Proposal(target, Confidence.NONE, reasons=["MusicBrainz failed"], problems=[str(exc)])
         except (wp.WikipediaError, DiscogsError) as exc:  # only reached when nothing was caught closer
             proposal = Proposal(target, Confidence.NONE, reasons=["a lookup failed"], problems=[str(exc)])
-        proposal.old_state = target.update
+        # the older note to refresh is the one of the TARGET's kind: a folder that turned out to be a collection (about.md)
+        # has no about.md to replace, whatever artist.md it had
+        proposal.old_state = target.update if proposal.note_kind == target.note_kind else None
         if (proposal.kind in (KIND_ARTIST, KIND_ALBUM) and proposal.confidence != Confidence.CONFIDENT
                 and not proposal.note_text and not proposal.candidates and proposal.level != LEVEL_UNCLEAR):
             if self._discogs is None:
@@ -602,6 +661,8 @@ class NotesEngine:
         # The name searches verified nothing (a band whose plain name is shared with a city, or written in another script):
         # Wikipedia's article and its Wikidata item name the MusicBrainz / Discogs ids; then the local album titles.
         down = any(_is_network_down(p) for p in res.problems)  # the services cannot be reached: nothing more to ask
+        if down:
+            self._artists.pop(key, None)
         steps = [] if down else ([self._resolve_wikipedia] if self.fetchers.wikipedia else []) + [self._resolve_by_titles]
         for extra in steps:
             if res.mb_ok or res.discogs_ok:
@@ -617,6 +678,8 @@ class NotesEngine:
                 res.discogs = more.discogs
             if more.mb_ok or more.discogs_ok:
                 res.via, res.page = more.via, more.page
+        if down or any(_is_network_down(p) for p in res.problems):
+            self._artists.pop(key, None)  # a timeout is not an answer: the next folder of this artist asks again
         return res
 
     def _evaluate_mb(self, hit: "nmb.ArtistHit", names, partial, local_titles, local_years):
@@ -708,6 +771,8 @@ class NotesEngine:
                 key = album_key(title)
                 if not key or key in seen:
                     continue
+                if is_generic_album_title(title, names):
+                    continue  # 'Greatest Hits', 'Live', 'Demo', a self-titled album: on every discography, they identify nobody
                 seen.add(key)
                 owners = {g.artist_id for g in nmb.search_release_groups_by_title(title, self._mb)
                           if g.artist_id and titles_match(title, g.title)}
@@ -720,8 +785,13 @@ class NotesEngine:
                 hit = nmb.artist_by_id(owner, self._mb)
                 evaluation, groups = self._evaluate_mb(hit, names, [], local_titles, local_years)
                 winner, confidence, why = decide_artist([evaluation])
-                if confidence != Confidence.CONFIDENT and len(evaluation.hits) >= 2 and not evaluation.era_conflict:
-                    confidence = Confidence.CONFIDENT  # two of the albums are theirs: the name may be written in another script
+                distinctive_sole = sole.get(owner, 0) >= 2  # two DISTINCTIVE titles that only this artist has
+                if (confidence != Confidence.CONFIDENT and len(evaluation.hits) >= 2 and not evaluation.era_conflict
+                        and (evaluation.name_sim >= 0.5 or distinctive_sole)):
+                    # two of the albums are theirs and the name is at least related (or nobody else has those titles): the
+                    # name may be written in another script. A name that has nothing to do with it never gets here on
+                    # titles alone: that is only a candidate for a person to look at.
+                    confidence = Confidence.CONFIDENT
                     why = [f"{len(evaluation.hits)} local albums are in its discography ({', '.join(evaluation.hits)}), "
                            f"found by their titles although the name differs"]
                 found = _ArtistFound(evaluation, confidence, hit=hit, groups=groups)
@@ -753,7 +823,8 @@ class NotesEngine:
                     scored.append((sim, hit.score, hit))
             scored.sort(key=lambda s: (s[0], s[1]), reverse=True)
             evaluations: list[tuple[Evaluation, nmb.ArtistHit, list[nmb.ReleaseGroup]]] = []
-            for sim, _score, hit in scored[:MAX_CANDIDATES]:
+            top = scored[:MAX_CANDIDATES]
+            for position, (sim, _score, hit) in enumerate(top):
                 groups = self._discography(hit.id)
                 found = discography_hits(local_titles, [g.title for g in groups])
                 evaluation = Evaluation(
@@ -762,7 +833,7 @@ class NotesEngine:
                     detail=", ".join(x for x in (hit.disambiguation, hit.country, hit.begin[:4]) if x),
                 )
                 evaluations.append((evaluation, hit, groups))
-                if sim == 1.0 and wanted and len(found) == wanted and not evaluation.era_conflict:
+                if _can_stop_asking(sim, wanted, found, evaluation.era_conflict, [t[0] for t in top[position + 1:]]):
                     break  # every local album is in this artist's discography: no need to look further
             winner, confidence, reasons = decide_artist([e for e, _h, _g in evaluations])
             for evaluation, hit, groups in evaluations:
@@ -785,13 +856,14 @@ class NotesEngine:
                 scored_d = sorted(
                     ((name_similarity(names, [h.name]), h) for h in dhits), key=lambda s: s[0], reverse=True)
                 devals: list[tuple[Evaluation, nd.DiscogsArtistHit]] = []
-                for sim, hit in [s for s in scored_d if s[0] >= 0.5][:3]:
+                near = [s for s in scored_d if s[0] >= 0.5][:3]
+                for position, (sim, hit) in enumerate(near):
                     entries = self._discogs_entries(client, hit.id)
                     found = discography_hits(local_titles, [e["title"] for e in entries])
                     evaluation = Evaluation("discogs", str(hit.id), hit.name, hits=found, name_sim=sim,
                                             search_score=0, detail=f"Discogs {hit.id}")
                     devals.append((evaluation, hit))
-                    if sim == 1.0 and wanted and len(found) == wanted:
+                    if _can_stop_asking(sim, wanted, found, "", [t[0] for t in near[position + 1:]]):
                         break
                 winner, confidence, reasons = decide_artist([e for e, _h in devals])
                 for evaluation, hit in devals:
@@ -1208,6 +1280,10 @@ class NotesEngine:
         if tracks and len(local_titles) >= 3:
             overlap = track_overlap(local_titles, [t.title for t in tracks])
             proposal.reasons.append(f"{round(overlap * 100)}% of the local track titles are on the release")
+            if overlap < 0.3 and isinstance(force, GuessCandidate):  # a guess keeps the veto; only a person's pick is believed past it
+                proposal.confidence = Confidence.UNCERTAIN
+                proposal.reasons.append(f"only {round(overlap * 100)}% of the track titles match this release")
+                return proposal
         if release.year and local.year and release.year != local.year:
             proposal.reasons.append(f"Discogs says {release.year}, the folder says {local.year}")
         artist_name = release.artist or (names[0] if names else "")
@@ -1451,7 +1527,8 @@ class NotesEngine:
             return proposal
 
         return self._finish_album(proposal, local, confident_group, mb_artist, discogs_info, names, soundtrack,
-                                  mb_artist is None and not names, forced=chosen_group is not None)
+                                  mb_artist is None and not names,
+                                  forced=chosen_group is not None and not isinstance(force, GuessCandidate))
 
     def _finish_album(
         self, proposal: Proposal, local: LocalAlbum, group: nmb.ReleaseGroup, mb_artist: Optional[_ArtistFound],

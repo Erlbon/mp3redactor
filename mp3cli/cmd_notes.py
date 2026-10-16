@@ -120,6 +120,9 @@ def add_notes_parser(sub) -> None:
     parser.add_argument("--no-singles", action="store_true",
                         help="leave the singles out of the artist note's discography (faster: only albums and EPs are "
                              "asked for from MusicBrainz; saves requests only for artists with more than 100 release groups)")
+    parser.add_argument("--norwegian-numbers", action="store_true",
+                        help="also read the Norwegian number words that are everyday English words (en, to, tre, fire, fem, "
+                             "ni, ti) as numbers when titles are compared ('Fire' = '4'); off by default")
     parser.add_argument("--no-discogs", action="store_true", help="do not use Discogs even when a token is saved (= --discogs never)")
     parser.add_argument("--show-drafts", action="store_true", help="print each draft note (text mode) / include it (JSON)")
     add_common_options(parser)
@@ -159,6 +162,9 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     scan_seconds = time.perf_counter() - scan_started
     for argument in found.missing:
         out.error(f"nothing found for {argument}")
+    wrong = found.wrong_level_message(f"add --kind {found.other_level[0][1] if found.other_level else 'album'} (or --kind both)")
+    if wrong:
+        raise CliError(wrong)
     if found.only_a_library_root:
         raise CliError(LIBRARY_ROOT_MESSAGE)
     if not found.targets and not found.skipped and not found.groupings:
@@ -185,6 +191,9 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
     failed = 0
     cancelled = False
 
+    from core.notes_numbers import set_norwegian_numbers
+
+    set_norwegian_numbers(args.norwegian_numbers)
     mode = "never" if args.no_discogs else args.discogs
     engine = NotesEngine(make_fetchers(mode != "never"), cache=make_cache(args), discogs_mode=mode,
                          singles=not args.no_singles)
@@ -212,12 +221,13 @@ def run_notes(args: argparse.Namespace, out: Output) -> int:
         if args.include_uncertain and proposal.confidence == Confidence.UNCERTAIN:
             guess = engine.best_guess(proposal)
             if guess is None:
-                unwritten = ("the level is unclear" if proposal.level in ("unclear", "collection", "genre")
-                             or proposal.kind == KIND_GENRE else "no usable candidate")
+                unwritten = engine.why_no_guess(proposal) or "no usable candidate"
             else:
-                reasons = list(proposal.reasons)
                 proposal = engine.rebuild(proposal, candidate=guess)
-                proposal.reasons = [f"best guess from an UNCERTAIN match: {guess.name} ({guess.source})", *reasons[:3]]
+                if proposal.writable:
+                    proposal.reasons = [f"best guess from an UNCERTAIN match: {guess.name} ({guess.source})", *proposal.reasons]
+                else:  # the best guess keeps every check of the engine: it did not hold, say which
+                    unwritten = "the best guess did not hold: " + (proposal.reasons[-1] if proposal.reasons else "no note could be built")
         proposals.append(proposal)
         if guess is not None and not proposal.writable:
             guess = None  # the rebuild did not give a note: it is reported like any other uncertain one

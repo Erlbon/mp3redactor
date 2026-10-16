@@ -84,6 +84,22 @@ def test_discogs_only_album_is_uncertain_but_its_candidate_can_be_chosen_and_bui
     assert "100% of the local track titles are on the release" in " ".join(built.reasons)
 
 
+def test_a_discogs_best_guess_keeps_the_track_overlap_veto_but_a_persons_pick_is_believed(tmp_path):
+    """Review 2026-10-16 (3): a best guess is not 'chosen by you': a folder whose files match none of the release's tracks stays
+    uncertain as a guess; the person who picks the same candidate by hand still gets the note."""
+    for i, title in enumerate(["Alpha", "Beta", "Gamma"], start=1):
+        make_mp3(tmp_path / "Ultravox" / "Vienna (1980)" / f"{i:02d} {title}.mp3", title, "Ultravox", "Vienna", i, "1980")
+    engine = NotesEngine(Fetchers(mb=no_mb(), wiki=no_wiki(), discogs=discogs(*album_routes())))
+    proposal = engine.build_proposal(album_target(tmp_path))
+    guess = engine.best_guess(proposal)
+    assert guess is not None and guess.source == "discogs"
+    vetoed = engine.rebuild(proposal, guess)
+    assert vetoed.confidence == Confidence.UNCERTAIN and not vetoed.writable
+    assert "track titles match" in " ".join(vetoed.reasons) and "chosen by you" not in " ".join(vetoed.reasons)
+    picked = engine.rebuild(proposal, proposal.candidates[0])
+    assert picked.confidence == Confidence.CONFIDENT and "chosen by you" in " ".join(picked.reasons)
+
+
 def test_discogs_master_candidate_uses_its_main_release(tmp_path):
     vienna_folder(tmp_path)
     client = discogs(*album_routes())
@@ -200,7 +216,8 @@ def test_wikipedia_only_album_and_never_in_a_batch_without_include_uncertain(tmp
     assert proposal.confidence == Confidence.UNCERTAIN and not proposal.writable
     cand = next(c for c in proposal.candidates if c.source == "wikipedia")
     assert cand.id == "Vienna (Ultravox album)"
-    assert engine.best_guess(proposal) is cand  # only --include-uncertain / Tick best guesses ever use it
+    # a Wikipedia article names no release (score 0.5, no title proof): never a best guess, only a person's pick builds it
+    assert engine.best_guess(proposal) is None and "score of at least 0.75" in engine.why_no_guess(proposal)
     built = engine.rebuild(proposal, cand)
     body = parse_front_matter(built.note_text)[1]
     assert built.writable and "Vienna is the fourth studio album" in body and "1. Astradyne" in body

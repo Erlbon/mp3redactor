@@ -132,7 +132,7 @@ def multi_fetchers():
         return RECORDED["mb_artist_search_cristina"] if "Cristina" in url else RECORDED["mb_artist_search_ultravox"]
 
     mb = FakeFetch([(r"ws/2/artist\?query", search),
-                    (r"ws/2/release-group\?artist=", lambda u: RECORDED["mb_rgs_davena"] if "cd0871f1" in u else RECORDED["mb_rgs_ultravox"])]
+                    (r"ws/2/release-group\?artist=", lambda u: RECORDED["mb_rgs_davena"] if "cd0871f1" in u else {"release-groups": []} if "synthetic-ultravox-2" in u else RECORDED["mb_rgs_ultravox"])]
                    + musicbrainz_routes())
     return Fetchers(mb=mb, wiki=FakeFetch(wikipedia_routes()))
 

@@ -95,7 +95,7 @@ mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [
                                [--replace] [--title T] [--author A] [--narrator N] [--series S] [--series-number N]
                                [--year Y] [--publisher P] [--language L] [--description D] [--cover IMAGE]
                                [--lookup] [--region STORE] [--min-score N] [-n]
-mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--genres FOLDER=GENRE,GENRE] [--link FOLDER=URL] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]
+mp3redactor notes    PATH...  [--kind artist|album|genre|both|all] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--norwegian-numbers] [--genres FOLDER=GENRE,GENRE] [--link FOLDER=URL] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]
 ```
 
 The command line uses the same code as the window, so the results are the same. It reads the same settings file
@@ -315,7 +315,7 @@ the match that was used and `filled`, the names of what it filled in.
 
 ### notes
 
-`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--genres FOLDER=GENRE,GENRE] [--link FOLDER=URL] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]`
+`mp3redactor notes PATH... [--kind KIND] [--write] [--include-uncertain] [-n] [--discogs always|fallback|never] [--no-discogs] [--no-singles] [--norwegian-numbers] [--genres FOLDER=GENRE,GENRE] [--link FOLDER=URL] [--no-cache] [--update] [--update-legacy] [--show-drafts] [-R]`
 
 Drafts the short Markdown notes that the Pluteus media server shows beside a folder: `artist.md` in an artist
 folder, `album.md` in an album folder, and (with `--kind genre` or `all`) `about.md` in a genre or collection folder
@@ -348,6 +348,7 @@ by different artists (Soundtracks, Various Artists) is a collection (`about.md`)
 | `--discogs MODE` | When Discogs is asked, with a token saved: `fallback` (the default) only when MusicBrainz has no verified match for the artist or album, or when Wikipedia has no introduction (then for the profile and the members); `always` for every artist, side by side with MusicBrainz (slower: about 3 more requests per artist); `never`. |
 | `--no-discogs` | Do not use Discogs even when a token is saved (the same as `--discogs never`). |
 | `--no-singles` | Leave the singles out of the artist note's discography: only the albums and EPs (compilations, live albums and soundtracks included) are asked for from MusicBrainz, which saves requests only for an artist with more than 100 release groups. |
+| `--norwegian-numbers` | Also read the Norwegian number words that are everyday English words (`en`, `to`, `tre`, `fire`, `fem`, `ni`, `ti`) as numbers when album and artist titles are compared (`Fire` = `4`). Off by default, because otherwise `Fire` would match `Four` and `Born to Run` would match `Born 2 Run`; English number words (`Seven` = `7`) always count. Preferences > Create Notes has the same switch. |
 | `--update` | Also list the notes made by an older version of this app (stamped, an older note format, nobody edited them) as updates, and with `--write` replace ONLY those: the old note goes to the Recycle Bin. A note edited by a person, a note this app did not write and a note that is already current are never touched (the summary says how many were left alone). |
 | `--update-legacy` | With `--update --write`: also replace the notes of the first versions (no stamp, so it cannot be known whether they were edited; still the Recycle Bin, still never an edited or foreign note). |
 | `--genres FOLDER=GENRE,GENRE` | The genres a genre / collection folder covers when its name does not say so, e.g. `--genres "1.61 - Ska=Ska,Ska punk"` (FOLDER is its name, with or without the numbering, or its path; repeatable). Every genre is checked on Wikipedia as a music genre; the `about.md` gets one section per genre and one credit line. A name such as `Ska & Ska Punk` is split by itself, but only when every part is a genre of its own (`Rock and Roll` and `Drum and Bass` stay whole). |

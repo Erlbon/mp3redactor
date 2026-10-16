@@ -206,6 +206,7 @@ class Settings:
     notes_kinds: str = "artist"  # Tools > Create Notes "What to create": a comma list of artist / album / genre (the last choice)
     notes_discogs_always: bool = False  # ask Discogs for every artist (slower); off: only when MusicBrainz has no match
     notes_skip_singles: bool = False  # leave the singles out of the artist note's discography (faster)
+    notes_norwegian_numbers: bool = False  # fold the everyday Norwegian number words (en, to, tre, fire, fem, ni, ti) as numbers when matching titles
     notes_debug_log: bool = False  # the troubleshooting log of the Create Notes list (core/notes_debug.py); off
     notes_cache_enabled: bool = True  # the disk cache of the notes lookups (public service answers only)
 
@@ -274,6 +275,7 @@ class Settings:
             "notes_debug_log": str(self.notes_debug_log),
             "notes_discogs_always": str(self.notes_discogs_always),
             "notes_skip_singles": str(self.notes_skip_singles),
+            "notes_norwegian_numbers": str(self.notes_norwegian_numbers),
         }
         config[HISTORY_SECTION] = {"enabled": str(self.history_enabled)}
         return config
@@ -330,6 +332,7 @@ class Settings:
             notes_debug_log=_get_bool(section, "notes_debug_log", False),
             notes_discogs_always=_get_bool(section, "notes_discogs_always", False),
             notes_skip_singles=_get_bool(section, "notes_skip_singles", False),
+            notes_norwegian_numbers=_get_bool(section, "notes_norwegian_numbers", False),
         )
 
 

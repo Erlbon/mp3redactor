@@ -61,7 +61,7 @@ LIBRARY_ROOT_MESSAGE = (
 # Names
 # ---------------------------------------------------------------------------
 
-_YEAR_PREFIX = re.compile(r"^\s*\[?\s*((?:1[89]|20)\d{2})\s*\]?\s*[-\u2013\u2014:.]\s+(?=.*[^\W\d_])")
+_YEAR_PREFIX = re.compile(r"^\s*\[?\s*((?:1[89]|20)\d{2})\s*\]?\s*[-\u2013\u2014.]\s+(?=.*[^\W\d_])")  # no ':' ('1984: For the Love of Big Brother' is a title)
 
 
 def split_year(folder_name: str) -> tuple[str, str]:
@@ -77,22 +77,22 @@ def split_year(folder_name: str) -> tuple[str, str]:
 
 
 # A numbering prefix in front of a real name: '1.61 - Ska', '780 - Music', '0 - Bands', '02. Name', '[1981] - Name',
-# '[1981] Name', '#12 Name', '1.61. Ska'. Digits and dots (in brackets, or after '#') FOLLOWED BY A SEPARATOR and then a name
+# '[1981] Name', '#12 - Name', '1.61. Ska' (NOT '1984: Title' and NOT a bare '#1 Record': those numbers are part of the title). Digits and dots (in brackets, or after '#') FOLLOWED BY A SEPARATOR and then a name
 # with a letter in it. '1975', '10cc', '311', '2 Unlimited', '3 Doors Down' and '5 Seconds of Summer' have no separator after
 # their number, so they stay as they are.
 _LETTER_AHEAD = r"(?=.*[^\W\d_])"
 _NUMBERING = (
-    re.compile(r"^\s*(?:\[\s*\d[\d.]*\s*\]|\d+(?:\.\d+)*\.?)\s*[-\u2013\u2014:]\s+" + _LETTER_AHEAD),
+    re.compile(r"^\s*(?:\[\s*\d[\d.]*\s*\]|\d+(?:\.\d+)*\.?)\s*[-\u2013\u2014]\s+" + _LETTER_AHEAD),
     re.compile(r"^\s*\d+(?:\.\d+)*\.\s+" + _LETTER_AHEAD),
     re.compile(r"^\s*\[\s*\d[\d.]*\s*\]\s+" + _LETTER_AHEAD),
-    re.compile(r"^\s*#\s*\d+\s+" + _LETTER_AHEAD),
+    re.compile(r"^\s*#\s*\d+\s*[-–—.]\s+" + _LETTER_AHEAD),  # '#12 - Name'; a bare '#1 Record' is a title
 )
 _YEAR_RANGE = re.compile(r"\s*[(\[]\s*\d{4}\s*[-\u2013\u2014]\s*(?:\d{4})?\s*[)\]]\s*$")
 
 
 def lookup_name(folder_name: str) -> str:
     """The name a folder stands for, for every lookup and for the note's title: numbering / Dewey prefixes ('1.61 - Ska',
-    '780 - Music', '02. Name', '[1981] - Name', '#12 Name') and a trailing year range ('Marvel (1961-2012)') taken off. Only
+    '780 - Music', '02. Name', '[1981] - Name', '#12 - Name') and a trailing year range ('Marvel (1961-2012)') taken off. Only
     when a real name is left (a letter in it): a name that is only a number, or that would become empty, is returned as it
     is. The folder keeps its own name for paths and display; this is only what is searched for and written as the title."""
     text = (folder_name or "").strip()
@@ -100,7 +100,10 @@ def lookup_name(folder_name: str) -> str:
     for pattern in _NUMBERING:
         match = pattern.match(cleaned)
         if match:
-            cleaned = cleaned[match.end():]
+            rest = cleaned[match.end():]
+            if rest[:1].islower():  # '1984 - of Big Brother': what is left is a continuation, not a name: the number is the title's
+                break
+            cleaned = rest
             break
     cleaned = _YEAR_RANGE.sub("", cleaned).strip()
     return cleaned if re.search(r"[^\W\d_]", cleaned) else text
@@ -138,8 +141,29 @@ def is_generic_name(name: str) -> bool:
 # listed in the scan summary ('skipped: alphabetical grouping'). Only a folder that sits ABOVE artist folders counts
 # (a band really called 'D' or 'X' that holds albums is an artist folder).
 GROUPING_BUCKET_NAMES = frozenset({"misc", "other", "others", "various"})
-_GROUPING_RANGE = re.compile(r"^([0-9A-Za-zÀ-ɏ]{1,2})\s*[-‐-―]\s*([0-9A-Za-zÀ-ɏ]{1,2})$")
+_GROUPING_RANGE = re.compile(r"^([0-9A-Za-zÀ-ɏ]{1,3})\s*[-‐-―]\s*([0-9A-Za-zÀ-ɏ]{1,3})$")
 GROUPING_REASON = "alphabetical grouping"
+
+
+def _is_grouping_range(text: str) -> bool:
+    """'A-C', 'a - c', '0-9', '0-F', '10-19' and the two-letter 'Aa-Az' / 'Ba-Bf' (same first letter, the second one rising,
+    same case form). NOT 'Lo-Fi', 'Go-Go', 'Hi-Fi', 'A-ha', 'AC-DC', 'Bo-Ba' (genres and bands: review 2026-10-16): both ends
+    must be a single character (a letter or a digit, the letters in one case), digits only, or that two-letter form."""
+    match = _GROUPING_RANGE.match(text)
+    if not match:
+        return False
+    a, b = match.group(1), match.group(2)
+    if a.isdigit() and b.isdigit():
+        return len(a) == len(b) and int(a) < int(b)
+    if len(a) == 1 and len(b) == 1:
+        letters = [c for c in (a, b) if c.isalpha()]
+        if len(letters) == 2 and (a.isupper() != b.isupper()):
+            return False  # 'A-c'
+        return a.casefold() < b.casefold() if letters or a.isdigit() == b.isdigit() else a.isdigit() and b.isalpha()
+    if len(a) == 2 and len(b) == 2 and a.isalpha() and b.isalpha():
+        same_form = (a[0].isupper(), a[1].isupper()) == (b[0].isupper(), b[1].isupper())
+        return same_form and a[0].casefold() == b[0].casefold() and a[1].casefold() < b[1].casefold()
+    return False
 
 
 def is_alphabetical_grouping(name: str) -> bool:
@@ -148,7 +172,7 @@ def is_alphabetical_grouping(name: str) -> bool:
         stripped = text.rstrip(" .,:;!") or text
         if len(stripped) == 1 and (stripped.isalnum() or stripped == "#"):
             return True
-        if _GROUPING_RANGE.match(stripped) or fold_name(stripped) in GROUPING_BUCKET_NAMES:
+        if _is_grouping_range(stripped) or fold_name(stripped) in GROUPING_BUCKET_NAMES:
             return True
     return False
 
@@ -259,6 +283,16 @@ class ScanResult:
     groupings: list[Skipped] = field(default_factory=list)  # alphabetical grouping folders: no note, no proposal
     library_root: bool = False  # a folder the scan started from was left out as a generic place name / a grouping
     missing: list[str] = field(default_factory=list)  # arguments that named nothing
+    other_level: list[tuple[Path, str]] = field(default_factory=list)  # a folder the scan started from that is a level (album, artist, genre) that was not asked for
+
+    def wrong_level_message(self, option_hint: str = "") -> str:
+        """'' normally. When nothing was found and the folder the scan started from is an album / artist / genre folder of a kind
+        that was not asked for: says so (an album folder given to the default --kind artist is not 'a library root')."""
+        if self.targets or self.skipped or self.groupings or self.missing or not self.other_level:
+            return ""
+        folder, kind = self.other_level[0]
+        word = {"album": "an album", "artist": "an artist", "genre": "a genre"}.get(kind, f"a {kind}")
+        return f"This is {word} folder ('{folder.name}'), and {kind} notes were not asked for" + (f": {option_hint}" if option_hint else ".")
 
     @property
     def only_a_library_root(self) -> bool:
@@ -353,6 +387,8 @@ def scan(
         if key in seen:
             return
         if kind not in wanted and not (kind == KIND_ARTIST and is_collection_name(folder.name)):
+            if key in root_keys:
+                result.other_level.append((folder, kind))
             return
         seen.add(key)
         if kind == KIND_GENRE and is_alphabetical_grouping(folder.name):

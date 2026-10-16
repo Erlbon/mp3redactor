@@ -71,7 +71,7 @@ def test_eviction_drops_the_least_recently_used_and_keeps_under_the_cap(tmp_path
     c.used_refresh = 0  # every read refreshes the entry, so the test can show what a read does to the eviction order
     for i in range(10):
         clock.now += 1
-        c.put(f"key{i}", b"x" * 300)
+        c.put(f"key{i}", b'"' + b"x" * 298 + b'"')
         clock.now += 0.5
         if i >= 1:
             assert c.get("key0") is not None  # key0 is used all the time: it survives the eviction
@@ -85,8 +85,8 @@ def test_a_broken_cache_file_is_dropped_silently_and_started_again(tmp_path):
     path.write_bytes(b"this is not a database at all" * 50)
     c = ResponseCache(path)
     assert c.get("k") is None  # no exception
-    c.put("k", b"v")
-    assert c.get("k") == (200, b"v")
+    c.put("k", b'"v"')
+    assert c.get("k") == (200, b'"v"')
     c.close()
     # corrupted later, while the object lives on: the next call recovers too
     c2 = ResponseCache(tmp_path / "later.sqlite")
@@ -104,7 +104,7 @@ def test_an_unusable_location_means_no_cache_never_an_error(tmp_path):
     blocker = tmp_path / "file"
     blocker.write_text("x")
     c = ResponseCache(blocker / "inside" / "cache.sqlite")  # a folder cannot be made below a file
-    c.put("k", b"v")
+    c.put("k", b'"v"')
     assert c.get("k") is None and c.count() == 0
 
 
@@ -114,8 +114,8 @@ def test_the_cache_is_thread_safe(cache):
     def worker(n):
         try:
             for i in range(60):
-                cache.put(f"t{n}-{i}", f"value {n} {i}".encode())
-                assert cache.get(f"t{n}-{i}") == (200, f"value {n} {i}".encode())
+                cache.put(f"t{n}-{i}", f'"value {n} {i}"'.encode())
+                assert cache.get(f"t{n}-{i}") == (200, f'"value {n} {i}"'.encode())
         except Exception as exc:  # noqa: BLE001
             errors.append(repr(exc))
 

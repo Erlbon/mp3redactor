@@ -31,15 +31,19 @@ def library(root):
     return root
 
 
-def fetchers(both_sources=True):
+def fetchers(both_sources=True, guessable=False):
+    """guessable: MusicBrainz names the band 'Czar Chainfist (band)' (a loose name: uncertain) and lists 'Some Album': the one candidate
+    with a local album, so the engine has a best guess for the row."""
+    mb_name = f"{TIE} (band)" if guessable else TIE
     mb = FakeFetch([
-        (r"ws/2/artist\?query=artist%3A%22Czar", {"artists": [{"id": "mb-czar", "name": TIE, "score": 100, "sort-name": TIE,
+        (r"ws/2/artist\?query=artist%3A%22Czar", {"artists": [{"id": "mb-czar", "name": mb_name, "score": 100, "sort-name": mb_name,
             "type": "Group", "country": "DK", "disambiguation": "Danish heavy metal/hard rock group",
-            "life-span": {"begin": "2007"}}]}),
+            "life-span": {"begin": "1998" if guessable else "2007"}}]}),
         (r"ws/2/artist\?query", {"artists": []}),
         (r"ws/2/release-group\?query=", {"release-groups": []}),
         (r"ws/2/release-group\?artist=mb-czar", {"release-groups": [
-            {"id": "rg1", "title": "Another Album", "primary-type": "Album", "first-release-date": "2010"}]}),
+            {"id": "rg1", "title": "Another Album", "primary-type": "Album", "first-release-date": "2010"},
+            *([{"id": "rg2", "title": "Some Album", "primary-type": "Album", "first-release-date": "2001"}] if guessable else [])]}),
         (r"ws/2/artist/mb-czar", {"id": "mb-czar", "name": TIE, "type": "Group", "life-span": {"begin": "2007"},
                                   "relations": [], "genres": [], "tags": []}),
     ])
@@ -62,12 +66,12 @@ def texts(tree):
     return [tuple(tree.topLevelItem(i).text(c) for c in range(4)) for i in range(tree.topLevelItemCount())]
 
 
-def open_list(window, tmp_path, kinds="artist", discogs=True):
+def open_list(window, tmp_path, kinds="artist", discogs=True, guessable=False):
     root = library(tmp_path)
     window.settings.last_directory = str(root)
     window.settings.include_subfolders = True
     window._load_paths([root / "C" / "Cband 00"])
-    window.notes_fetchers = lambda: fetchers(discogs)
+    window.notes_fetchers = lambda: fetchers(discogs, guessable)
     return root
 
 
@@ -217,7 +221,7 @@ def test_the_level_choice_updates_the_row_in_place(window, tmp_path, boxes):
 
 
 def test_tick_best_guesses_updates_the_rows_in_place(window, tmp_path, boxes):
-    root = open_list(window, tmp_path)
+    root = open_list(window, tmp_path, guessable=True)  # (a candidate with NO local album is no guess: review 2026-10-16)
 
     def body(page):
         index, row = select_tie_row(page)
@@ -226,10 +230,12 @@ def test_tick_best_guesses_updates_the_rows_in_place(window, tmp_path, boxes):
         click(page.tick_guesses_button)
         QApplication.processEvents()
         after = snapshot(page)
+        after["reasons"] = page.session.items[index].proposal.reasons
         return before, after, calls, page.session.items[index].proposal.confidence.value, index
 
     before, after, calls, confidence, index = scenario_in_list(window, root, body)
     assert confidence == "confident"
+    assert "best guess" in " ".join(after["reasons"]) and "chosen by you" not in " ".join(after["reasons"])
     assert calls == [] and after["objects"] == before["objects"] and after["folders"] == before["folders"]
     assert after["count"] == 60 and after["scroll"] == before["scroll"]
 
@@ -268,3 +274,17 @@ def test_a_rebuild_from_the_one_at_a_time_view_still_shows_one_row_per_folder(wi
     folders, rows_, count = scenario_in_list(window, root, body)
     assert count == 60 and len(set(folders)) == 60
     assert sum(1 for r in rows_ if r[0].endswith(TIE)) == 1
+
+
+def test_tick_best_guesses_leaves_a_row_with_no_local_album_in_any_candidate_alone(window, tmp_path, boxes):
+    """Review 2026-10-16 (3): the zero-hit candidate used to be 'ticked' and written; now the row stays uncertain."""
+    root = open_list(window, tmp_path)  # the tie artist's candidates hold none of the local albums
+
+    def body(page):
+        index, row = select_tie_row(page)
+        click(page.tick_guesses_button)
+        QApplication.processEvents()
+        return page.session.items[index].proposal.confidence.value, page.guess_indices()
+
+    confidence, guesses = scenario_in_list(window, root, body)
+    assert confidence == "uncertain" and guesses == []

@@ -51,7 +51,9 @@ def musicbrainz_routes(search_artist="mb_artist_search_ultravox", rgs="mb_rgs_ul
         (r"ws/2/release-group\?query=[^ ]*limit=25", {"release-groups": []}),  # the search by album titles: nothing by default
         (r"ws/2/artist\?query", r[search_artist] if search_artist else {"artists": []}),
         (r"ws/2/artist/[^?]+\?", r[detail]),
-        (r"ws/2/release-group\?artist=", r[rgs]),
+        # the second search hit ('Ultravox!', synthetic) is another artist: it does not hold Vienna, Quartet ... (a namesake that
+        # holds the same album is a case of its own: tests/test_notes_review_batch3.py)
+        (r"ws/2/release-group\?artist=", lambda url: {"release-groups": []} if "synthetic-ultravox-2" in url else r[rgs]),
         (r"ws/2/release-group\?query=.*primarytype", r["mb_rg_search_vienna"]),
         (r"ws/2/release-group\?query=", r["mb_rg_search_vienna"]),
         (r"ws/2/release-group/", r["mb_rg_vienna_album"]),

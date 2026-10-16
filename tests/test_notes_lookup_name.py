@@ -13,8 +13,8 @@ from tests.notes_helpers import FakeFetch, make_mp3, ultravox_fetchers, ultravox
 
 @pytest.mark.parametrize("raw,cleaned", [
     ("1.61 - Ska", "Ska"), ("780 - Music", "Music"), ("0 - Bands", "Bands"), ("3 - Rock", "Rock"), ("02. Name", "Name"),
-    ("[1981] - Name", "Name"), ("[1981] Name", "Name"), ("#12 Name", "Name"), ("1.61. Ska", "Ska"),
-    ("1.61 – Ska", "Ska"), ("5: Name", "Name"), ("Marvel (1961-2012)", "Marvel"), ("Foo (1963-)", "Foo"),
+    ("[1981] - Name", "Name"), ("[1981] Name", "Name"), ("#12 - Name", "Name"), ("#12. Name", "Name"), ("1.61. Ska", "Ska"),
+    ("1.61 – Ska", "Ska"), ("Marvel (1961-2012)", "Marvel"), ("Foo (1963-)", "Foo"),
     ("2 - Various Artists", "Various Artists"), ("Ska", "Ska"),
 ])
 def test_numbering_and_year_ranges_are_taken_off(raw, cleaned):
@@ -25,6 +25,18 @@ def test_numbering_and_year_ranges_are_taken_off(raw, cleaned):
                                   "Blink-182", "Sum 41", "U2", "1", "2012", "1.61", "", "(1961-2012)"])
 def test_real_names_and_bare_numbers_are_never_changed(name):
     assert lookup_name(name) == name
+
+
+@pytest.mark.parametrize("name", ["#1 Record", "1984: For the Love of Big Brother", "5: Name", "1984 - of Big Brother",
+                                  "#2 Radio City"])
+def test_a_number_that_is_part_of_the_title_is_kept_review_2026_10_16(name):
+    """The numbering cleaner ate the '#1' of '#1 Record' and the '1984' of '1984: For the Love of Big Brother'."""
+    assert lookup_name(name) == name
+
+
+def test_a_year_followed_by_a_colon_is_a_title_not_a_year_prefix():
+    assert split_year("1984: For the Love of Big Brother") == ("1984: For the Love of Big Brother", "")
+    assert split_year("1980 - Vienna") == ("Vienna", "1980")
 
 
 def test_a_prefix_needs_a_letter_after_it():

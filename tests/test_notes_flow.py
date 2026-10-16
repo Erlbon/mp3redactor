@@ -225,7 +225,8 @@ def test_repeated_network_failure_stops_the_run_early(tmp_path):
         raise urllib.error.URLError("no network")
 
     proposals = build_proposals(list(targets(tmp_path).values()), Fetchers(mb=down, wiki=down))
-    assert len(proposals) == 3 and len(calls) == 2  # the third target was not even tried
+    # two folders in a row failed (each one asked again: a failure is no longer remembered as an answer): the third was not even tried
+    assert len(proposals) == 3 and len(calls) == 3
     assert "skipped" in proposals[2].reasons[0]
 
 

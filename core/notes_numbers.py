@@ -9,8 +9,9 @@ compare_key(text)  -> the comparable form (lower case, no accents or punctuation
 title_variants(t)  -> [t] plus the other spelling of its numbers ('Seven' -> ['Seven', '7'], '7' -> ['7', 'Seven']), for the
                       searches (a search for 'Seven' must also try '7').
 
-Words: English, Norwegian (en/ett, to, tre, fire, fem, seks, syv/sju, atte, ni, ti ...) up to twenty, ordinals up to twentieth.
-Roman numerals II..XX are numbers only as standalone tokens; the single letters I, V and X stay letters ('I', 'Malcolm X').
+Words: English up to twenty, ordinals up to twentieth; Norwegian: the unambiguous ones (ett, seks, syv/sju, atte ...) always, the
+everyday-word ones (en, to, tre, fire, fem, ni, ti) only after set_norwegian_numbers(True).
+Roman numerals II..XIX are numbers only as standalone tokens; the letters I, V, X and the band name 'xx' stay letters ('I', 'Malcolm X', 'The xx').
 """
 
 from __future__ import annotations
@@ -20,17 +21,41 @@ import unicodedata
 
 _EN = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
 _NUMBERS: dict[str, str] = {w: str(i) for i, w in enumerate(_EN, 1)}
-_NUMBERS.update({
-    # Norwegian (and Swedish / Danish where they differ); 'to' and 'en' are also everyday words of other languages, which is
-    # harmless: both sides of a comparison are normalised the same way
-    "en": "1", "ett": "1", "ei": "1", "to": "2", "tre": "3", "fire": "4", "fem": "5", "seks": "6", "syv": "7", "sju": "7",
-    "atte": "8", "ni": "9", "ti": "10", "elleve": "11", "tolv": "12", "tretten": "13", "fjorten": "14", "femten": "15",
-    "seksten": "16", "sytten": "17", "atten": "18", "nitten": "19", "tjue": "20", "tjuge": "20",
-})
-_NUMBERS["fjorton"] = "14"
+# Norwegian (and Swedish / Danish) number words are NOT folded by default: most of them are everyday words of English
+# ('fire', 'to', 'ten' / 'ti', 'en' as in En Vogue, 'ni', 'fem'), so 'Fire' would equal 'Four' and 'Born to Run' 'Born 2 Run'.
+# Words that are no English word at all are safe and always fold; the ambiguous ones fold only when the person says the library
+# is Norwegian (Preferences > Create Notes, set_norwegian_numbers(True)).
+_NORWEGIAN_SAFE = {
+    "ett": "1", "seks": "6", "syv": "7", "sju": "7", "atte": "8", "elleve": "11", "tolv": "12", "tretten": "13",
+    "fjorten": "14", "fjorton": "14", "femten": "15", "seksten": "16", "sytten": "17", "atten": "18", "nitten": "19",
+    "tjue": "20", "tjuge": "20",
+}
+_NORWEGIAN_AMBIGUOUS = {"en": "1", "ei": "1", "to": "2", "tre": "3", "fire": "4", "fem": "5", "ni": "9", "ti": "10"}
+_NUMBERS.update(_NORWEGIAN_SAFE)
+_NORWEGIAN = False
+
+
+def set_norwegian_numbers(on: bool) -> None:
+    """Fold the ambiguous Norwegian number words (en, to, tre, fire, fem, ni, ti) too. Off by default."""
+    global _NORWEGIAN
+    _NORWEGIAN = bool(on)
+
+
+def norwegian_numbers() -> bool:
+    return _NORWEGIAN
+
+
+def _number_of(token: str) -> str:
+    """The digit of a number word (English always; Norwegian by the rules above), else ''."""
+    found = _NUMBERS.get(token, "")
+    if not found and _NORWEGIAN:
+        found = _NORWEGIAN_AMBIGUOUS.get(token, "")
+    return found
+
+
 _ROMAN = {r: str(i) for i, r in enumerate(
     "i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii xix xx".split(), 1)}
-_ROMAN_LETTERS = {"i", "v", "x"}  # alone these stay letters
+_ROMAN_LETTERS = {"i", "v", "x", "xx"}  # alone these stay letters ('xx' is a band name, 'The xx', not 20)
 _ORD_WORDS = ("first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth fourteenth fifteenth "
               "sixteenth seventeenth eighteenth nineteenth twentieth").split()
 
@@ -61,8 +86,8 @@ def compare_key(text: str) -> str:
     for token in tokens:
         if token in _ORDINALS:
             token = _ORDINALS[token]
-        elif token in _NUMBERS:
-            token = _NUMBERS[token]
+        elif _number_of(token):
+            token = _number_of(token)
         elif token in _ROMAN and token not in _ROMAN_LETTERS:
             token = _ROMAN[token]
         else:
@@ -91,10 +116,8 @@ def title_variants(title: str) -> list[str]:
     for i, part in enumerate(parts):
         low = part.casefold()
         replacement = ""
-        if low in _NUMBERS and low in _EN:
-            replacement = _NUMBERS[low]
-        elif low in _NUMBERS:  # a Norwegian word: the digit form
-            replacement = _NUMBERS[low]
+        if _number_of(low):  # an English word, or a Norwegian one that is switched on
+            replacement = _number_of(low)
         elif _DIGITS.match(part) and 1 <= int(part) <= len(_EN):
             replacement = _digit_to_word(part)
         elif low in _ROMAN and low not in _ROMAN_LETTERS:

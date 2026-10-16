@@ -7,12 +7,13 @@ from tests.notes_helpers import make_mp3
 
 
 @pytest.mark.parametrize("name", ["D", "d", "#", "0", "9", "A-C", "A - C", "A-F", "0-9", "Aa-Az", "d.", "Misc", "other",
-                                  "Others", "Various", "A–C"])
+                                  "Others", "Various", "A–C", "a-c", "0-F", "Ba-Bf", "10-19"])
 def test_these_names_are_alphabetical_groupings(name):
     assert is_alphabetical_grouping(name)
 
 
-@pytest.mark.parametrize("name", ["Rock", "Depeche Mode", "U2", "Bands", "Music", "Artists", "Ab", "Various Artists", ""])
+@pytest.mark.parametrize("name", ["Rock", "Depeche Mode", "U2", "Bands", "Music", "Artists", "Ab", "Various Artists", "",
+                                  "A-ha", "AC-DC", "Lo-Fi", "Go-Go", "Hi-Fi", "Bo-Ba", "A-c", "Z-A", "Aa-Bz", "1.63 - Lo-Fi"])
 def test_these_names_are_not(name):
     assert not is_alphabetical_grouping(name)
 
@@ -51,3 +52,11 @@ def test_a_band_called_d_that_holds_albums_is_an_artist_folder(tmp_path):
     make_mp3(tmp_path / "D" / "Album One (2001)" / "01 a.mp3", "a", "D", "Album One", 1, "2001")
     found = scan([tmp_path], kinds=(KIND_ARTIST, KIND_ALBUM))
     assert ("artist", "D") in [(t.kind, t.folder.name) for t in found.targets] and not found.groupings
+
+
+def test_a_genre_folder_named_lo_fi_gets_its_note_not_skipped_as_a_grouping(tmp_path):
+    """Review 2026-10-16: 'Lo-Fi', 'Go-Go', 'Hi-Fi' were taken for alphabetical ranges, so '1.63 - Lo-Fi' silently got no note."""
+    bands = tree(tmp_path, "1.63 - Lo-Fi")
+    found = scan([bands], kinds=ALL_KINDS)
+    assert ("genre", "1.63 - Lo-Fi") in [(t.kind, t.folder.name) for t in found.targets]
+    assert not found.groupings

@@ -1043,6 +1043,9 @@ class MainWindow(QMainWindow):
             self.settings.notes_dialog_size = text
             save_settings(self.settings)
 
+        from core.notes_numbers import set_norwegian_numbers
+
+        set_norwegian_numbers(self.settings.notes_norwegian_numbers)
         create_notes(
             self, paths, include_subfolders, self.notes_fetchers or live_fetchers,
             size_text=self.settings.notes_dialog_size, on_size=remember_size, kinds=kinds,

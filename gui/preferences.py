@@ -42,8 +42,10 @@ NOTES_DEBUG_LABEL = "Log the Create Notes list for troubleshooting"
 DELETE_NOTES_LOG_LABEL = "Delete the troubleshooting log…"
 KEY_NOTES_DISCOGS = "notes_discogs_always"
 KEY_NOTES_SKIP_SINGLES = "notes_skip_singles"
+KEY_NOTES_NORWEGIAN = "notes_norwegian_numbers"
 NOTES_DISCOGS_LABEL = "Also ask Discogs for every artist (slower, adds members and profile)"
 NOTES_SKIP_SINGLES_LABEL = "Leave singles out of the artist note's discography (faster: fewer requests for a big artist)"
+NOTES_NORWEGIAN_LABEL = "Number words in Norwegian (Fire = 4, To = 2 ...) when matching titles"
 NOTES_CACHE_LABEL = "Keep the answers of the Create Notes lookups on disk (a repeated or resumed run is then instant)"
 CLEAR_NOTES_CACHE_LABEL = "Clear the notes lookup cache…"
 HISTORY_LABEL = "Keep a history of tag changes (lets you undo a Save or Redact later)"
@@ -62,6 +64,7 @@ FIELD_BY_KEY = {
     KEY_NOTES_DEBUG: "notes_debug_log",
     KEY_NOTES_DISCOGS: "notes_discogs_always",
     KEY_NOTES_SKIP_SINGLES: "notes_skip_singles",
+    KEY_NOTES_NORWEGIAN: "notes_norwegian_numbers",
 }
 
 
@@ -125,6 +128,11 @@ def preference_sections() -> list[PrefSection]:
                            "albums and EPs (compilations, live albums and soundtracks included) are asked for, which saves "
                            "requests only for such artists (an artist with fewer than 100 release groups costs the same). "
                            "The note then has no Singles section."),
+             PrefSpec(KEY_NOTES_NORWEGIAN, NOTES_NORWEGIAN_LABEL, "bool", False,
+                      help="Off by default. English number words always count as the number ('Seven' = '7', 'Maroon Five' = "
+                           "'Maroon 5'). The Norwegian ones that are also everyday English words (en, to, tre, fire, fem, ni, "
+                           "ti) do not, or 'Fire' would match 'Four' and 'Born to Run' 'Born 2 Run'. Switch this on for a "
+                           "Norwegian library so that 'Fire' = '4', 'To' = '2' and 'Ti' = '10' when titles are compared."),
              PrefSpec(KEY_NOTES_CACHE, NOTES_CACHE_LABEL, "bool", True, help=notes_cache_help()),
              PrefSpec(KEY_NOTES_DEBUG, NOTES_DEBUG_LABEL, "bool", False,
                       help="Off by default. When on, the review list of Create Notes writes what it does (the number of rows, "
