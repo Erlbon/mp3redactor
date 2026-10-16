@@ -51,6 +51,7 @@ import tempfile
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
+from core.file_access import is_read_only, make_scratch_writable, read_only_message, remove_scratch
 from core.history import KIND_SAVE, begin_save, end_save
 from core.lock_retry import lock_hint, retry_on_lock
 from core.mp3_file import (
@@ -140,6 +141,9 @@ def save_tags(mp3: MP3File, *, journal_kind: str | None = KIND_SAVE) -> bool:
 def _save_tags(mp3: MP3File) -> bool:
     target = os.path.realpath(mp3.path)  # save through a symlink, don't replace it
     tmp_path = ""
+    if is_read_only(target):  # refused up front, before any copy exists
+        mp3.save_error = read_only_message(target)
+        return False
     try:
         # Edit a same-folder copy and swap it in with os.replace(): a
         # crash/full disk mid-write can't leave the original half
@@ -148,7 +152,8 @@ def _save_tags(mp3: MP3File) -> bool:
             prefix=".mp3redactor-", suffix=".tmp", dir=os.path.dirname(target)
         )
         os.close(fd)
-        retry_on_lock(lambda: shutil.copy2(target, tmp_path))  # keeps the permissions
+        retry_on_lock(lambda: shutil.copy2(target, tmp_path))  # keeps the permissions...
+        make_scratch_writable(tmp_path)  # ...but not a read-only attribute: the copy is ours to edit and to delete
     except OSError as e:
         _discard(tmp_path)
         mp3.save_error = f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
@@ -259,12 +264,8 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
 
 
 def _discard(tmp_path: str) -> None:
-    """Removes a leftover temp copy (best effort)."""
-    if tmp_path:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
+    """Removes a leftover temp copy (best effort; a read-only one is made writable first)."""
+    remove_scratch(tmp_path)
 
 
 def _write_cover_frame(tags, mp3: MP3File, apic_cls) -> None:

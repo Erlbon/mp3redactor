@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-16#02 -- A read-only song is refused clearly and leaves no temp copy behind
+
+From the 2026-10-16 independent code review (data safety).
+- Fixed: saving tags into a read-only MP3 failed half-way and left a hidden `.mp3redactor-*.tmp` copy of the whole song beside it (the copy inherited the read-only flag, so the cleanup was refused). A read-only file is now refused up front with "<name> is read-only, so it was not changed. Clear "Read-only" in the file's Properties ... and try again", before anything is copied; Redact skips such a file with the same message and no longer makes a working copy of it. Scratch copies are made writable as soon as they exist and are removed even when the read-only flag was set.
+- Tests: tests/test_read_only_files.py (a real read-only MP3 through the real save and the Redact steps: clear message, original untouched, folder unchanged).
+
 ## 2026-10-16#01 -- Create Notes: the request cache, timing, review rules, proposal model and Wikipedia client now come from redactor_common
 
 No change in what the app does: videoredactor is getting the same Create Notes, so the generic parts moved into redactor_common (2026-10-16#01) and this app uses them instead of its own copies.

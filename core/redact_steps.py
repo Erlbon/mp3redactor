@@ -106,6 +106,7 @@ from core.musicbrainz_lookup import (
     match_release,
     rank_matches,
 )
+from core.file_access import is_read_only, make_scratch_writable, read_only_message, remove_scratch
 from core.history import KIND_REDACT, begin_save, end_save
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.scan_service import REDACT_SCRATCH_PREFIX, reload_from_disk
@@ -211,6 +212,8 @@ class Mp3Ctx:
             self.skip_reason = f"the file could not be read ({mp3.load_error})"
         elif mp3.dirty and not mp3.stamp_only_dirty:  # a fresh Analyze stamp alone is not an edit
             self.skip_reason = "it has unsaved edits (save or undo them first)"
+        if not self.skip_reason and is_read_only(self.original):
+            self.skip_reason = read_only_message(self.original)  # before any working copy exists
         if self.skip_reason:
             return
         try:
@@ -218,7 +221,8 @@ class Mp3Ctx:
                 prefix=REDACT_SCRATCH_PREFIX, suffix=".mp3", dir=os.path.dirname(self.original)
             )
             os.close(fd)
-            retry_on_lock(lambda: shutil.copy2(self.original, self.temp))  # keeps the permissions
+            retry_on_lock(lambda: shutil.copy2(self.original, self.temp))  # keeps the permissions...
+            make_scratch_writable(self.temp)  # ...but not a read-only attribute
         except OSError as exc:
             self._discard_temp()
             self.skip_reason = f"couldn't make a working copy ({describe_save_error(exc)}{lock_hint(exc)})"
@@ -236,14 +240,12 @@ class Mp3Ctx:
     def restore_temp(self) -> None:
         """Back to the original's bytes (after a fix that failed midway)."""
         retry_on_lock(lambda: shutil.copy2(self.original, self.temp))
+        make_scratch_writable(self.temp)
 
     def _discard_temp(self) -> None:
         for path in (self.temp, self.temp + ".bak"):
             if path:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+                remove_scratch(path)
 
     def close(self) -> None:
         """Engine hook, called after every file. Removes the scratch copy
