@@ -166,7 +166,7 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
     tree = _context_menu_tree(window, monkeypatch)
     top = [t if isinstance(t, str) else t[0] for t in tree if t != "---"]
     assert top == [
-        "Open in Default App", "Open Containing Folder", "Copy Path", "Play", "Rename File",
+        "Open in Default App", "Open Containing Folder", "Copy Path", "Save Selected (0)", "Play", "Rename File",
         "Look Up", "Organize", "Analyze", "Cover", "Edit Lyrics",
         "Create Notes for This Folder", "Redact", "Remove from List",
     ]

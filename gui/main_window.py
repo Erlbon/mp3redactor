@@ -1974,6 +1974,19 @@ class MainWindow(QMainWindow):
         if not dirty_files:
             QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
             return
+        self._save_dirty_files(dirty_files)
+
+    def save_selected_files(self, files: list[MP3File]) -> None:
+        """Right-click > Save Selected (N): the same save path as File > Save All, for just these files
+        (only those that are really changed)."""
+        self.tag_panel.apply_bulk_edit()  # a typed-in, not yet applied value counts, as for Save All
+        wanted = {id(mp3) for mp3 in files}
+        dirty_files = [mp3 for mp3 in self.files if id(mp3) in wanted and mp3.dirty and not mp3.load_error]
+        if dirty_files:
+            self._save_dirty_files(dirty_files)
+
+    def _save_dirty_files(self, dirty_files: list[MP3File]) -> None:
+        """Writes the given changed files (progress, journal, failure box): Save All and Save Selected."""
 
         def step(mp3: MP3File, _index: int) -> None:
             save_dirty_tags([mp3])
@@ -3075,6 +3088,10 @@ class MainWindow(QMainWindow):
         # helper -- see its docstring. The rest is a short core plus
         # families (Look Up, Organize, Analyze, Cover); the full set is in
         # the menu bar.
+        # A typed-in, not yet applied panel edit belongs to the selection as it is now and counts as an unsaved
+        # change in "Save Selected (N)", as it does for Save All.
+        self.tag_panel.apply_bulk_edit()
+
         def extra_items(files: list[MP3File]) -> list:
             items: list = [Separator()]
             # Reuses the actual File-menu QAction (F2) rather than
@@ -3136,4 +3153,6 @@ class MainWindow(QMainWindow):
             get_selected_items=self._selected_files,
             get_path=lambda mp3: mp3.path,
             extra_items=extra_items,
+            save_selected=self.save_selected_files,
+            is_dirty=lambda mp3: mp3.dirty and not mp3.load_error,
         )

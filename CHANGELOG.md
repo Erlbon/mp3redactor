@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-17#05 -- Save from the right-click menu
+
+Shared part: redactor_common 2026-10-17#07 (gui/context_menu.py: the optional Save Selected item); all four Redactor apps get it.
+- New: **right-click > Save Selected (N)**: saves only the selected files that have unsaved changes (N counts them), with the same progress, journal and failure box as File > Save All. Greyed, with the tooltip "The selected files have no unsaved changes", when none of the selection is changed. File > Save All (Ctrl+S, Ctrl+Shift+A) is unchanged and still saves everything.
+- Tests in the real window: the count, only the selected changed files are written (a third changed file stays unsaved), the greyed state, and a failing file does not block the others.
+
 ## 2026-10-17#04 -- Tools > Columns can move columns
 
 Shared part: redactor_common 2026-10-17#06 (the Columns dialog, gui/column_order.py); all four Redactor apps get the same dialog.
