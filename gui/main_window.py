@@ -149,6 +149,7 @@ from redactor_common.gui.convert_offer import YES as CONVERT_YES
 from redactor_common.gui.convert_offer import find_convertible, offer_conversion
 from redactor_common.core.error_summary import summarize_errors
 from redactor_common.core.folder_refresh import find_new_files_in_loaded_folders
+from redactor_common.gui.column_order import apply_column_order, visual_column_keys
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
 from redactor_common.core.undo import UndoManager
 from redactor_common.gui.async_icon_cache import AsyncIconCache, IdentityWeakDict
@@ -2237,15 +2238,27 @@ class MainWindow(QMainWindow):
         )
 
     def open_column_settings_dialog(self) -> None:
-        all_columns = [(key, _COLUMN_LABELS[key]) for key in self._column_keys]
+        """Tools > Columns...: visibility AND order. The dialog lists the
+        columns in the table's current visual order (a header drag included);
+        after it closes the hidden set and the new order are applied to the
+        table and persisted."""
+        header = self.table.horizontalHeader()
+        shown_order = visual_column_keys(header, self._column_keys)
+        all_columns = [(key, _COLUMN_LABELS[key]) for key in shown_order]
         hidden = {k for k in self._column_keys if self.table.isColumnHidden(self._col_index[k])}
         dialog = ColumnSettingsDialog(all_columns, hidden, PROTECTED_COLUMNS, self)
         dialog.exec()
         new_hidden = dialog.hidden_fields()
-        for key in self._column_keys:
-            self.table.setColumnHidden(self._col_index[key], key in new_hidden)
+        self.table.setUpdatesEnabled(False)  # one repaint at the end, no flicker
+        try:
+            for key in self._column_keys:
+                self.table.setColumnHidden(self._col_index[key], key in new_hidden)
+            apply_column_order(header, dialog.column_order(), self._col_index)
+        finally:
+            self.table.setUpdatesEnabled(True)
         self.settings.hidden_columns = sorted(sanitize_hidden_fields(new_hidden, PROTECTED_COLUMNS))
         self.settings.has_column_preference = True
+        self.settings.column_order = visual_column_keys(header, self._column_keys)
         save_settings(self.settings)
         self._sync_panel_visible_fields()
 
