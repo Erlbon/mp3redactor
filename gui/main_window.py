@@ -208,6 +208,8 @@ from core.app_paths import base_dir
 from redactor_common.gui.rename_pattern_dialog import RenamePatternDialog
 from redactor_common.gui.rename_single_file import rename_single_file as prompt_rename_single_file
 from redactor_common.gui.sortable_table import NumericTableWidgetItem, suspend_sorting
+from redactor_common.gui.path_column import PathTableWidgetItem, install_cell_copy
+from redactor_common.core.path_column import migrate_saved_columns
 from redactor_common.gui import standard_shortcuts as shortcuts
 from redactor_common.gui.zoom_toolbar import TableZoomController
 from redactor_common.core.version import REDACTOR_COMMON_REPO_URL, REDACTOR_COMMON_VERSION
@@ -427,6 +429,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(QIcon(str(asset_path("assets/icon.ico"))))
         self.resize(1000, 600)
 
+        self._migrate_path_column()
         self._column_keys = merge_column_order(self.settings.column_order, ALL_COLUMN_KEYS)
         self._col_index = {key: i for i, key in enumerate(self._column_keys)}
 
@@ -444,6 +447,7 @@ class MainWindow(QMainWindow):
         # while it repopulates, see suspend_sorting()'s own docstring for
         # why that's required, not just tidy.
         self.table.setSortingEnabled(True)
+        install_cell_copy(self.table)  # Ctrl+C: the current column of the selected rows (full path for Path)
         self.table.setStyleSheet(TABLE_SELECTION_STYLESHEET)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
@@ -2153,6 +2157,17 @@ class MainWindow(QMainWindow):
 
     # -- columns: order/visibility, persisted by field key -----------------
 
+    def _migrate_path_column(self) -> None:
+        """Once: for settings saved before the Path column was shared, move it to just after Filename and un-hide
+        it, so it is seen; after that the user's own order and hiding win (redactor_common.core.path_column)."""
+        if self.settings.path_column_seeded:
+            return
+        order, hidden = migrate_saved_columns(self.settings.column_order, self.settings.hidden_columns)
+        self.settings.column_order = order
+        self.settings.hidden_columns = sorted(hidden)
+        self.settings.path_column_seeded = True
+        save_settings(self.settings)
+
     def _setup_column_persistence(self) -> None:
         header = self.table.horizontalHeader()
         header.setSectionsMovable(True)  # drag headers to reorder columns
@@ -2817,7 +2832,7 @@ class MainWindow(QMainWindow):
         filename_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["filename"], filename_item)
 
-        path_item = QTableWidgetItem(str(mp3.path))
+        path_item = PathTableWidgetItem(mp3.path)  # the folder as text, the full path as tooltip and for Ctrl+C
         path_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["path"], path_item)
 

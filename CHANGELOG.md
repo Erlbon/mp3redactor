@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-17#03 -- Path column: shared with the other Redactor apps
+
+Shared part: redactor_common 2026-10-17#05 (core/path_column.py, gui/path_column.py); all four Redactor apps now use the same Path column.
+- Changed: **the Path cell shows the folder** the file is in (the file name is in the Filename column), not the full path including the file name. The tooltip has the full file path. The column stays directly after Filename and visible by default.
+- New: **Ctrl+C on the table copies the current column of the selected rows, the Path column as full file paths** (one per line). Sorting the column is case-insensitive natural text order.
+- One-time migration (setting `path_column_seeded`): if you had a saved column order or hidden columns, Path is moved to just after Filename and un-hidden once. After that your own order and hiding win.
+- The Path cell updates after Rename File, Rename / Export by Pattern, Undo Last Rename and Move into Folders (tests for rename and move).
+
 ## 2026-10-17#02 -- The Bitrate column, coloured by quality
 
 Uses the shared quality colouring in redactor_common 2026-10-17#04 (the same as cbzredactor's Size column).

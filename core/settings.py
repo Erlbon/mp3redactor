@@ -134,6 +134,9 @@ class Settings:
     # column immediately, same convention cbzredactor's
     # has_hidden_columns_preference() uses.
     has_column_preference: bool = False
+    # One-time migration flag (redactor_common.core.path_column): the shared Path column was moved to just after
+    # Filename and un-hidden once, for settings saved before it was shared. After that the user's choices win.
+    path_column_seeded: bool = False
 
     # Genre/Language quick-pick ("+" button next to those two fields in
     # the bulk-edit panel): built-in defaults (individually hideable/
@@ -263,6 +266,7 @@ class Settings:
             "hidden_columns": _dump_list(self.hidden_columns),
             "column_order": _dump_list(self.column_order),
             "has_column_preference": str(self.has_column_preference),
+            "path_column_seeded": str(self.path_column_seeded),
             "custom_genres": _dump_list(self.custom_genres),
             "hidden_default_genres": _dump_list(self.hidden_default_genres),
             "custom_languages": _dump_list([list(pair) for pair in self.custom_languages]),
@@ -323,6 +327,7 @@ class Settings:
             hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
             column_order=_load_str_list(section.get("column_order", fallback="")),
             has_column_preference=_get_bool(section, "has_column_preference", False),
+            path_column_seeded=_get_bool(section, "path_column_seeded", False),
             custom_genres=_load_str_list(section.get("custom_genres", fallback="")),
             hidden_default_genres=_load_str_list(section.get("hidden_default_genres", fallback="")),
             custom_languages=_load_pair_list(section.get("custom_languages", fallback="")),
