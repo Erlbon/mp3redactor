@@ -4,6 +4,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _isolated_save_log(monkeypatch, tmp_path):
+    """With History on, Save All appends one line to save_log.txt next to the crash log (the project folder when
+    running from source): tests point the crash log at a temporary folder so no test writes there."""
+    import gui.main_window as main_window
+    monkeypatch.setattr(main_window, "crash_log_path", lambda: tmp_path / "logs" / "mp3redactor_crash.log")
+
+
+@pytest.fixture(autouse=True)
 def _isolated_rename_log(monkeypatch, tmp_path):
     """File > Undo Last Rename's log (redactor_common's RenameLog) lives
     next to the settings -- the project folder when running from source.
