@@ -59,7 +59,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.app_paths import asset_path
+from core.app_paths import asset_path, crash_log_path
 from core.cover_art import extension_for, find_folder_image
 from core.fields import FIELDS, filename_values
 from core.mp3_file import (
@@ -148,6 +148,8 @@ from redactor_common.core.temp_names import is_app_temp_name
 from redactor_common.gui.convert_offer import YES as CONVERT_YES
 from redactor_common.gui.convert_offer import find_convertible, offer_conversion
 from redactor_common.core.error_summary import summarize_errors
+from redactor_common.core.save_report import SaveReport, append_save_log, files_still_dirty, nothing_to_save_reason
+from redactor_common.gui import crash_dialog
 from redactor_common.core.folder_refresh import find_new_files_in_loaded_folders
 from redactor_common.gui.column_order import apply_column_order, visual_column_keys
 from redactor_common.core.table_settings import is_column_visible, merge_column_order, sanitize_hidden_fields
@@ -1965,16 +1967,28 @@ class MainWindow(QMainWindow):
         self._update_redo_action()
 
     def save_changed(self) -> None:
-        """File > Save All (Ctrl+Shift+A, Ctrl+S): every file with unsaved tag changes."""
-        # Catches a field that's ticked with a value typed in but not
-        # yet Applied -- Save should act on it too, not silently drop it.
-        self.tag_panel.apply_bulk_edit()
+        """File > Save All (Ctrl+Shift+A, Ctrl+S): every file with unsaved tag changes. After EVERY Save All the
+        status bar says what happened (counts, or why nothing was saved), a box lists each problem file with its
+        reason, and an unexpected error is shown in the "Something went wrong" box."""
+        try:
+            # Catches a field that's ticked with a value typed in but not
+            # yet Applied -- Save should act on it too, not silently drop it.
+            self.tag_panel.apply_bulk_edit()
 
-        dirty_files = [mp3 for mp3 in self.files if mp3.dirty and not mp3.load_error]
-        if not dirty_files:
-            QMessageBox.information(self, "Nothing to Save", "No unsaved tag changes.")
-            return
-        self._save_dirty_files(dirty_files)
+            changed = [mp3 for mp3 in self.files if mp3.dirty]
+            dirty_files = [mp3 for mp3 in changed if not mp3.load_error]
+            skipped = [mp3.filename for mp3 in changed if mp3.load_error]
+            if not dirty_files:
+                reason = nothing_to_save_reason(len(changed), skipped)
+                self.statusBar().showMessage(reason, 8000)
+                append_save_log(os.path.dirname(crash_log_path()), history_enabled(), SaveReport(nothing=reason))
+                QMessageBox.information(self, "Nothing to Save", reason)
+                return
+            self._save_dirty_files(dirty_files, skipped)
+        except Exception as exc:  # noqa: BLE001 - never a silent Save All
+            crash_dialog.report_exception(exc, "Save All stopped because of an unexpected error")
+            self.statusBar().showMessage(f"Save All stopped because of an unexpected error: {exc}")
+            self._rebuild_table()
 
     def save_selected_files(self, files: list[MP3File]) -> None:
         """Right-click > Save Selected (N): the same save path as File > Save All, for just these files
@@ -1985,26 +1999,50 @@ class MainWindow(QMainWindow):
         if dirty_files:
             self._save_dirty_files(dirty_files)
 
-    def _save_dirty_files(self, dirty_files: list[MP3File]) -> None:
-        """Writes the given changed files (progress, journal, failure box): Save All and Save Selected."""
+    def _save_dirty_files(self, dirty_files: list[MP3File], skipped_load_errors: list[str] | None = None) -> None:
+        """Writes the given changed files (progress, journal), then reports the result (Save All and Save
+        Selected): status line with the counts, a box with each problem file and its reason, and a check that no
+        file is left marked unsaved without an error."""
+        report = SaveReport(skipped_load_errors=list(skipped_load_errors or []))
+        unexpected: dict[int, str] = {}
 
         def step(mp3: MP3File, _index: int) -> None:
             save_dirty_tags([mp3])
 
-        run_with_progress(
+        def on_error(mp3: MP3File, exc: Exception) -> None:
+            unexpected[id(mp3)] = f"unexpected error: {exc}"
+            crash_dialog.report_exception(exc, "Save All hit an unexpected error")
+
+        done = run_with_progress(
             self, dirty_files, step, "Saving tags...", threshold=3,
-            label_for=lambda mp3: f"Saving: {mp3.filename}",
+            label_for=lambda mp3: f"Saving: {mp3.filename}", on_error=on_error,
         )
         self._rebuild_table()
         self._show_journal_problem()
 
-        failed = [f"{mp3.filename}: {mp3.save_error}" for mp3 in dirty_files if mp3.save_error]
-        if failed:
+        for mp3 in dirty_files:
+            if id(mp3) in unexpected:
+                report.failed.append((mp3.filename, unexpected[id(mp3)]))
+            elif mp3.save_error:
+                report.failed.append((mp3.filename, mp3.save_error))
+            elif not mp3.dirty:
+                report.saved += 1
+        failed_names = {name for name, _reason in report.failed}
+        if not done:
+            report.not_attempted = len(dirty_files) - report.saved - len(report.failed)
+        else:
+            report.still_dirty = files_still_dirty(
+                dirty_files, lambda m: m.dirty, lambda m: m.filename in failed_names, lambda m: m.filename)
+        problem = take_journal_problem()  # a history write failure shows after the counts, once
+        message = report.status_line() + (f". {problem}" if problem else "")
+        self.statusBar().showMessage(message, 15000)
+        if report.has_problems:
+            lines = report.problem_lines()
             QMessageBox.warning(
                 self, "Some Files Failed to Save",
-                f"{len(failed)} of {len(dirty_files)} file(s) could not be saved:\n\n"
-                f"{summarize_errors(failed)}",
+                f"{len(lines)} problem(s) with {len(dirty_files)} file(s):\n\n{summarize_errors(lines)}",
             )
+        append_save_log(os.path.dirname(crash_log_path()), history_enabled(), report)
 
     def _count_dirty(self) -> int:
         return sum(1 for mp3 in self.files if mp3.dirty)
