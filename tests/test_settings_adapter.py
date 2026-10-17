@@ -98,7 +98,8 @@ def test_read_section_covers_every_declared_key(tmp_path):
 def test_machine_specific_sections_unticked_by_default(tmp_path):
     _holder, adapter = _adapter(tmp_path)
     default = sb.default_selection(adapter)
-    assert default == {"recipe", "patterns", "columns", "field_defaults", "genres_languages", "history"}
+    assert default == {"recipe", "patterns", "columns", "field_defaults", "genres_languages",
+                       "table_colours", "history"}
     machine = {s.key for s in adapter.sections() if not s.portable}
     assert machine == {"tools", "folders"}
     assert all("this computer only" in s.label for s in adapter.sections() if not s.portable)

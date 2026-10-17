@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import QMessageBox
 from redactor_common.gui.preferences_dialog import PreferencesDialog
 
 from core import history, notes_cache, notes_debug, recycle
+from core.audio_quality import DEFAULT_GOOD_KBPS, DEFAULT_POOR_KBPS, MAX_KBPS, MIN_KBPS, normalise_limits
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
 
@@ -44,6 +45,8 @@ DELETE_NOTES_LOG_LABEL = "Delete the troubleshooting log…"
 KEY_NOTES_DISCOGS = "notes_discogs_always"
 KEY_NOTES_SKIP_SINGLES = "notes_skip_singles"
 KEY_NOTES_NORWEGIAN = "notes_norwegian_numbers"
+KEY_BAND_POOR = "band_poor_kbps"
+KEY_BAND_GOOD = "band_good_kbps"
 NOTES_DISCOGS_LABEL = "Also ask Discogs for every artist (slower, adds members and profile)"
 NOTES_SKIP_SINGLES_LABEL = "Leave singles out of the artist note's discography (faster: fewer requests for a big artist)"
 NOTES_NORWEGIAN_LABEL = "Number words in Norwegian (Fire = 4, To = 2 ...) when matching titles"
@@ -67,6 +70,8 @@ FIELD_BY_KEY = {
     KEY_NOTES_DISCOGS: "notes_discogs_always",
     KEY_NOTES_SKIP_SINGLES: "notes_skip_singles",
     KEY_NOTES_NORWEGIAN: "notes_norwegian_numbers",
+    KEY_BAND_POOR: "band_poor_kbps",
+    KEY_BAND_GOOD: "band_good_kbps",
 }
 
 
@@ -104,6 +109,21 @@ def preference_sections() -> list[PrefSection]:
                 KEY_RECYCLE_FALLBACK, "Backup folder for drives without a Recycle Bin", "path", "",
                 help=recycle.BACKUP_FOLDER_HELP,
                 path_mode="folder",
+            ),
+        )),
+        PrefSection("table_colours", "Table colours", (
+            PrefSpec(
+                KEY_BAND_POOR, "Poor below (kbps)", "int", DEFAULT_POOR_KBPS,
+                minimum=MIN_KBPS, maximum=MAX_KBPS - 1,
+                help="The Bitrate column is yellow below this (MP3 bitrate; a VBR file is judged on its average). "
+                     "A stereo file under 32 kHz is yellow too. Default 128.",
+            ),
+            PrefSpec(
+                KEY_BAND_GOOD, "Good from (kbps)", "int", DEFAULT_GOOD_KBPS,
+                minimum=MIN_KBPS + 1, maximum=MAX_KBPS,
+                help="Only the wording of the tooltip and of the Convert to MP3 hint: good from about this, "
+                     "transparent from about 256. Must be above the poor limit (it is raised to just above it "
+                     "otherwise). Default 192.",
             ),
         )),
         PrefSection("fixing", "Fixing", (
@@ -167,6 +187,10 @@ def settings_backend(settings: Settings, save: Callable[[Settings], None]) -> Ca
     def set_many(values: dict) -> None:
         for key, value in values.items():
             setattr(settings, FIELD_BY_KEY[key], value)
+        if KEY_BAND_POOR in values or KEY_BAND_GOOD in values:  # poor < good, 32..320
+            settings.band_poor_kbps, settings.band_good_kbps = normalise_limits(
+                settings.band_poor_kbps, settings.band_good_kbps
+            )
         save(settings)
         if KEY_NOTES_DEBUG in values:
             notes_debug.set_enabled(settings.notes_debug_log)  # the running app follows at once

@@ -25,6 +25,10 @@ time.
   overwrites an existing value without asking.
 - **Covers**: a Cover column with thumbnails, a preview in the side panel; set from an image file or from the
   `cover.jpg` / `folder.jpg` next to each file, remove, or export.
+- **Quality at a glance**: the Bitrate column is yellow when a file's quality is poor (below 128 kbps, a variable-bitrate
+  file judged on its average, or a stereo file under 32 kHz), green when it is fine, and plain when unknown; point at a
+  cell for the reason. Tools > Preferences > Table colours sets the limit, and Convert to MP3 tells you which colour the
+  bitrate you choose will get.
 - **Rename, move and parse**: rename files from a `%field%` pattern, copy them out renamed, move them into a
   library folder tree, or go the other way and read tags out of file and folder names. Renames can be undone
   with File > Undo Last Rename.

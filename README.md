@@ -80,8 +80,17 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 The table's right-click menu has the everyday subset: Preview (one file), Rename File (one file), Look Up, Organize (Rename /
 Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Create Notes for This Folder, Redact, Remove from List, plus Open in Default App,
 Open Containing Folder and Copy Path. Double-click a Filename cell to rename that file, a Lyrics cell to edit its
-lyrics. Click a header to sort (Track, Disc, Year, BPM, Loudness, Sample Rate and Channels sort as numbers), drag
+lyrics. Click a header to sort (Track, Disc, Year, BPM, Loudness, Bitrate, Sample Rate and Channels sort as numbers), drag
 a header to reorder, right-click a header to show or hide columns.
+
+The Bitrate column (shown by default; mutagen reads it on load, `VBR ~190 kbps` for a variable file, whose AVERAGE is judged) is
+coloured by quality with redactor_common's shared profile (`core/quality_bands.classify_audio`, painted by
+`gui/quality_colour.apply_band_colour`, the same solid tints as cbzredactor's Size column): yellow = poor (below the poor
+limit, default 128 kbps, or a stereo file under 32 kHz, which also turns its Sample Rate cell yellow), green = fine, no colour =
+unknown. The explanation is the cell's tooltip, the header's tooltip is the legend, a failed file is never painted, and the
+colour comes after the dirty-row tint. Preferences > Table colours sets the poor and good limits (32..320, poor below good;
+live; part of Export/Import Settings). Convert to MP3 names the band of the chosen bitrate under the choice. Code:
+`core/audio_quality.py`, `gui/convert_bitrate_dialog.py`.
 
 Edit > Filter List (Ctrl+F) hides the rows whose Filename, Title, Artist, Album and Path all lack the text
 (case-insensitive); the status bar says "Showing N of M files (filter: text)". A hidden row is never a target:

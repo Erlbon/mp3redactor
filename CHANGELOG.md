@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-17#02 -- The Bitrate column, coloured by quality
+
+Uses the shared quality colouring in redactor_common 2026-10-17#04 (the same as cbzredactor's Size column).
+- New: a **Bitrate** column (shown by default, sorts as a number): `192 kbps`, or `VBR ~190 kbps` for a variable-bitrate file. It is **yellow** when the quality is poor (below 128 kbps; a VBR file is judged on its average, so V2 at about 190 is fine and V9 is poor; or a stereo file with a sample rate under 32 kHz), **green** when it is fine, and uncoloured when the bitrate is unknown. The tooltip says why (for example: MP3, 128 kbps, 44.1 kHz, stereo; poor below 128 kbps; good from about 192; transparent from about 256), the column header's tooltip is the legend. A stereo file under 32 kHz also gets a yellow Sample Rate cell. A file that failed to load is never painted, and the colour is drawn after the row's unsaved-changes tint.
+- New: **Preferences > Table colours** with the two limits, "Poor below" (default 128 kbps) and "Good from" (default 192 kbps, which only shapes the wording), 32 to 320 kbps and poor below good (a pair that breaks this is repaired); they apply to the table at once and are part of Export/Import Settings (section "Table colours").
+- New: the **Convert to MP3** question shows a hint under the bitrate choice that names the band of the chosen value by the table's colours ("128 kbps is fine by the table's colours; poor is below 128 kbps"), so the choice matches what the table will show.
+- Changed: the sample rate, the channel count and the bitrate mode are now read from the file when it is loaded (they used to appear only after a deep check, and are still refreshed by it); the bitrate is rounded instead of cut (a 192 kbps file was shown as 191).
+- Tests: tests/test_quality_colours.py (real files made by ffmpeg: CBR 96 and 192, VBR V2 and V9, 22.05 kHz; cell colours and tooltips, VBR average, unknown, a failed file, the dirty tint, numeric sorting, Filter List, live limits and persistence, Export/Import, the Convert hint, a real conversion).
+
 ## 2026-10-17#01 -- Created and refreshed notes can be undone from History; a refresh works on a network drive
 
 From the 2026-10-16 independent code review (batch 4); the shared parts are in redactor_common 2026-10-17#01.

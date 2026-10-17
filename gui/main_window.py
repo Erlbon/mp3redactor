@@ -127,6 +127,7 @@ from core.settings import (
 from redactor_common.gui.qsettings_store import directory_for, resolve_start_directory
 from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
+from gui.convert_bitrate_dialog import ask_convert_bitrate
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
 from gui.m4b_batch_dialog import M4bBatchDialog
@@ -139,6 +140,8 @@ from core.notes_local import ALL_KINDS
 from core.notes_kinds import parse_kinds
 from core.notes_scope import scope_choices
 from gui.preferences import build_preferences_dialog
+from core.audio_quality import BITRATE_LEGEND, bitrate_result, display_bitrate, sample_rate_result
+from redactor_common.gui.quality_colour import apply_band_colour
 from gui.tag_panel import TagPanel
 from redactor_common.core import secret_store
 from redactor_common.core.temp_names import is_app_temp_name
@@ -229,17 +232,21 @@ _STATUS_COLUMN_LABELS: dict[str, str] = {
 _PROBE_COLUMN_LABELS: dict[str, str] = {
     "encoder": "Encoder", "sample_rate": "Sample Rate", "channels": "Channels",
 }
+# Bitrate (mutagen, read on load) is shown by default and coloured by quality (core/audio_quality.py).
+_AUDIO_COLUMN_LABELS: dict[str, str] = {"bitrate": "Bitrate"}
 _COLUMN_LABELS: dict[str, str] = {
     "filename": "Filename",
     "path": "Path",
     **{key: label for key, label, _m in FIELDS},
     **_STATUS_COLUMN_LABELS,
+    **_AUDIO_COLUMN_LABELS,
     **_PROBE_COLUMN_LABELS,
 }
 ALL_COLUMN_KEYS: list[str] = (
     ["filename", "path"]
     + [key for key, _l, _m in FIELDS]
     + list(_STATUS_COLUMN_LABELS)
+    + list(_AUDIO_COLUMN_LABELS)
     + list(_PROBE_COLUMN_LABELS)
 )
 PROTECTED_COLUMNS = frozenset({"filename"})  # the one column you always need to tell rows apart
@@ -425,6 +432,9 @@ class MainWindow(QMainWindow):
 
         self.table = QTableWidget(0, len(self._column_keys), self)
         self.table.setHorizontalHeaderLabels([_COLUMN_LABELS[key] for key in self._column_keys])
+        bitrate_header = self.table.horizontalHeaderItem(self._col_index["bitrate"])
+        if bitrate_header is not None:
+            bitrate_header.setToolTip(BITRATE_LEGEND)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -1135,14 +1145,11 @@ class MainWindow(QMainWindow):
 
     def _convert_paths_and_load(self, paths: list[str]) -> None:
         """Asks the bitrate, converts `paths` to MP3 beside the originals and adds the results to the list."""
-        bitrate_labels = [f"{kbps} kbps" for kbps in BITRATE_CHOICES_KBPS]
-        default_index = BITRATE_CHOICES_KBPS.index(DEFAULT_BITRATE_KBPS)
-        chosen_label, ok = QInputDialog.getItem(
-            self, "Convert to MP3", "Bitrate:", bitrate_labels, default_index, editable=False
+        bitrate_kbps = ask_convert_bitrate(
+            self, BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, self.settings.audio_band_settings()
         )
-        if not ok:
+        if bitrate_kbps is None:
             return
-        bitrate_kbps = BITRATE_CHOICES_KBPS[bitrate_labels.index(chosen_label)]
 
         conversions, skipped = plan_conversions([Path(p) for p in paths])
 
@@ -2232,6 +2239,7 @@ class MainWindow(QMainWindow):
     def open_settings_dialog(self) -> None:
         # Shared Preferences dialog (gui/preferences.py): edits and saves self.settings in place.
         build_preferences_dialog(self.settings, save_settings, self).exec()
+        self._repaint_band_colours()  # the Table colours limits apply at once
 
     # -- export / import settings (redactor_common's shared settings bundle) --
 
@@ -2255,6 +2263,8 @@ class MainWindow(QMainWindow):
         layout (and the panel rows that follow it) needs re-applying."""
         if "columns" in result.applied:
             self._apply_column_settings()
+        if "table_colours" in result.applied:
+            self._repaint_band_colours()
 
     def _apply_column_settings(self) -> None:
         hidden = sanitize_hidden_fields(
@@ -2936,9 +2946,48 @@ class MainWindow(QMainWindow):
         sample_rate_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["sample_rate"], sample_rate_item)
 
+        bitrate_item = NumericTableWidgetItem(
+            display_bitrate(mp3), sort_value=float(mp3.bitrate_kbps) if mp3.bitrate_kbps else None
+        )
+        bitrate_item.setData(Qt.ItemDataRole.UserRole, mp3)
+        self.table.setItem(row, self._col_index["bitrate"], bitrate_item)
+        self._paint_band_colours(mp3, bitrate_item, sample_rate_item)
+
         channels_item = NumericTableWidgetItem(str(mp3.channels) if mp3.channels is not None else "")
         channels_item.setData(Qt.ItemDataRole.UserRole, mp3)
         self.table.setItem(row, self._col_index["channels"], channels_item)
+
+    def _paint_band_colours(self, mp3: MP3File, bitrate_item, sample_rate_item) -> None:
+        """The quality colours of the Bitrate cell (and of the Sample Rate cell when the rate alone is the reason).
+        Applied AFTER the row tint (a dirty row is tinted first), never on a file that failed to load, with the
+        explanation as the tooltip (redactor_common.gui.quality_colour.apply_band_colour)."""
+        failed = bool(mp3.load_error)
+        # Reset first: a repaint after a limit change must not keep the old colour.
+        for item in (bitrate_item, sample_rate_item):
+            item.setData(Qt.ItemDataRole.BackgroundRole, None)
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
+            item.setToolTip("")
+        if mp3.dirty:  # like the other columns of a modified row; the Sample Rate cell has never carried it
+            bitrate_item.setBackground(DIRTY_COLOR)
+            bitrate_item.setForeground(HIGHLIGHT_TEXT_COLOR)
+        settings = self.settings.audio_band_settings()
+        apply_band_colour(bitrate_item, bitrate_result(mp3, settings), failed=failed)
+        rate_result = sample_rate_result(mp3, settings)
+        if rate_result is not None:
+            apply_band_colour(sample_rate_item, rate_result, failed=failed)
+
+    def _repaint_band_colours(self) -> None:
+        """Recolours the Bitrate and Sample Rate cells of every row in place (after the limits changed)."""
+        bitrate_col, rate_col = self._col_index["bitrate"], self._col_index["sample_rate"]
+        with suspend_sorting(self.table):
+            for row in range(self.table.rowCount()):
+                bitrate_item = self.table.item(row, bitrate_col)
+                rate_item = self.table.item(row, rate_col)
+                if bitrate_item is None or rate_item is None:
+                    continue
+                mp3 = bitrate_item.data(Qt.ItemDataRole.UserRole)
+                if mp3 is not None:
+                    self._paint_band_colours(mp3, bitrate_item, rate_item)
 
     @staticmethod
     def _integrity_display(mp3: MP3File) -> str:

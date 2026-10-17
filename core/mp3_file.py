@@ -150,6 +150,8 @@ class MP3File:
     releasecountry: str = ""  # TXXX:MusicBrainz Album Release Country
     duration_seconds: float | None = None
     bitrate_kbps: int | None = None
+    # CBR / VBR / ABR as mutagen reads it from the stream ("" = unknown); for VBR, bitrate_kbps is the average.
+    bitrate_mode: str = ""
 
     # File-integrity check (mp3val)
     integrity_status: str = STATUS_UNCHECKED

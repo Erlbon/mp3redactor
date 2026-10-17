@@ -30,6 +30,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+from core.audio_quality import MAX_KBPS, MIN_KBPS, normalise_limits
 from core.settings import Settings, save_settings
 from redactor_common.core import settings_bundle as sb
 from redactor_common.core import settings_coerce as sc
@@ -58,6 +59,8 @@ SECTION_KEYS: dict[str, dict[str, str]] = {
         "auto_number_padding": "int",
         "delete_backup_after_fix": "bool",
     },
+    # Preferences > Table colours: the Bitrate column's poor and good limits (kbps, 32..320, poor < good).
+    "table_colours": {"band_poor_kbps": "kbps", "band_good_kbps": "kbps"},
     "genres_languages": {
         "custom_genres": "strlist",
         "hidden_default_genres": "strlist",
@@ -103,6 +106,7 @@ _LABEL_PORTABLE = [
     ("columns", "Column layout, visibility and order"),
     ("field_defaults", "Field defaults (ASCII, zero-padding, numbering, backups)"),
     ("genres_languages", "Custom genres and languages"),
+    ("table_colours", "Table colours (the Bitrate column's poor and good limits)"),
     ("history", "Change history on/off (importing 'on' starts recording tag changes on this computer)"),
 ]
 _LABEL_MACHINE = [
@@ -121,6 +125,7 @@ _COERCERS: dict[str, tuple[Callable[[Any], Any], str]] = {
     "str": (sc.coerce_str, "expected text"),
     "bool": (sc.coerce_bool, "expected true/false"),
     "int": (lambda v: sc.coerce_int(v, _INT_MIN, _INT_MAX), "expected a small whole number"),
+    "kbps": (lambda v: sc.coerce_int(v, MIN_KBPS, MAX_KBPS), f"expected a whole number of kbps, {MIN_KBPS} to {MAX_KBPS}"),
     "strlist": (sc.coerce_str_list, "expected a list of text"),
     "pairs": (sc.coerce_pairs, "expected a list of [code, name] pairs"),
 }
@@ -191,6 +196,10 @@ class Mp3SettingsAdapter(sb.SettingsAdapter):
                 del coerced[name]  # empty or not on this computer: keep the current value
         for name, value in coerced.items():
             setattr(settings, _field(key, name), value)
+        if key == "table_colours":  # one bad pair must not leave poor >= good
+            settings.band_poor_kbps, settings.band_good_kbps = normalise_limits(
+                settings.band_poor_kbps, settings.band_good_kbps
+            )
         if coerced:
             save_settings(settings, self._target_dir)
         if key == "history" and "enabled" in coerced:

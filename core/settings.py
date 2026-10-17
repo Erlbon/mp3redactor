@@ -215,6 +215,17 @@ class Settings:
     notes_debug_log: bool = False  # the troubleshooting log of the Create Notes list (core/notes_debug.py); off
     notes_cache_enabled: bool = True  # the disk cache of the notes lookups (public service answers only)
 
+    # Preferences > Table colours: the Bitrate column's quality colours (core/audio_quality.py). Below `poor` is
+    # yellow; `good` only shapes the tooltip. Always kept valid: 32..320, poor < good (normalise_limits()).
+    band_poor_kbps: int = 128
+    band_good_kbps: int = 192
+
+    def audio_band_settings(self):
+        """The shared profile's settings built from the two limits (a bad stored value is repaired, not trusted)."""
+        from core.audio_quality import band_settings
+
+        return band_settings(self.band_poor_kbps, self.band_good_kbps)
+
     def saved_rename_pattern(self) -> str:
         """The dedicated rename pattern; before one was ever saved, the most
         recent pattern in the shared history (a first-run default only)."""
@@ -282,6 +293,8 @@ class Settings:
             "notes_discogs_always": str(self.notes_discogs_always),
             "notes_skip_singles": str(self.notes_skip_singles),
             "notes_norwegian_numbers": str(self.notes_norwegian_numbers),
+            "band_poor_kbps": str(self.band_poor_kbps),
+            "band_good_kbps": str(self.band_good_kbps),
         }
         config[HISTORY_SECTION] = {"enabled": str(self.history_enabled)}
         return config
@@ -340,7 +353,18 @@ class Settings:
             notes_discogs_always=_get_bool(section, "notes_discogs_always", False),
             notes_skip_singles=_get_bool(section, "notes_skip_singles", False),
             notes_norwegian_numbers=_get_bool(section, "notes_norwegian_numbers", False),
+            **_band_limits(section),
         )
+
+
+def _band_limits(section) -> dict:
+    """band_poor_kbps / band_good_kbps from the ini, repaired to a valid pair (32..320, poor < good)."""
+    from core.audio_quality import DEFAULT_GOOD_KBPS, DEFAULT_POOR_KBPS, normalise_limits
+
+    poor, good = normalise_limits(
+        _get_int(section, "band_poor_kbps", DEFAULT_POOR_KBPS), _get_int(section, "band_good_kbps", DEFAULT_GOOD_KBPS)
+    )
+    return {"band_poor_kbps": poor, "band_good_kbps": good}
 
 
 def _kinds_choice(value: str) -> str:

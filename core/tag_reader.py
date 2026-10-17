@@ -144,7 +144,17 @@ def load_tags(mp3: MP3File) -> None:
     if audio.info is not None:
         mp3.duration_seconds = getattr(audio.info, "length", None)
         bitrate = getattr(audio.info, "bitrate", None)
-        mp3.bitrate_kbps = int(bitrate / 1000) if bitrate else None
+        mp3.bitrate_kbps = round(bitrate / 1000) if bitrate else None  # round: mutagen reports 191998 for a 192k file
+        mode = getattr(audio.info, "bitrate_mode", None)
+        mp3.bitrate_mode = str(mode).split(".")[-1] if mode is not None else ""  # BitrateMode.VBR -> "VBR"
+        # Also known from the stream itself, so the Sample Rate and Channels columns and the quality colours work
+        # without a deep check (which later overwrites them with ffprobe's identical values).
+        rate = getattr(audio.info, "sample_rate", None)
+        if rate:
+            mp3.sample_rate_hz = int(rate)
+        channels = getattr(audio.info, "channels", None)
+        if channels:
+            mp3.channels = int(channels)
 
     mp3.snapshot_tag_baseline()  # see core.mp3_file.BASELINE_KEYS
 

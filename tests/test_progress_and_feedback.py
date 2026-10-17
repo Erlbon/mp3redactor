@@ -90,7 +90,7 @@ def test_run_work_with_progress_cancel_reaches_the_work_and_reraises_errors(wind
 def test_import_conversion_runs_on_a_worker_and_reports_in_the_status_bar(window, tmp_path, monkeypatch, no_info_boxes):
     src = tmp_path / "song.flac"
     src.write_bytes(b"flac")
-    monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *a, **k: ("192 kbps", True)))
+    monkeypatch.setattr(mw, "ask_convert_bitrate", lambda *a, **k: 192)
     threads = []
 
     def fake_convert(conversions, bitrate_kbps, progress, ffmpeg_path, should_cancel):
