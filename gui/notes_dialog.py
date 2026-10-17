@@ -75,7 +75,10 @@ OUTDATED_CHECK_TEXT = "Also review notes made by an older version"
 UPDATE_BADGE_TEXT = "Update"
 UPDATE_BADGE_STYLE = "background:#cfe0f7; color:#10325c; border-radius:4px; padding:3px 8px; font-weight:bold;"
 LEGACY_WARNING = "Made by the first versions: cannot tell whether you edited it. Look at Before / after before you update it."
-RECYCLE_NOTE = "The old note goes to the Recycle Bin. You can restore it from the Recycle Bin."
+RECYCLE_NOTE = (
+    "The old note goes to the Recycle Bin. You can restore it from the Recycle Bin. On a network drive there is no "
+    "Recycle Bin: set a backup folder in Preferences or updates are refused."
+)
 
 
 def diff_html(old_text: str, new_text: str) -> str:
@@ -1537,6 +1540,7 @@ class NotesScopeDialog(QDialog):
         self._describe([path for _radio, path in self.radios])
         self.counts: Optional[tuple[int, int, int]] = None  # (artists, albums, genres) of the chosen folder, once known
         self._count_key: Optional[tuple] = None
+        self._count_busy = False
         self._count_threads: list = []
         self._count_timer = QTimer(self)
         self._count_timer.setSingleShot(True)
@@ -1593,6 +1597,9 @@ class NotesScopeDialog(QDialog):
             self.other_label.setText(f"{self.picked}  -  {folder_caption(self.infos[self.picked], Path(self.picked).name, kinds)}")
 
     def _start_count(self) -> None:
+        """Counts the chosen scope off the GUI thread. ONE walk at a time: a toggle while a walk runs only notes the
+        newest wish, which starts when the running one ends (a walk of a big library cannot be interrupted, so one
+        per toggle used to pile up threads, some still running when the dialog closed)."""
         folder = self.chosen_folder()
         if not folder:
             return
@@ -1602,6 +1609,11 @@ class NotesScopeDialog(QDialog):
         self._count_key = key
         self.counts = None
         self._update_hint()
+        if not self._count_busy:
+            self._launch_count(key)
+
+    def _launch_count(self, key: tuple) -> None:
+        self._count_busy = True
         thread = _CountThread(*key)
         thread.counted.connect(self._counted)
         thread.finished.connect(lambda t=thread: (_running_counts.discard(t), t.deleteLater()))
@@ -1609,7 +1621,10 @@ class NotesScopeDialog(QDialog):
         thread.start()
 
     def _counted(self, key, counts) -> None:
-        if key != self._count_key:  # an answer for a folder that is no longer the chosen one
+        self._count_busy = False
+        if key != self._count_key:  # the choice changed while this ran: count the newest one now
+            if self._count_key is not None:
+                self._launch_count(self._count_key)
             return
         self.counts = counts
         self._update_hint()

@@ -190,7 +190,7 @@ def test_delete_history_is_a_pref_action_on_the_history_section():
 class _FakeDialog:
     made: list = []
 
-    def __init__(self, journal_, apply_restore, parent, title):
+    def __init__(self, journal_, apply_restore, parent, title, undo_handlers=None):
         self.journal, self.apply_restore, self.title = journal_, apply_restore, title
         _FakeDialog.made.append(self)
 

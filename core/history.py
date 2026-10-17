@@ -100,12 +100,37 @@ def set_history_enabled(enabled: bool | None) -> None:
         _enabled = None if enabled is None else bool(enabled)
 
 
+def notes_backup_base() -> str:
+    """The folder that holds `notes_backup/` (the text a refreshed note replaced): the folder of the journal, i.e. the
+    folder next to the settings file (core.settings: base_dir()); never a library folder."""
+    return os.path.dirname(os.path.abspath(get_journal().path))
+
+
+def note_undo_handlers(journal: Journal | None = None) -> dict:
+    """What Tools > History needs to undo a written note: kind -> handler(entry) -> (ok, message), for 'note' (created)
+    and 'note-update' (refreshed). The note goes to the Recycle Bin, or to Preferences' backup folder on a drive
+    without one."""
+    from redactor_common.core.notes_model import KIND_NOTE, KIND_NOTE_UPDATE, make_note_undo_handler
+
+    from core import recycle
+
+    handler = make_note_undo_handler(journal or get_journal(), notes_backup_base(),
+                                     fallback_folder=recycle.recycle_fallback_folder)
+    return {KIND_NOTE: handler, KIND_NOTE_UPDATE: handler}
+
+
 def delete_journal() -> str:
     """Sends the journal file to the Recycle Bin (Preferences > History >
-    Delete History...; owner rule: deletes go to the Recycle Bin), and
-    removes a leftover prune temp file. Returns "" or a plain-language problem."""
+    Delete History...; owner rule: deletes go to the Recycle Bin), the kept
+    text of refreshed notes (notes_backup) with it, and removes a leftover
+    prune temp file. Returns "" or a plain-language problem."""
     path = get_journal().path
     try:
+        from redactor_common.core.notes_model import backup_folder
+
+        backups = backup_folder(notes_backup_base())
+        if os.path.isdir(backups):
+            _trash(backups)
         if os.path.exists(path):
             _trash(path)
         if os.path.exists(path + ".tmp"):

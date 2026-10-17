@@ -29,11 +29,12 @@ from redactor_common.core.preferences import (
 from PyQt6.QtWidgets import QMessageBox
 from redactor_common.gui.preferences_dialog import PreferencesDialog
 
-from core import history, notes_cache, notes_debug
+from core import history, notes_cache, notes_debug, recycle
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
 
 KEY_LIBRARY_ROOT = "library_root"
+KEY_RECYCLE_FALLBACK = "recycle_fallback_folder"  # redactor_common.core.trash.RECYCLE_FALLBACK_FOLDER_KEY
 KEY_DELETE_BACKUP = "delete_backup_after_fix"
 KEY_HISTORY = "history_enabled"
 KEY_NOTES_CACHE = "notes_cache_enabled"
@@ -58,6 +59,7 @@ FIELD_BY_KEY = {
     KEY_ZERO_PAD_WIDTH: "rename_zero_pad_width",
     KEY_AUTO_NUMBER_PADDING: "auto_number_padding",
     KEY_LIBRARY_ROOT: "library_root",
+    KEY_RECYCLE_FALLBACK: "recycle_fallback_folder",
     KEY_DELETE_BACKUP: "delete_backup_after_fix",
     KEY_HISTORY: "history_enabled",
     KEY_NOTES_CACHE: "notes_cache_enabled",
@@ -96,6 +98,11 @@ def preference_sections() -> list[PrefSection]:
                 KEY_LIBRARY_ROOT, "Library folder", "path", "",
                 help="The top folder of your music library. Rename and Export by "
                      "pattern start from it. Leave blank for none.",
+                path_mode="folder",
+            ),
+            PrefSpec(
+                KEY_RECYCLE_FALLBACK, "Backup folder for drives without a Recycle Bin", "path", "",
+                help=recycle.BACKUP_FOLDER_HELP,
                 path_mode="folder",
             ),
         )),
@@ -163,6 +170,8 @@ def settings_backend(settings: Settings, save: Callable[[Settings], None]) -> Ca
         save(settings)
         if KEY_NOTES_DEBUG in values:
             notes_debug.set_enabled(settings.notes_debug_log)  # the running app follows at once
+        if KEY_RECYCLE_FALLBACK in values:
+            recycle.set_recycle_fallback_folder(settings.recycle_fallback_folder)  # the running app follows at once
         if KEY_HISTORY in values:
             history.set_history_enabled(settings.history_enabled)  # the running app follows at once
 

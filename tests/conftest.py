@@ -54,7 +54,7 @@ class FakeRecycleBin:
         self.trashed: list[str] = []
         self.fail_with: Exception | None = None
 
-    def __call__(self, path: str) -> None:
+    def __call__(self, path: str, fallback_folder: str | None = None) -> None:
         import os
         import shutil
 
@@ -79,9 +79,6 @@ def recycle_bin(monkeypatch, tmp_path):
     from core import history  # Preferences > History > Delete History... sends the journal to the bin
 
     monkeypatch.setattr(history, "_trash", bin_)
-    from core import notes_flow  # undoing a created note (opt-in history) goes to the bin too
-
-    monkeypatch.setattr(notes_flow, "_trash", bin_)
     from redactor_common.core import trash  # replacing an older note (replace_note) trashes the old one through here
 
     monkeypatch.setattr(trash, "move_to_trash", bin_)

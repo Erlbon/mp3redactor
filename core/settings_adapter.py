@@ -78,6 +78,7 @@ SECTION_KEYS: dict[str, dict[str, str]] = {
     "folders": {
         "last_directory": "str",
         "library_root": "str",
+        "recycle_fallback_folder": "str",  # a folder on this computer (the backup folder for drives without a Recycle Bin)
         # The offline MusicBrainz database and the dump it is built from: files on
         # this computer, so an imported path only counts if the file is there.
         "musicbrainz_database": "str",
@@ -106,7 +107,7 @@ _LABEL_PORTABLE = [
 ]
 _LABEL_MACHINE = [
     ("tools", "External tool paths (mp3val, ffmpeg, keyfinder, fpcalc)"),
-    ("folders", "Last-used folder, library root, MusicBrainz database and dump"),
+    ("folders", "Last-used folder, library root, backup folder, MusicBrainz database and dump"),
 ]
 
 # Integer fields: a sane floor so an imported 0/negative can't break padding.
@@ -196,3 +197,7 @@ class Mp3SettingsAdapter(sb.SettingsAdapter):
             from core import history
 
             history.set_history_enabled(settings.history_enabled)  # the running app follows at once
+        if key == "folders" and "recycle_fallback_folder" in coerced:
+            from core import recycle
+
+            recycle.set_recycle_fallback_folder(settings.recycle_fallback_folder)

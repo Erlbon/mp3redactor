@@ -89,7 +89,9 @@ def add_notes_parser(sub) -> None:
     parser.add_argument("--update", action="store_true",
                         help="also list the notes made by an older version of this app (stamped, an older format, "
                              "nobody edited them) and, with --write, replace ONLY those (the old note goes to the "
-                             "Recycle Bin). Notes edited by a person or not made by this app are never touched")
+                             "Recycle Bin; on a network drive there is no Recycle Bin: set a backup folder in Preferences "
+                             "or updates are refused). Notes edited by a person or not made by this app are never "
+                             "touched")
     parser.add_argument("--update-legacy", action="store_true",
                         help="with --update --write: ALSO replace the notes of the first versions (no stamp, so it "
                              "cannot be known whether they were edited; still the Recycle Bin, still never an edited "

@@ -132,7 +132,11 @@ def is_collection_name(name: str) -> bool:
 
 
 def is_generic_name(name: str) -> bool:
-    """A place-to-keep-music name, raw or cleaned of its numbering ('780 - Music', '0 - Bands')."""
+    """A place-to-keep-music name, raw or cleaned of its numbering ('780 - Music', '0 - Bands'). A drive root or a
+    network share root (D: or //server/Music) has no folder name at all: it is a place too, never an artist or genre
+    to write a note for."""
+    if not (name or "").strip():
+        return True
     return any(fold_name(n) in GENERIC_FOLDER_NAMES for n in {name, lookup_name(name)})
 
 
@@ -400,7 +404,7 @@ def scan(
             if kind not in wanted:
                 return
         if kind in (KIND_ARTIST, KIND_GENRE) and is_generic_name(folder.name.lstrip("_")) and not is_collection_name(folder.name):
-            result.skipped.append(Skipped(folder, kind, f"'{folder.name}' is not a {kind} folder name"))
+            result.skipped.append(Skipped(folder, kind, f"'{folder.name or folder}' is not a {kind} folder name"))
             result.library_root = result.library_root or key in root_keys
             return
         found = existing_note(folder)

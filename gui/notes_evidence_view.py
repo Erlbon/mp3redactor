@@ -21,6 +21,28 @@ from core.notes_evidence import Evidence, evidence_lines, read_evidence
 THUMB = 160
 CACHE_LIMIT = 48
 _CACHE: "OrderedDict[tuple[str, str], Evidence]" = OrderedDict()
+# The GUI thread reads and re-orders the cache while worker threads add to it and drop the oldest: every access goes
+# through these helpers under one lock (an unguarded move_to_end racing a popitem could raise KeyError).
+_CACHE_LOCK = threading.Lock()
+
+
+def _cache_get(key: tuple) -> Optional[Evidence]:
+    with _CACHE_LOCK:
+        found = _CACHE.get(key)
+        if found is not None:
+            try:
+                _CACHE.move_to_end(key)
+            except KeyError:  # dropped by another thread between get and move: still a valid answer
+                pass
+        return found
+
+
+def _cache_put(key: tuple, evidence: Evidence) -> None:
+    with _CACHE_LOCK:
+        _CACHE[key] = evidence
+        _CACHE.move_to_end(key)
+        while len(_CACHE) > CACHE_LIMIT:
+            _CACHE.popitem(last=False)
 
 
 def make_thumb(data: bytes, size: int = THUMB) -> Optional[bytes]:
@@ -48,7 +70,8 @@ def load_evidence(folder: Path, kind: str, loader=None) -> Evidence:
 
 
 def clear_cache() -> None:
-    _CACHE.clear()
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 class LocalEvidenceView(QWidget):
@@ -104,9 +127,8 @@ class LocalEvidenceView(QWidget):
         self._token += 1
         token = self._token
         self._pending = key
-        cached = _CACHE.get(key)
+        cached = _cache_get(key)
         if cached is not None:
-            _CACHE.move_to_end(key)
             self._show(cached, token)
             return
         self._set_strip([])
@@ -116,9 +138,7 @@ class LocalEvidenceView(QWidget):
 
         def work() -> None:
             evidence = load_evidence(Path(folder), kind, loader)
-            _CACHE[key] = evidence
-            while len(_CACHE) > CACHE_LIMIT:
-                _CACHE.popitem(last=False)
+            _cache_put(key, evidence)
             try:
                 self._ready.emit(evidence, token)
             except RuntimeError:  # the dialog was closed meanwhile

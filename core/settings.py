@@ -189,6 +189,11 @@ class Settings:
     # unless the user asked for it). Stored as [history] enabled.
     history_enabled: bool = False
 
+    # Where a replaced note (Create Notes > a refresh) goes on a drive WITHOUT a Recycle Bin (a network share or a
+    # mapped network drive); redactor_common.core.trash.RECYCLE_FALLBACK_FOLDER_KEY. "" = none: a refresh there is
+    # refused and the older note stays. A folder on THIS computer: only in the "this computer" part of Export Settings.
+    recycle_fallback_folder: str = ""
+
     # The offline MusicBrainz database (Tools > MusicBrainz Database Setup...,
     # core/musicbrainz_import.py): the built SQLite file, the core dump
     # (mbdump.tar.bz2) it is built from, and the build options as one line
@@ -263,6 +268,7 @@ class Settings:
             "rename_pattern": self.rename_pattern,
             "move_pattern": self.move_pattern,
             "library_root": self.library_root,
+            "recycle_fallback_folder": self.recycle_fallback_folder,
             "redact_recipe": self.redact_recipe,
             "allow_unencrypted_fallback": str(self.allow_unencrypted_fallback),
             "musicbrainz_database": self.musicbrainz_database,
@@ -320,6 +326,7 @@ class Settings:
             rename_pattern=section.get("rename_pattern", fallback=""),
             move_pattern=section.get("move_pattern", fallback=""),
             library_root=section.get("library_root", fallback=""),
+            recycle_fallback_folder=section.get("recycle_fallback_folder", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
             allow_unencrypted_fallback=_get_bool(section, "allow_unencrypted_fallback", False),
             musicbrainz_database=section.get("musicbrainz_database", fallback=""),

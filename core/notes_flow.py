@@ -60,7 +60,9 @@ from redactor_common.core import note_text
 from redactor_common.core.notes_model import KIND_NOTE, STATUS_SKIPPED, Candidate, NotesSummary  # noqa: F401 -- the shared model
 from redactor_common.core.notes_model import Proposal as _Proposal
 from redactor_common.core.notes_model import summarize as _summarize
-from redactor_common.core.notes_model import text_sha, undo_note_entry as _undo_note_entry, write_proposal as _write_proposal
+from redactor_common.core.notes_model import (
+    record_note_entry, text_sha, undo_note_entry as _undo_note_entry, write_proposal as _write_proposal,
+)
 from redactor_common.core.notes import (
     STATUS_ERROR, STATUS_WRITTEN, NoteState, NoteWriteResult, normalize_note_text, note_path, replace_note, write_note,
 )
@@ -346,16 +348,22 @@ class NotesEngine:
         return self._dispatch(target)
 
     def set_links(self, folder: str, url: str) -> None:
-        """A link (Wikipedia, MusicBrainz, Discogs) given for a folder (its name, cleaned name or path): the lookup of that
-        folder goes straight to what the link names (the command line's --link)."""
+        """A link (Wikipedia, MusicBrainz, Discogs) given for a folder: its FULL name or its full path (the command
+        line's --link). The folder name must match completely after the usual folding (case, accents, punctuation): a
+        short name no longer also matches 'Leningrad' inside '1999 - Leningrad' (the numbering-stripped name), and a
+        name does not apply to a folder of the same name inside it (a self-titled album in its artist's folder): give
+        the path to link that one."""
         parse_link(url)  # validated now: a bad link is an error at once, not a silent miss later
-        for key in {fold_name(folder), fold_name(lookup_name(folder)), os.path.normcase(os.path.abspath(folder))}:
+        for key in {fold_name(folder), os.path.normcase(os.path.abspath(folder))}:
             self._links[key] = url
 
     def _link_override(self, folder: Path) -> str:
-        for key in (os.path.normcase(str(folder)), fold_name(folder.name), fold_name(lookup_name(folder.name))):
-            if key in self._links:
-                return self._links[key]
+        path_key = os.path.normcase(os.path.abspath(str(folder)))
+        if path_key in self._links:
+            return self._links[path_key]
+        name_key = fold_name(folder.name)
+        if name_key in self._links and fold_name(folder.parent.name) != name_key:
+            return self._links[name_key]
         return ""
 
     def candidate_from_link(self, proposal: Proposal, link: str) -> Candidate:
@@ -1782,36 +1790,35 @@ def _sha(text: str) -> str:
 def write_proposal(proposal: Proposal, dry_run: bool = False, allow_uncertain: bool = False) -> NoteWriteResult:
     """Writes the draft of a CONFIDENT proposal (the shared write_proposal: an uncertain / none one is refused with
     status 'skipped' unless a person chose it, an existing note is never overwritten). With the opt-in history on, a
-    written note is recorded so it can be undone (undo_note_entry)."""
-    return _write_proposal(proposal, dry_run, allow_uncertain, record=record_note_created)
+    written note is recorded so it can be undone from Tools > History (undo_note_entry). A refresh sends the older note
+    to the Recycle Bin, or to Preferences' backup folder on a drive without one (a network share); with neither it is
+    refused and says so."""
+    from core.recycle import note_mover
+
+    return _write_proposal(proposal, dry_run, allow_uncertain, record=record_note_created, trash=note_mover())
 
 
-def record_note_created(path: str, text: str, replaced: bool = False) -> None:
-    """Journal entry for a created note when the opt-in history is on (otherwise nothing is touched). The entry
-    keeps the SHA-256 of what was written so an undo can tell whether the person edited it since."""
-    from core.history import _report, get_journal, history_enabled
+def record_note_created(path: str, text: str, replaced: bool = False, old_bytes=None) -> None:
+    """Journal entry for a written note when the opt-in history is on (otherwise nothing is touched, nothing stored). A
+    created note is 'note'; a refresh is 'note-update' and keeps the replaced text in notes_backup next to the
+    settings, so the undo can put it back. The entry keeps the SHA-256 of what was written so an undo can tell whether
+    the person edited it since."""
+    from core.history import _report, get_journal, history_enabled, notes_backup_base
 
     if not history_enabled():
         return
     try:
-        before = "an older note, now in the Recycle Bin" if replaced else ""
-        get_journal().record(path, KIND_NOTE, {"note": (before, Path(path).name)}, note=f"sha256:{_sha(text)}")
+        record_note_entry(get_journal(), notes_backup_base(), path, text, replaced, old_bytes)
     except Exception as exc:  # noqa: BLE001 -- the note is already written; a journal failure never undoes it
         _report(exc)
 
 
-def _trash(path: str) -> None:
-    """The Recycle Bin (redactor_common.core.trash); tests replace it."""
-    from redactor_common.core.trash import move_to_trash
-
-    move_to_trash(path)
-
-
 def undo_note_entry(entry, journal=None) -> str:
-    """Undoes a journal entry of a created note (the shared undo: Recycle Bin, only if it still holds exactly what
-    was written). Returns '' or a plain-language problem."""
-    if journal is None:
-        from core.history import get_journal
+    """Undoes a journal entry of a written note (the shared undo: Recycle Bin or the backup folder, only if it still
+    holds exactly what was written; a refresh gets its older text back). Returns '' or a plain-language problem."""
+    from core.history import get_journal, notes_backup_base
+    from core.recycle import note_mover
 
+    if journal is None:
         journal = get_journal()
-    return _undo_note_entry(entry, journal, trash=lambda path: _trash(path))
+    return _undo_note_entry(entry, journal, trash=note_mover(), backup_base=notes_backup_base())

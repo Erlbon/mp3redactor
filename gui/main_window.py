@@ -113,6 +113,7 @@ from core.history import (
     journal_exists,
     journal_for_dialog,
     make_rename_log,
+    note_undo_handlers,
     set_history_enabled,
     take_journal_problem,
 )
@@ -750,7 +751,7 @@ class MainWindow(QMainWindow):
                 restored.append(path)
             return problem
 
-        HistoryDialog(journal_for_dialog(), restore, self, title).exec()
+        HistoryDialog(journal_for_dialog(), restore, self, title, undo_handlers=note_undo_handlers()).exec()
         self._reload_restored(restored)
 
     def _reload_restored(self, paths: list[str]) -> None:

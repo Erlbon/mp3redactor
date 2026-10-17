@@ -258,8 +258,9 @@ def test_tools_history_opens_the_dialog_and_reloads_restored_rows(window, tmp_pa
         """Stands in for HistoryDialog: 'restores' the newest entry the way the
         real dialog does (the callable from the app, then the journal record)."""
 
-        def __init__(self, journal_, apply_restore, parent, title):
+        def __init__(self, journal_, apply_restore, parent, title, undo_handlers=None):
             seen.update(journal=journal_, parent=parent, title=title)
+            assert sorted(undo_handlers) == ["note", "note-update"]  # batch 4: written notes are undone from here
             self.apply_restore = apply_restore
 
         def exec(self):

@@ -264,4 +264,7 @@ def test_cli_update_records_the_replacement_in_the_opt_in_history(tmp_path, cli,
     history.set_history_enabled(True)
     cli(str(tmp_path), "--kind", "artist", "--update", "--write")
     [entry] = journal.entries()
-    assert entry.kind == "note" and "Recycle Bin" in str(entry.changes)
+    assert entry.kind == "note-update" and "Recycle Bin" in str(entry.changes)  # batch 4: a refresh has its own kind
+    import os
+
+    assert os.path.isfile(os.path.join(history.notes_backup_base(), "notes_backup", f"{entry.id}.md"))  # the older text, for the undo
