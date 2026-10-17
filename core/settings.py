@@ -125,6 +125,8 @@ class Settings:
     # index) based persistence matters.
     hidden_columns: list[str] = field(default_factory=list)
     column_order: list[str] = field(default_factory=list)
+    # The user's order of the side-panel fields (drag a field by its grip), by field key; [] = the default order.
+    panel_field_order: list[str] = field(default_factory=list)
     # True once the user has ever saved a hidden-columns choice --
     # including an explicit "show everything" (an empty list is still
     # a saved choice). Distinct from hidden_columns == [], which is
@@ -265,6 +267,7 @@ class Settings:
             "include_subfolders": str(self.include_subfolders),
             "hidden_columns": _dump_list(self.hidden_columns),
             "column_order": _dump_list(self.column_order),
+            "panel_field_order": _dump_list(self.panel_field_order),
             "has_column_preference": str(self.has_column_preference),
             "path_column_seeded": str(self.path_column_seeded),
             "custom_genres": _dump_list(self.custom_genres),
@@ -326,6 +329,7 @@ class Settings:
             include_subfolders=_get_bool(section, "include_subfolders", True),
             hidden_columns=_load_str_list(section.get("hidden_columns", fallback="")),
             column_order=_load_str_list(section.get("column_order", fallback="")),
+            panel_field_order=_load_str_list(section.get("panel_field_order", fallback="")),
             has_column_preference=_get_bool(section, "has_column_preference", False),
             path_column_seeded=_get_bool(section, "path_column_seeded", False),
             custom_genres=_load_str_list(section.get("custom_genres", fallback="")),

@@ -474,7 +474,7 @@ class MainWindow(QMainWindow):
         self._cover_preview = AsyncPreviewLoader(COVER_PREVIEW_SIZE, parent=self)
         self._cover_preview.image_ready.connect(self._on_cover_preview_ready)
 
-        self.tag_panel = TagPanel()
+        self.tag_panel = TagPanel(field_order_store=(self._load_panel_field_order, self._save_panel_field_order))
         self.tag_panel.setMinimumWidth(24)
         self.tag_panel.setMaximumWidth(440)
         self.tag_panel.applyRequested.connect(self._apply_bulk_edit)
@@ -2307,12 +2307,20 @@ class MainWindow(QMainWindow):
         if "table_colours" in result.applied:
             self._repaint_band_colours()
 
+    def _load_panel_field_order(self) -> list[str]:
+        return list(self.settings.panel_field_order)
+
+    def _save_panel_field_order(self, order: list[str]) -> None:
+        self.settings.panel_field_order = list(order)
+        save_settings(self.settings)
+
     def _apply_column_settings(self) -> None:
         hidden = sanitize_hidden_fields(
             set(self.settings.hidden_columns) if self.settings.has_column_preference
             else set(DEFAULT_HIDDEN_COLUMNS),
             PROTECTED_COLUMNS,
         )
+        self.tag_panel.reload_field_order()  # the imported side-panel field order
         for key in self._column_keys:
             self.table.setColumnHidden(self._col_index[key], key in hidden)
         # Reorder to the imported visual order; signals blocked so moving

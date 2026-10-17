@@ -58,6 +58,7 @@ from PyQt6.QtWidgets import (
 from core.fields import FIELDS, QUICK_PICK_FIELDS
 from core.mp3_file import MP3File
 from redactor_common.gui.collapsible_splitter import CollapseToggleButton
+from redactor_common.gui.field_order import FieldOrderController, FieldRow, reorder_grid_rows
 from redactor_common.gui.grid_utils import absorb_extra_row_space
 from redactor_common.gui.image_pane import ImagePanelSplitter, ImagePreviewBox
 
@@ -119,8 +120,13 @@ class TagPanel(QWidget):
     coverRemoveRequested = pyqtSignal()
     coverExportRequested = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, field_order_store=None):
+        """`field_order_store` = (load, save) callables for the user's side-panel field order (a list of field
+        keys); None keeps it in memory only."""
         super().__init__(parent)
+        self._order_memory: list[str] = []
+        self._field_order_load, self._field_order_save = field_order_store or (
+            lambda: list(self._order_memory), lambda order: setattr(self, "_order_memory", list(order)))
         self._checkboxes: dict[str, QCheckBox] = {}
         self._editors: dict[str, MultiValueLineEdit] = {}
         self._labels: dict[str, QLabel] = {}
@@ -183,6 +189,20 @@ class TagPanel(QWidget):
         # Without this, the gap between every field visibly grows as the
         # window/panel is resized taller -- see grid_utils.py's docstring.
         absorb_extra_row_space(grid, len(FIELDS))
+
+        # Drag a field by its grip (redactor_common's field_order): the rows are only permuted, never rebuilt, so
+        # values, the "mixed" placeholder and the tick boxes stay with their field.
+        def field_rows() -> dict[str, list[QWidget]]:
+            return {key: [self._checkboxes[key], self._labels[key], self._row_widgets[key]] for key, _l, _m in FIELDS}
+
+        self._field_order = FieldOrderController(
+            fields_box,
+            get_rows=lambda: [FieldRow(key, widgets) for key, widgets in field_rows().items()],
+            apply_order=lambda order: reorder_grid_rows(grid, field_rows(), order),
+            default_order=lambda: [key for key, _l, _m in FIELDS],
+            load_order=self._field_order_load, save_order=self._field_order_save,
+        )
+        self._field_order.apply_saved()
 
         # Fields on top, cover below, with a draggable divider between --
         # redactor_common's ImagePanelSplitter, the same resizable image
@@ -296,6 +316,14 @@ class TagPanel(QWidget):
         widget's) and calls this after any change -- the toggle button
         click, or the user dragging the splitter handle by hand."""
         self.collapse_toggle_btn.set_collapsed(collapsed)
+
+    def reset_field_order(self) -> None:
+        """Back to the default field order (also: right-click a grip or the panel > Reset Field Order)."""
+        self._field_order.reset()
+
+    def reload_field_order(self) -> None:
+        """Re-lays the fields out from the saved order (after Import Settings)."""
+        self._field_order.apply_saved()
 
     def set_visible_fields(self, visible_keys: set[str]) -> None:
         """Shows/hides each field's row to match `visible_keys` (the

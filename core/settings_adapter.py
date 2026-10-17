@@ -50,6 +50,7 @@ SECTION_KEYS: dict[str, dict[str, str]] = {
     "columns": {
         "hidden_columns": "strlist",
         "column_order": "strlist",
+        "panel_field_order": "strlist",
         "has_column_preference": "bool",
     },
     "field_defaults": {
@@ -103,7 +104,7 @@ _EXISTING_FILE_KEYS = frozenset({"musicbrainz_database", "musicbrainz_dump"})
 _LABEL_PORTABLE = [
     ("recipe", "Redact recipe"),
     ("patterns", "Rename, move and path patterns (history and saved)"),
-    ("columns", "Column layout, visibility and order"),
+    ("columns", "Column layout, visibility and order, and the side-panel field order"),
     ("field_defaults", "Field defaults (ASCII, zero-padding, numbering, backups)"),
     ("genres_languages", "Custom genres and languages"),
     ("table_colours", "Table colours (the Bitrate column's poor and good limits)"),
