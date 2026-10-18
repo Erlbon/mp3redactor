@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-18#02 -- The shared conversion policy: Preferences > Conversion
+
+Shared part: redactor_common 2026-10-18#06 (core/conversion_policy.py, gui/conversion_policy_widget.py); videoredactor has it already, books and comics follow.
+- New: **Tools > Preferences > Conversion**, the page every Redactor app shares: what happens when audio in another format is opened (ask / convert automatically, with a report afterwards / never offer), what becomes of the original after a verified conversion (a dated "converted originals" folder with a TSV undo log / the Recycle Bin / keep), the quarantine and undo-log folders, "leave files modified in the last N minutes", and whether the Convert box starts as a dry run.
+- File > Import and Convert and the Open Folder offer follow it. The Convert to MP3 box has a new **Dry run** check box (starts as the page says): it lists what would be converted and what would happen to each original, and changes nothing. Automatic mode converts at the default bitrate (192 kbps) without asking.
+- Safety: an original is moved or recycled only after its MP3 opens and has the same length (within 1.5 s); an unreadable result, an unreadable original length, a Recycle Bin that cannot be used, or an original changed in the last N minutes leaves the original where it is, and the report says so. Nothing is ever deleted.
+- **Nothing changes until you press OK on the new page**: until then the app asks, keeps the original beside the new MP3 and has no dry run, exactly as before. The new core is `core/conversion_safety.py`; the policy is stored in `[conversion_policy]` of the settings file.
+- Tests: the legacy defaults, each on-open value, keep / quarantine / recycle with the undo log (and undo), unverified results, the dry run changing nothing, a real ffmpeg conversion, and the page saving on OK and dropping on Cancel.
+
 ## 2026-10-18#01 -- No Remove from List in the right-click menu
 
 - Right-click > Remove from List is gone (it sat next to commands that look destructive). File > Remove from List, the Delete key and Clear List stay. Nothing else in the menu changed.

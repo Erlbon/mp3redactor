@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 from core.audio_quality import convert_hint
 
 
 class ConvertBitrateDialog(QDialog):
-    def __init__(self, parent, choices_kbps: list[int], default_kbps: int, band_settings) -> None:
+    def __init__(self, parent, choices_kbps: list[int], default_kbps: int, band_settings, dry_run: bool = False) -> None:
         super().__init__(parent)
         self.setWindowTitle("Convert to MP3")
         self._choices = list(choices_kbps)
@@ -29,6 +29,11 @@ class ConvertBitrateDialog(QDialog):
         self.hint = QLabel()
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
+        # The shared conversion policy's "dry run first" (Preferences > Conversion): list what would be converted and what
+        # would happen to each original, change nothing.
+        self.dry_run = QCheckBox("Dry run: list what would be converted and what happens to the originals, change nothing")
+        self.dry_run.setChecked(dry_run)
+        layout.addWidget(self.dry_run)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -43,9 +48,13 @@ class ConvertBitrateDialog(QDialog):
         self.hint.setText(convert_hint(self.chosen_kbps(), self._band_settings))
 
 
-def ask_convert_bitrate(parent, choices_kbps: list[int], default_kbps: int, band_settings) -> Optional[int]:
-    """The chosen bitrate in kbps, or None when cancelled."""
-    dialog = ConvertBitrateDialog(parent, choices_kbps, default_kbps, band_settings)
+def ask_convert_bitrate(parent, choices_kbps: list[int], default_kbps: int, band_settings,
+                        dry_run: bool = False, answer: Optional[dict] = None) -> Optional[int]:
+    """The chosen bitrate in kbps, or None when cancelled. `dry_run` is the box's starting state; the final state is
+    put into `answer["dry_run"]` when a dict is given."""
+    dialog = ConvertBitrateDialog(parent, choices_kbps, default_kbps, band_settings, dry_run)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
+    if answer is not None:
+        answer["dry_run"] = dialog.dry_run.isChecked()
     return dialog.chosen_kbps()

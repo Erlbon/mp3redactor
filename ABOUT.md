@@ -38,6 +38,12 @@ time.
   steps.
 - **Convert other formats**: File > Import and Convert turns FLAC, WAV, OGG, M4A, WMA, Opus or AIFF into MP3
   beside the original. Opening a folder that has no MP3 at all but such files offers the same.
+  Tools > Preferences > Conversion (the page every Redactor app shares) sets what happens: when such files are opened
+  (ask, convert automatically with a report afterwards, or never offer), what becomes of the original once the new MP3
+  is checked (kept beside it, as always; moved to a dated "converted originals" folder with an undo log; or the Recycle
+  Bin), and whether the Convert box starts as a dry run that lists what would happen and changes nothing. Until you
+  press OK on that page nothing differs from before. Files are never deleted; an original is only moved after its MP3
+  opens and has the same length (within 1.5 s), and one changed in the last few minutes is left alone.
 - **M4B audiobooks**: File > Create M4B Audiobook joins the selected MP3s into a chaptered `.m4b` (one book per
   folder), with optional Audible / Open Library lookup and an Audiobookshelf-style library layout.
 - **Create Notes** (Tools > Create Notes, or right-click > Create Notes for This Folder) drafts the short Markdown notes

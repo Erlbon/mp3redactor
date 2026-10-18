@@ -38,6 +38,7 @@ from redactor_common.core.pattern_history import dedupe_and_trim
 
 SETTINGS_FILENAME = "mp3redactor_settings.ini"
 SECTION = "general"
+CONVERSION_SECTION = "conversion_policy"  # the shared conversion policy (core/conversion_safety.py); redactor_common's keys
 HISTORY_SECTION = "history"  # [history] enabled = Tools > History records changes (opt-in)
 
 # Rename/Export <-> Parse Filename pattern history -- shared between both
@@ -225,6 +226,10 @@ class Settings:
     band_poor_kbps: int = 128
     band_good_kbps: int = 192
 
+    # Preferences > Conversion: the raw [conversion_policy] keys (redactor_common.core.conversion_policy). Empty until the
+    # user saves that page once; core/conversion_safety.get_policy() then answers with the old behaviour.
+    conversion_policy: dict[str, str] = field(default_factory=dict)
+
     def audio_band_settings(self):
         """The shared profile's settings built from the two limits (a bad stored value is repaired, not trusted)."""
         from core.audio_quality import band_settings
@@ -304,6 +309,8 @@ class Settings:
             "band_good_kbps": str(self.band_good_kbps),
         }
         config[HISTORY_SECTION] = {"enabled": str(self.history_enabled)}
+        if self.conversion_policy:
+            config[CONVERSION_SECTION] = {k: str(v) for k, v in self.conversion_policy.items()}
         return config
 
     @classmethod
@@ -311,6 +318,8 @@ class Settings:
         settings = cls._from_general(config)
         if HISTORY_SECTION in config:
             settings.history_enabled = _get_bool(config[HISTORY_SECTION], "enabled", False)
+        if CONVERSION_SECTION in config:
+            settings.conversion_policy = dict(config[CONVERSION_SECTION])
         return settings
 
     @classmethod

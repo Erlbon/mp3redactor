@@ -41,7 +41,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | File | Open Files… | Ctrl+O |
 | File | Open Folder… | Ctrl+Shift+O |
 | File | Include Subfolders (ticked: Open Folder, drops and Refresh List search subfolders; also a checkbox on the toolbar next to Open Folder, both stay in step) | |
-| File | Import and Convert… (FLAC/WAV/OGG/M4A/... to MP3 beside the original) | |
+| File | Import and Convert… (FLAC/WAV/OGG/M4A/... to MP3 beside the original; the shared conversion policy in Preferences > Conversion, `core/conversion_safety.py`, decides on-open ask/auto/never, keep/quarantine/recycle for the original, and the dry-run default) | |
 | File | Create M4B Audiobook… | |
 | File | Play (plays the one selected file in a separate window; also a Play button on the toolbar and a large one under the cover in the side panel) | Ctrl+P |
 | File | Save All | Ctrl+Shift+A |

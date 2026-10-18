@@ -127,6 +127,7 @@ from core.settings import (
 from redactor_common.gui.qsettings_store import directory_for, resolve_start_directory
 from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
+from core import conversion_safety
 from gui.convert_bitrate_dialog import ask_convert_bitrate
 from gui.external_tools_dialog import ExternalToolsDialog
 from gui.lyrics_dialog import LyricsDialog
@@ -849,6 +850,11 @@ class MainWindow(QMainWindow):
             "Scanning for MP3 files...", lambda: find_mp3_files(raw_paths, recursive=self.settings.include_subfolders)
         )
         if not mp3_paths:
+            policy = conversion_safety.get_policy(self.settings)
+            if policy.on_open == conversion_safety.policy_mod.ON_OPEN_NEVER:
+                # The shared conversion policy says never convert: no walk, no offer.
+                QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
+                return
             # redactor_common's convert offer: the walk under run_busy, then one box listing the formats found
             # (Show Details lists the files).
             importable = find_convertible(
@@ -858,9 +864,12 @@ class MainWindow(QMainWindow):
             if not importable:
                 QMessageBox.information(self, "No MP3 Files", "No .mp3 files found in that selection.")
                 return
+            if policy.on_open == conversion_safety.policy_mod.ON_OPEN_AUTO:
+                self._convert_paths_and_load(list(importable), auto=True)
+                return
             answer = offer_conversion(
                 self, importable, 0, kind_label="MP3", target_label="MP3", noun="audio file",
-                question="Convert them to MP3 (beside the originals, which are kept) and load the new files?",
+                question=f"Convert them to MP3 ({self._originals_phrase(policy)}) and load the new files?",
                 title="No MP3 Files", yes_text="Yes", no_text="No",
             )
             if answer == CONVERT_YES:
@@ -1150,17 +1159,36 @@ class MainWindow(QMainWindow):
             return
         self._convert_paths_and_load(paths)
 
-    def _convert_paths_and_load(self, paths: list[str]) -> None:
-        """Asks the bitrate, converts `paths` to MP3 beside the originals and adds the results to the list."""
-        bitrate_kbps = ask_convert_bitrate(
-            self, BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, self.settings.audio_band_settings()
-        )
-        if bitrate_kbps is None:
-            return
+    @staticmethod
+    def _originals_phrase(policy) -> str:
+        """The convert question's words for what happens to the originals (the shared conversion policy)."""
+        if policy.originals == conversion_safety.policy_mod.ORIGINALS_RECYCLE:
+            return "the originals go to the Recycle Bin once the new files are checked"
+        if policy.originals == conversion_safety.policy_mod.ORIGINALS_QUARANTINE:
+            return "the originals are moved to a 'converted originals' folder, with an undo log, once the new files are checked"
+        return "beside the originals, which are kept"
+
+    def _convert_paths_and_load(self, paths: list[str], auto: bool = False) -> None:
+        """Asks the bitrate (and the dry-run choice), converts `paths` to MP3 beside the originals, deals with the
+        originals as the conversion policy says and adds the results to the list. `auto` (the policy's "convert
+        automatically"): no question, the default bitrate, and a report afterwards."""
+        policy = conversion_safety.get_policy(self.settings)
+        dry_run = False
+        if auto:
+            bitrate_kbps = DEFAULT_BITRATE_KBPS
+        else:
+            answer: dict = {}
+            bitrate_kbps = ask_convert_bitrate(
+                self, BITRATE_CHOICES_KBPS, DEFAULT_BITRATE_KBPS, self.settings.audio_band_settings(),
+                dry_run=policy.dry_run_first, answer=answer,
+            )
+            if bitrate_kbps is None:
+                return
+            dry_run = bool(answer.get("dry_run"))
 
         conversions, skipped = plan_conversions([Path(p) for p in paths])
 
-        if skipped:
+        if skipped and not auto and not dry_run:
             names = "\n".join(p.name for p in skipped)
             proceed = QMessageBox.question(
                 self,
@@ -1175,6 +1203,20 @@ class MainWindow(QMainWindow):
 
         if not conversions:
             self.statusBar().showMessage("Nothing to convert: every file already has an .mp3 of the same name.", 8000)
+            return
+
+        if dry_run:
+            # Changes nothing: only says what a real run would convert and what would happen to each original.
+            extra = f"; {len(skipped)} skipped (an .mp3 of the same name exists)" if skipped else ""
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("Dry Run")
+            box.setText(
+                f"{len(conversions)} file(s) would be converted to MP3 at {bitrate_kbps} kbps{extra}. Nothing was "
+                "changed. Run Import and Convert again without the dry run to do it."
+            )
+            box.setDetailedText("\n".join(conversion_safety.plan_originals(conversions, policy)))
+            box.exec()
             return
 
         # ffmpeg runs on a worker thread, so the window keeps painting during
@@ -1202,6 +1244,17 @@ class MainWindow(QMainWindow):
 
         succeeded_dests = [dest for _src, dest, status, _msg in results if status == STATUS_OK]
         failed = [f"{src.name}: {msg}" for src, _dest, status, msg in results if status != STATUS_OK]
+
+        # What happens to each original (the shared conversion policy): keep (as always), a dated quarantine folder
+        # with an undo log, or the Recycle Bin; only after the new file is verified.
+        outcomes: list[conversion_safety.OriginalOutcome] = []
+        if policy.originals != conversion_safety.policy_mod.ORIGINALS_KEEP:
+            run_with_progress(
+                self, [(src, dest) for src, dest, status, _m in results if status == STATUS_OK],
+                lambda pair, _i: outcomes.append(conversion_safety.handle_original(pair[0], pair[1], policy)),
+                "Moving the originals...", threshold=3, cancellable=False,
+            )
+        left = [f"{o.src.name}: {o.detail}" for o in outcomes if o.action == conversion_safety.LEFT]
 
         if succeeded_dests:
             newly_loaded: list[MP3File] = []
@@ -1232,6 +1285,19 @@ class MainWindow(QMainWindow):
                 f"{len(failed)} of {len(conversions)} file(s) could not be converted:\n\n"
                 f"{summarize_errors(failed)}{stopped}",
             )
+        elif auto or left:
+            # Convert automatically has no question to answer, so a report says what was done; originals the policy
+            # wanted to move but could not safely are listed too.
+            text = f"Converted and loaded {len(succeeded_dests)} file(s).{stopped}"
+            if left:
+                text += f"\n\n{len(left)} original(s) were left where they are:\n" + "\n".join(left)
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning if left else QMessageBox.Icon.Information)
+            box.setWindowTitle("Converted, Some Originals Left" if left else "Converted")
+            box.setText(text)
+            report = [f"{src.name} -> {dest.name}" for src, dest, status, _m in results if status == STATUS_OK]
+            box.setDetailedText("\n".join(report + [f"{o.src.name}: {o.detail}" for o in outcomes]))
+            box.exec()
         else:
             # A routine result: the status bar, not a box to click away.
             self.statusBar().showMessage(f"Converted and loaded {len(succeeded_dests)} file(s).{stopped}", 8000)

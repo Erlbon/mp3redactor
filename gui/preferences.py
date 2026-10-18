@@ -26,10 +26,11 @@ from redactor_common.core.preferences import (
     PrefSpec,
     filenames_section,
 )
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
+from redactor_common.gui.conversion_policy_widget import ConversionPolicyWidget
 from redactor_common.gui.preferences_dialog import PreferencesDialog
 
-from core import history, notes_cache, notes_debug, recycle
+from core import conversion_safety, history, notes_cache, notes_debug, recycle
 from core.audio_quality import DEFAULT_GOOD_KBPS, DEFAULT_POOR_KBPS, MAX_KBPS, MIN_KBPS, normalise_limits
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
@@ -211,17 +212,46 @@ def build_preferences_dialog(settings: Settings, save: Callable[[Settings], None
         holder.append(widget)
         return widget
 
+    policy_holder: list[ConversionPolicyWidget] = []
+
+    def conversion_page() -> QWidget:
+        """Preferences > Conversion: the shared policy (redactor_common) on top. The app has no further conversion
+        options here: the bitrate is asked at each conversion, and its colour limits live under Table colours."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        intro = QLabel(
+            "Used by File > Import and Convert and by the offer Open Folder makes when a folder holds audio in "
+            "other formats (FLAC, WAV, M4A...). Until you press OK or Apply here, the app behaves as before: it asks, "
+            "and the original stays beside the new MP3. The bitrate is asked at each conversion."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        widget = ConversionPolicyWidget(
+            conversion_safety.get_policy(settings), never_text="Open Folder does not offer other audio formats")
+        policy_holder.append(widget)
+        layout.addWidget(widget)
+        layout.addStretch(1)
+        return page
+
     dialog = PreferencesDialog(
         preference_sections(), settings_backend(settings, save), parent,
-        title="Preferences", extra_pages=[("Tools", tools_page)],
+        title="Preferences", extra_pages=[("Conversion", conversion_page), ("Tools", tools_page)],
     )
 
     def save_tool_paths() -> None:
         if holder and holder[0].apply_to(settings):
             save(settings)
 
+    def save_conversion() -> None:
+        # Only a changed page is saved: pressing OK elsewhere leaves a never-saved policy "never saved" (legacy behaviour).
+        if policy_holder and policy_holder[0].policy() != conversion_safety.get_policy(settings):
+            conversion_safety.save_policy(settings, policy_holder[0].policy())
+            save(settings)
+
     dialog.apply_button.clicked.connect(save_tool_paths)
     dialog.accepted.connect(save_tool_paths)
+    dialog.apply_button.clicked.connect(save_conversion)
+    dialog.accepted.connect(save_conversion)
     return dialog
 
 
