@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-18#01 -- No Remove from List in the right-click menu
+
+- Right-click > Remove from List is gone (it sat next to commands that look destructive). File > Remove from List, the Delete key and Clear List stay. Nothing else in the menu changed.
+
 ## 2026-10-17#07 -- A visible error box and a clear result after every Save All
 
 Shared part: redactor_common 2026-10-17#11 (gui/crash_dialog.py, core/save_report.py, run_with_progress(on_error=)); all four Redactor apps get it.

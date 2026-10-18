@@ -3191,7 +3191,7 @@ class MainWindow(QMainWindow):
                     MenuAction("edit_lyrics", "Edit Lyrics…", lambda: self.open_lyrics_dialog(files[0]))
                 )
             items.append(MenuAction("create_notes_here", "Create Notes for This Folder…", self.create_notes_for_selection))
-            items.extend([Separator(), self.action_redact, Separator(), self.action_remove_from_list])
+            items.extend([Separator(), self.action_redact])  # Remove from List: File menu (Delete key) only
             return items
 
         show_table_context_menu(

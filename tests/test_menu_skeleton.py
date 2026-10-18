@@ -168,7 +168,7 @@ def test_context_menu_core_and_submenus(window, tmp_path, monkeypatch):
     assert top == [
         "Open in Default App", "Open Containing Folder", "Copy Path", "Save Selected (0)", "Play", "Rename File",
         "Look Up", "Organize", "Analyze", "Cover", "Edit Lyrics",
-        "Create Notes for This Folder", "Redact", "Remove from List",
+        "Create Notes for This Folder", "Redact",
     ]
     by_name = {t[0]: t[1] for t in tree if isinstance(t, tuple)}
     assert by_name["Look Up"] == ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]
@@ -188,7 +188,7 @@ def test_context_menu_multi_selection_omits_single_file_rows(window, tmp_path, m
     tree = _context_menu_tree(window, monkeypatch)
     top = [t if isinstance(t, str) else t[0] for t in tree if t != "---"]
     assert "Rename File" not in top and "Edit Lyrics" not in top
-    assert top[-2:] == ["Redact", "Remove from List"]
+    assert top[-1:] == ["Redact"] and "Remove from List" not in top
 
 
 def test_remove_from_list_and_clear_list(window, tmp_path, monkeypatch):
