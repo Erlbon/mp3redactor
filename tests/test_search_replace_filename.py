@@ -11,6 +11,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox  # noqa: E402
 
 import gui.main_window as mw  # noqa: E402
@@ -39,9 +40,10 @@ def drive(monkeypatch):
                 self.search_edit.setText(find)
                 table = self.preview_table
                 seen.clear()
-                for r in range(table.rowCount()):  # the tick-box column has no item
+                for r in range(table.rowCount()):  # the tick-box cell (an item or a widget, by version) is not text
                     cells = [table.item(r, c) for c in range(table.columnCount())]
-                    seen.append(tuple(cell.text() for cell in cells if cell is not None))
+                    seen.append(tuple(cell.text() for cell in cells
+                                      if cell is not None and cell.data(Qt.ItemDataRole.CheckStateRole) is None))
                 return self.DialogCode.Accepted
 
         monkeypatch.setattr(mw, "SearchReplaceDialog", Driven)
