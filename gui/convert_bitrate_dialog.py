@@ -10,9 +10,10 @@ from typing import Optional
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 from core.audio_quality import convert_hint
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 
-class ConvertBitrateDialog(QDialog):
+class ConvertBitrateDialog(OwnedDialog):
     def __init__(self, parent, choices_kbps: list[int], default_kbps: int, band_settings, dry_run: bool = False) -> None:
         super().__init__(parent)
         self.setWindowTitle("Convert to MP3")

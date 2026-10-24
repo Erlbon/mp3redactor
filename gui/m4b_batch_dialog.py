@@ -36,6 +36,7 @@ from core.mp3_file import MP3File
 from gui.m4b_dialog import SIDECAR_LABEL, SIDECAR_TIP
 from redactor_common.core.rename_pattern import sanitize_filename
 from gui.columns import columns_resizable
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 LAYOUT_BESIDE = "beside"
 LAYOUT_LIBRARY = "library"
@@ -43,7 +44,7 @@ COL_INCLUDE, COL_TITLE, COL_AUTHOR, COL_NARRATOR, COL_SERIES, COL_NUMBER, COL_CH
 HEADERS = ["Make", "Title", "Author", "Narrator", "Series", "#", "Chapters", "Folder"]
 
 
-class M4bBatchDialog(QDialog):
+class M4bBatchDialog(OwnedDialog):
     def __init__(
         self,
         books: list[list[MP3File]],

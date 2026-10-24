@@ -29,9 +29,10 @@ from PyQt6.QtWidgets import (
 from core.discogs_lookup import SECRET_APP, SECRET_NAME, TOKEN_ENV_VAR, TOKEN_HELP_URL
 from redactor_common.gui.secret_field import SecretField
 from redactor_common.gui.secret_prompts import save_with_fallback_prompt
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 
-class ApiKeysDialog(QDialog):
+class ApiKeysDialog(OwnedDialog):
     def __init__(self, parent=None, remember_fallback: Callable[[], None] = lambda: None):
         """`remember_fallback` is called when the user agrees to an
         unencrypted file (the caller records that in its settings)."""

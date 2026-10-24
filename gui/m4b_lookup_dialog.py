@@ -25,6 +25,7 @@ from core.audiobook_lookup import (
 )
 from redactor_common.gui.background_call import call_in_background
 from gui.columns import columns_resizable
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 COLUMNS = ["Source", "Title", "Author", "Narrator", "Series", "#", "Year", "Length"]
 COVER_BOX = 160
@@ -34,7 +35,7 @@ def _length_text(minutes: int | None) -> str:
     return f"{minutes // 60}:{minutes % 60:02d}" if minutes else ""
 
 
-class M4bLookupDialog(QDialog):
+class M4bLookupDialog(OwnedDialog):
     def __init__(
         self, title: str, author: str, runtime_minutes: float | None, region: str = DEFAULT_REGION,
         fetch=None, parent=None,

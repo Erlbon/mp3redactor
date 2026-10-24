@@ -38,6 +38,7 @@ from core.m4b_builder import (
 from core.mp3_file import MP3File
 from redactor_common.core.rename_pattern import sanitize_filename
 from gui.columns import columns_resizable
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 COL_NUMBER, COL_TITLE, COL_LENGTH, COL_FILE = range(4)
 SIDECAR_LABEL = "Also write metadata.opf and a cover image beside the audiobook (Audiobookshelf, Calibre)"
@@ -58,7 +59,7 @@ def _format_length(seconds: float | None) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
-class M4bDialog(QDialog):
+class M4bDialog(OwnedDialog):
     def __init__(
         self, files: list[MP3File], bitrate_kbps: int = DEFAULT_BITRATE_KBPS, sidecar: bool = False,
         region: str = DEFAULT_REGION, lookup_fetch=None, parent=None,

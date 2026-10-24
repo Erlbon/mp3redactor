@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-24#01 -- Dialogs no longer stay in memory after they are closed
+
+Shared part: redactor_common 2026-10-24#03 (gui/owned_dialog.py).
+- **A memory leak is fixed.** Every dialog was made with the main window as its parent, and Qt keeps a child alive as long as its parent, so each dialog that had been opened stayed in memory with all its widgets until the program closed: about 21 dialogs leaked (Preferences, Create Notes, Lookups and others). Now every dialog uses the shared `OwnedDialog` base, whose `exec()` frees the dialog once control is back in the event loop, so what the code reads from it right after it closes is still there. A test fails when a new dialog class is made straight from QDialog.
+
 ## 2026-10-18#02 -- The shared conversion policy: Preferences > Conversion
 
 Shared part: redactor_common 2026-10-18#06 (core/conversion_policy.py, gui/conversion_policy_widget.py); videoredactor has it already, books and comics follow.

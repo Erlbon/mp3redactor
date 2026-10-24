@@ -57,6 +57,7 @@ from redactor_common.core.notes import parse_front_matter
 from gui.columns import columns_resizable
 from redactor_common.gui.progress import run_busy
 from redactor_common.gui.work_progress import run_work_with_progress
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 log = logging.getLogger("mp3redactor.notes")
 
@@ -584,7 +585,7 @@ class ProposalPanel(QWidget):
 # The review page
 # ---------------------------------------------------------------------------------------------------------------
 
-class NotesReviewDialog(QDialog):
+class NotesReviewDialog(OwnedDialog):
     def __init__(
         self, session: ReviewSession, view: str,
         rebuild: Callable[[Proposal, Optional[Candidate], str], Proposal],
@@ -1412,7 +1413,7 @@ class _DescribeThread(QThread):
         self.described.emit(infos)
 
 
-class NotesScopeDialog(QDialog):
+class NotesScopeDialog(OwnedDialog):
     """The first step of Tools > Create Notes: which folder? A short list of radio buttons (the folder you opened,
     the artist / album of the selected files, one level up, the last folder, the library folder) and "Another
     folder...". The first useful one is ticked, so Enter just works. The selected files are only ever one of the

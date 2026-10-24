@@ -41,9 +41,10 @@ from redactor_common.gui.progress import run_busy
 
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_file import MP3File, STATUS_OK
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 
-class LyricsDialog(QDialog):
+class LyricsDialog(OwnedDialog):
     def __init__(self, mp3: MP3File, parent=None):
         super().__init__(parent)
         self.mp3 = mp3

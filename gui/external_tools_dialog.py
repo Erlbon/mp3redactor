@@ -25,6 +25,7 @@ from core.keyfinder_runner import KEYFINDER_EXE_NAME
 from core.mp3val_runner import MP3VAL_EXE_NAME
 from core.settings import Settings
 from core.tool_locator import find_tool
+from redactor_common.gui.owned_dialog import OwnedDialog
 
 # (row label, executable, Settings field), in the order shown.
 TOOLS = (
@@ -83,7 +84,7 @@ class ToolPathsWidget(SharedToolPathsWidget):
         return changed
 
 
-class ExternalToolsDialog(QDialog):
+class ExternalToolsDialog(OwnedDialog):
     def __init__(self, settings: Settings, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Locate External Tools")
