@@ -38,3 +38,6 @@ mp3redactor_notes_cache.sqlite*
 
 # Written next to the crash log when History is on (one line per Save All)
 save_log.txt
+
+# Help > Check for Updates: the daily-check switch, last check and skipped version (redactor_common selfupdate).
+mp3redactor_updates.json

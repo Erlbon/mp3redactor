@@ -29,8 +29,9 @@ from redactor_common.core.preferences import (
 from PyQt6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 from redactor_common.gui.conversion_policy_widget import ConversionPolicyWidget
 from redactor_common.gui.preferences_dialog import PreferencesDialog
+from redactor_common.core import selfupdate
 
-from core import conversion_safety, history, notes_cache, notes_debug, recycle
+from core import app_paths, conversion_safety, history, notes_cache, notes_debug, recycle
 from core.audio_quality import DEFAULT_GOOD_KBPS, DEFAULT_POOR_KBPS, MAX_KBPS, MIN_KBPS, normalise_limits
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
@@ -176,6 +177,7 @@ def preference_sections() -> list[PrefSection]:
                      "do not undo it.",
             ),),
         ),
+        selfupdate.updates_section(),
     ]
 
 
@@ -200,7 +202,9 @@ def settings_backend(settings: Settings, save: Callable[[Settings], None]) -> Ca
         if KEY_HISTORY in values:
             history.set_history_enabled(settings.history_enabled)  # the running app follows at once
 
-    return CallbackBackend(get, set_many)
+    # The Updates page's switch lives in mp3redactor_updates.json, not in the Settings object.
+    return selfupdate.with_update_settings(CallbackBackend(get, set_many),
+                                           selfupdate.UpdateSettings(app_paths.updates_json_path()))
 
 
 def build_preferences_dialog(settings: Settings, save: Callable[[Settings], None], parent=None) -> PreferencesDialog:

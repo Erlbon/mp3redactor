@@ -127,6 +127,8 @@ from core.settings import (
 from redactor_common.gui.qsettings_store import directory_for, resolve_start_directory
 from core.settings_adapter import Mp3SettingsAdapter
 from core.version import APP_NAME, APP_REPO_URL, APP_VERSION, RELEASE_LABEL
+from core import app_paths
+from redactor_common.gui.update_controller import UpdateController
 from core import conversion_safety
 from gui.convert_bitrate_dialog import ask_convert_bitrate
 from gui.external_tools_dialog import ExternalToolsDialog
@@ -507,8 +509,11 @@ class MainWindow(QMainWindow):
             default_width=TAG_PANEL_DEFAULT_WIDTH,
         )
 
+        # Help > Check for Updates and the opt-in daily check (redactor_common's gui/update_controller.py).
+        self.updates = UpdateController(self, APP_NAME, APP_VERSION, APP_REPO_URL, app_paths.updates_json_path())
         self._build_menu_and_toolbar()
         self.setAcceptDrops(True)  # files/folders dropped on the window are opened (dropEvent)
+        self.updates.start_auto_check()  # nothing unless switched on in Preferences > Updates
 
     # -- menu/toolbar -----------------------------------------------------
 
@@ -631,6 +636,7 @@ class MainWindow(QMainWindow):
             ),
             help=standard_help_items(
                 APP_NAME, self.open_changelog_dialog, self.open_credits_dialog, self.open_about_dialog,
+                updates_slot=self.updates.check_now,
             ),
         )
         build_standard_menu_bar(self, spec)

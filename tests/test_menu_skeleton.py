@@ -78,7 +78,7 @@ def test_menu_contents_and_order(window):
         "Create Notes", "---", "Preferences", "---", "API Keys", "External Tools", "MusicBrainz Database Setup", "---",
         "Columns", "Genres", "Languages", "---", "History",
     ]
-    assert _menu_tree(menus["Help"]) == ["Changelog", "Credits", "---", f"About {mw.APP_NAME}"]
+    assert _menu_tree(menus["Help"]) == ["Changelog", "Credits", "---", "Check for Updates", "---", f"About {mw.APP_NAME}"]
 
 
 def test_every_action_is_connected_or_planned(window):

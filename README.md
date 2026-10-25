@@ -75,7 +75,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Tools | API Keys… (Discogs token), External Tools… (mp3val, keyfinder-cli, ffmpeg, ffprobe, fpcalc), MusicBrainz Database Setup… | |
 | Tools | Columns…, Genres…, Languages… | |
 | Tools | History… (opt-in, off by default: every tag change the app made, old and new values, Restore Old Values; switched on in Preferences > History or by answering yes when History is opened; entries follow a renamed or moved file, via the RenameLog's on_move hook and the command line's rename/move/redact; Preferences > History > Delete History… is a PrefAction that sends the file to the Recycle Bin; Export/Import Settings carry `[history] enabled`) | |
-| Help | Changelog…, Credits…, About The ɯP3 Redactor | |
+| Help | Changelog…, Credits…, Check for Updates…, About The ɯP3 Redactor | |
 
 The table's right-click menu has the everyday subset: Preview (one file), Rename File (one file), Look Up, Organize (Rename /
 Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Create Notes for This Folder, Redact, Remove from List, plus Open in Default App,

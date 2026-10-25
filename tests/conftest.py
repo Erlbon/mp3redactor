@@ -4,6 +4,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _isolated_update_settings(monkeypatch, tmp_path):
+    """Help > Check for Updates keeps its switch in mp3redactor_updates.json next to the settings; tests use a
+    temporary one, so the daily check is off in every test and nothing is written to the project folder."""
+    from core import app_paths
+    monkeypatch.setattr(app_paths, "updates_json_path", lambda: tmp_path / "mp3redactor_updates.json")
+
+
+@pytest.fixture(autouse=True)
 def _isolated_save_log(monkeypatch, tmp_path):
     """With History on, Save All appends one line to save_log.txt next to the crash log (the project folder when
     running from source): tests point the crash log at a temporary folder so no test writes there."""
