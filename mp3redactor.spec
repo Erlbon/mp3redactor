@@ -49,8 +49,8 @@ a = Analysis(
     # not anything this app's own code calls. These five submodules
     # are NOT required by numpy.__init__ (confirmed the same way) and
     # this app never touches them either, so excluding them is a safe,
-    # if modest (~2MB), trim. The big win is UPX actually compressing
-    # that OpenBLAS DLL -- see build_exe.bat.
+    # if modest (~2MB), trim. UPX used to compress that OpenBLAS DLL;
+    # it is off since 2026-10-30 (see upx=False below).
     excludes=["numpy.fft", "numpy.polynomial", "numpy.random", "numpy.ma", "numpy.testing"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -71,7 +71,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX off (2026-10-30): Defender flagged the UPX-packed, unsigned release
+    # exe as Trojan:Win32/Yomal!rfn. A larger exe beats one that is quarantined.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # windowed app -- no console popup

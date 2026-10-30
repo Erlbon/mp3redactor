@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-30#01 -- The exe is no longer UPX-compressed
+
+- Windows Defender flagged a UPX-packed release exe of the family (epubredactor 2026-10-18#03) as `Trojan:Win32/Yomal!rfn`, a false positive that UPX-packed, unsigned programs often draw. The build no longer runs UPX (`upx=False` in the spec, `build_exe.bat` no longer puts it on PATH). The exe grows from 62.7 MB to 77.7 MB (+24%), mostly numpy's OpenBLAS DLL, which UPX used to shrink.
+
 ## 2026-10-25#01 -- Help > Check for Updates: the program can update itself
 
 Shared part: redactor_common 2026-10-25#01 (core/selfupdate.py, gui/update_controller.py).
