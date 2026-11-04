@@ -1,6 +1,8 @@
 """Dewey-style numbered folders ('780 - Music\\1.61 - Ska'): every lookup and every note title uses the cleaned name, the folder
 keeps its own name for paths. A band called '1975', '10cc', '311', '2 Unlimited' or '3 Doors Down' is never touched."""
 
+import time
+
 import pytest
 
 from core.notes_flow import Fetchers, NotesEngine, build_proposals, scan
@@ -92,9 +94,20 @@ def test_a_dewey_numbered_genre_folder_is_looked_up_and_titled_by_its_real_name(
     assert proposal.path.endswith("1.61 - Ska\\about.md") or proposal.path.endswith("1.61 - Ska/about.md")
 
 
+def rename_when_free(folder, target):
+    """Rename a folder whose files were just written. On Windows a virus scanner or the search indexer often still holds one of
+    the new files for a moment, and the rename fails with 'access denied' (it failed 2 runs in 3, 2026-11-04): try for 5 s."""
+    for _ in range(50):
+        try:
+            return folder.rename(target)
+        except PermissionError:
+            time.sleep(0.1)
+    return folder.rename(target)
+
+
 def test_a_numbered_artist_folder_is_searched_and_titled_by_its_real_name(tmp_path):
     artist = ultravox_library(tmp_path)
-    numbered = artist.rename(tmp_path / "02. Ultravox (1974-)")
+    numbered = rename_when_free(artist, tmp_path / "02. Ultravox (1974-)")
     fetchers = ultravox_fetchers()
     [proposal] = build_proposals([next(t for t in scan([tmp_path], kinds=("artist",)).targets if t.folder == numbered)], fetchers)
     assert proposal.confidence.value == "confident" and proposal.title == "Ultravox"
