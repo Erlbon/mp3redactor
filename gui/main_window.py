@@ -418,6 +418,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.files: list[MP3File] = []
         self._list_filter = ""  # Edit > Filter List's text; "" = every file shown
+        self._rebuilding_table = False  # see _on_table_selection_changed()
         self.notes_fetchers = None  # Create Notes: a callable returning core.notes_flow.Fetchers (None = the real services; tests inject)
         self.settings: Settings = load_settings()
         # The remembered "an unencrypted key file is OK on this computer" answer
@@ -886,7 +887,7 @@ class MainWindow(QMainWindow):
         # Open Files/Folder replaces self.files wholesale (unlike the epub
         # tool, which adds to its list) -- always did, but now that files can
         # carry unsaved tag edits, doing that silently would discard them.
-        if self._count_dirty() and not self._confirm_discard("open a new selection"):
+        if self._has_unsaved_changes() and not self._confirm_discard("open a new selection"):
             return
         self._list_filter = ""  # a new list starts unfiltered (Edit > Filter List)
 
@@ -930,7 +931,7 @@ class MainWindow(QMainWindow):
         if not self.files:
             self.statusBar().showMessage("Nothing to refresh: no files are loaded.", 5000)
             return
-        if self._count_dirty() and not self._confirm_discard(
+        if self._has_unsaved_changes() and not self._confirm_discard(
             "refresh the list (discarding unsaved changes)"
         ):
             return
@@ -980,7 +981,7 @@ class MainWindow(QMainWindow):
         """File > Clear List: empties the list (nothing on disk is touched)."""
         if not self.files:
             return
-        if self._count_dirty() and not self._confirm_discard("clear the entire list"):
+        if self._has_unsaved_changes() and not self._confirm_discard("clear the entire list"):
             return
         self.files = []
         self._list_filter = ""
@@ -1031,8 +1032,7 @@ class MainWindow(QMainWindow):
         selected_after = {id(mp3) for mp3 in self._selected_files()}
         if selected_after != selected_before:
             self._reselect_files(selected_after)
-            self.tag_panel.set_selection(self._selected_files())
-            self._update_cover_panel()
+            self._on_table_selection_changed()  # a no-op mid-rebuild; _rebuild_table() resyncs at its end
         if needle:
             self.statusBar().showMessage(
                 f"Showing {shown} of {len(self.files)} files (filter: {self._list_filter})"
@@ -1114,8 +1114,7 @@ class MainWindow(QMainWindow):
 
     def _select_files_from_duplicates(self, items: list[MP3File]) -> None:
         self._reselect_files({id(mp3) for mp3 in items})
-        self.tag_panel.set_selection(self._selected_files())
-        self._update_cover_panel()
+        self._on_table_selection_changed()  # a pending panel edit goes to the files selected before
         current = self.table.currentIndex()
         if current.isValid():
             self.table.scrollTo(current)
@@ -1964,14 +1963,17 @@ class MainWindow(QMainWindow):
 
     # -- tag editing ------------------------------------------------------
 
-    def _apply_bulk_edit(self, values: dict) -> None:
+    def _apply_bulk_edit(self, values: dict, files: list[MP3File] | None = None) -> None:
         """values: {field_key: value} for whichever fields were checked
         in the tag panel -- see TagPanel.apply_bulk_edit(). Writes them
-        into memory for every currently selected file and marks each
-        dirty; does not touch disk (that's save_changed())."""
+        into memory for every currently selected file (or `files`, see
+        _commit_pending_panel_edits()) and marks each dirty; does not
+        touch disk (that's save_changed())."""
+        if files is None:
+            files = self._selected_files()
         # A file that failed to load holds blank defaults, not its real
         # tags -- editing/saving it would overwrite them (see _cover_targets).
-        targets = [mp3 for mp3 in self._selected_files() if not mp3.load_error]
+        targets = [mp3 for mp3 in files if not mp3.load_error]
         if not targets:
             return
         self._push_undo("Bulk Edit", targets)
@@ -2120,6 +2122,13 @@ class MainWindow(QMainWindow):
     def _count_dirty(self) -> int:
         return sum(1 for mp3 in self.files if mp3.dirty)
 
+    def _has_unsaved_changes(self) -> bool:
+        """For the "discard unsaved changes?" checks: a typed, not yet
+        Applied panel edit is applied first (undoable), so it counts and is
+        asked about instead of vanishing with the list; answering No keeps it."""
+        self._commit_pending_panel_edits()
+        return self._count_dirty() > 0
+
     def _confirm_discard(self, action_desc: str) -> bool:
         reply = QMessageBox.question(
             self,
@@ -2130,7 +2139,7 @@ class MainWindow(QMainWindow):
         return reply == QMessageBox.StandardButton.Yes
 
     def closeEvent(self, event) -> None:
-        if self._count_dirty() and not self._confirm_discard("quit without saving"):
+        if self._has_unsaved_changes() and not self._confirm_discard("quit without saving"):
             event.ignore()
             return
         super().closeEvent(event)
@@ -2261,8 +2270,39 @@ class MainWindow(QMainWindow):
     # -- selection / tag panel --------------------------------------------
 
     def _on_table_selection_changed(self) -> None:
-        self.tag_panel.set_selection(self._selected_files())
+        if self._rebuilding_table:
+            # Mid-rebuild the selection flickers (rows replaced, cleared,
+            # restored); _rebuild_table() calls this once at the end.
+            return
+        files = self._selected_files()
+        same_selection = {id(f) for f in files} == {id(f) for f in self.tag_panel.current_files()}
+        if not same_selection:
+            self._commit_pending_panel_edits()
+        # A refresh of the same selection (after Undo, a rebuild, an
+        # operation on these files) keeps the pending edit pending.
+        self.tag_panel.set_selection(files, keep_pending=same_selection)
         self._update_cover_panel()
+
+    def _commit_pending_panel_edits(self) -> int:
+        """Applies what is ticked/typed in the bulk-edit panel but not yet
+        Applied to the files the panel was showing (the PREVIOUS selection,
+        when called on a selection change), through the normal Apply path:
+        one undo entry, rows marked changed. Otherwise a selection change
+        silently threw the typing away. Files since removed from the list
+        are skipped, as are fields already holding the typed value; nothing
+        left -> no undo entry, no message. Returns the number of files."""
+        live = {id(mp3) for mp3 in self.files}
+        files = [mp3 for mp3 in self.tag_panel.current_files() if id(mp3) in live and not mp3.load_error]
+        pending = self.tag_panel.pending_edits()
+        values = {
+            key: value for key, value in pending.items()
+            if any((getattr(mp3, key, "") or "") != value for mp3 in files)
+        }
+        if not files or not values:
+            return 0
+        self._apply_bulk_edit(values, files)
+        self.statusBar().showMessage(f"Applied pending edits to {len(files)} file{'' if len(files) == 1 else 's'}", 8000)
+        return len(files)
 
     def _on_tag_panel_selection_count_changed(self, count: int) -> None:
         set_apply_count(self.action_apply_bulk_edit, count)
@@ -2933,18 +2973,25 @@ class MainWindow(QMainWindow):
         # descending sort, Apply on a.mp3 left c.mp3 selected, and the
         # NEXT Apply silently edited c.mp3. Reselect by file instead.
         selected_ids = {id(mp3) for mp3 in self._selected_files()}
-        with suspend_sorting(self.table):
-            self.table.setRowCount(len(self.files))
-            for row, mp3 in enumerate(self.files):
-                self._populate_row(row, mp3)
-        self._reselect_files(selected_ids)
-        self._apply_list_filter()  # rows were rebuilt (and re-sorted): hide again by file
+        self._rebuilding_table = True
+        try:
+            with suspend_sorting(self.table):
+                self.table.setRowCount(len(self.files))
+                for row, mp3 in enumerate(self.files):
+                    self._populate_row(row, mp3)
+            self._reselect_files(selected_ids)
+            self._apply_list_filter()  # rows were rebuilt (and re-sorted): hide again by file
+        finally:
+            self._rebuilding_table = False
         # Rows were just torn down and rebuilt from scratch, so whatever
         # rows Qt now considers "selected" may not match what the tag
         # panel is showing -- keep the two in sync explicitly rather
         # than relying on itemSelectionChanged firing on its own here.
-        self.tag_panel.set_selection(self._selected_files())
-        self._update_cover_panel()
+        # Once, with the final selection: a pending panel edit stays
+        # pending if the same files are still selected, is applied if
+        # the selection really changed, and is dropped only when its
+        # files left the list (Remove, Refresh List, Clear).
+        self._on_table_selection_changed()
 
     def _reselect_files(self, file_ids: set[int]) -> None:
         """Selects exactly the rows holding these MP3Files (by id()),

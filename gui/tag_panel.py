@@ -347,10 +347,21 @@ class TagPanel(QWidget):
 
     # ------------------------------------------------------------------
 
-    def set_selection(self, files: list[MP3File]) -> None:
+    def current_files(self) -> list[MP3File]:
+        """The files the panel was last populated from -- the selection a
+        pending edit was typed against (MainWindow applies it to these
+        when the selection moves on)."""
+        return list(self._current_files)
+
+    def set_selection(self, files: list[MP3File], keep_pending: bool = False) -> None:
         """files: the currently selected MP3File objects. Repopulates
         every field, showing the common value or a <multiple values>
-        placeholder, and unchecks everything."""
+        placeholder, and unchecks everything.
+
+        keep_pending: re-tick and re-fill whatever was ticked before -- for
+        a refresh of the SAME selection (after Undo, a rebuild, ...), so a
+        not-yet-Applied edit survives it."""
+        pending = self._pending_texts() if keep_pending else {}
         self._current_files = files
         self.selectionCountChanged.emit(len(files))
 
@@ -378,14 +389,33 @@ class TagPanel(QWidget):
                 editor.setText("")
                 editor.setPlaceholderText(MULTIPLE_VALUES_PLACEHOLDER)
 
+        self._restore_pending(pending)
+
+    def _pending_texts(self) -> dict[str, str]:
+        """The raw editor text of every ticked field -- what a refresh has
+        to put back to keep a not-yet-Applied edit."""
+        return {key: editor.text() for key, editor in self._editors.items() if self._checkboxes[key].isChecked()}
+
+    def _restore_pending(self, pending: dict[str, str]) -> None:
+        for key, text in pending.items():
+            if key in self._editors:
+                self._editors[key].setText(text)
+                self._checkboxes[key].setChecked(True)
+
     def apply_bulk_edit(self) -> None:
         """Collects every checked field's value and emits applyRequested.
         Public (not a private click handler) since Apply lives as a
         toolbar/menu action in MainWindow, matching the epub tool."""
+        result = self.pending_edits()
+        if result:
+            self.applyRequested.emit(result)
+        self._uncheck_all()
+
+    def pending_edits(self) -> dict[str, str]:
+        """{field_key: value} for every ticked field -- exactly what
+        apply_bulk_edit() would apply, without applying or unticking."""
         result = {}
         for key, _label, _multiline in FIELDS:
             if self._checkboxes[key].isChecked():
                 result[key] = self._editors[key].text().strip()
-        if result:
-            self.applyRequested.emit(result)
-        self._uncheck_all()
+        return result

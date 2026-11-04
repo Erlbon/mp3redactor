@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-04#02 -- Typed edits in the side panel are no longer lost when you select other files
+
+- **Selecting other files applies what you typed.** A field ticked and filled in the side panel but not Applied used to vanish the moment you clicked another row. Now it is applied to the files you had selected before the click, exactly as Apply would (one Undo entry, rows marked changed), and the status bar says "Applied pending edits to N files". Apply is still there, it is just no longer required. The same goes for a selection made from Find Duplicates or changed by Filter List.
+- Nothing happens when nothing was selected before, when nothing is ticked, or when the typed value is what the files already have (no Undo entry, no message).
+- **Undo, Redo and other actions that refresh the panel keep the edit pending** (still ticked, still filled in) instead of discarding it, as long as the same files stay selected.
+- **Refresh List, Clear List, Open Files/Folder (which replaces the list) and closing the window ask about a typed edit too.** They used to throw it away without a word when no file was otherwise changed. Now it is applied to the selected files first, so the "You have unsaved tag changes" question comes up; answer No and the edit is kept (applied, and undoable with Undo). Remove from List drops the edit with the files it belonged to. Same behaviour as epubredactor 2026-11-04#01/#02.
+
 ## 2026-11-04#01 -- The MusicBrainz, Discogs and Wikipedia clients now come from redactor_common
 
 Shared part: redactor_common 2026-11-04#01 (core/lookups/, core/wikipedia.py).
