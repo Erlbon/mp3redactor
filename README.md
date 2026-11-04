@@ -9,7 +9,8 @@ mp3tag-inspired UX.
 The user-facing description (features, opening files, the full command line) is [ABOUT.md](ABOUT.md), which
 the app also shows under Help > About. In short: bulk tag editing, integrity / deep check / BPM / key / loudness
 checks, Find Duplicates, MusicBrainz / AcoustID / Discogs / lyrics lookups, covers, rename / move / parse
-filename, Redact, conversion of other audio formats to MP3, and M4B audiobooks.
+filename, Redact, conversion of other audio formats to MP3, and M4B audiobooks. A side-panel edit typed but not
+Applied is applied to those files when you click others, never lost.
 
 Where each part lives:
 

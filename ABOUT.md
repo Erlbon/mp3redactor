@@ -12,7 +12,9 @@ time.
 - **Bulk-edit tags** from one side panel: title, artist, album artist, album, track, disc, year, genre,
   composer, comment, language, and mp3tag's "advanced" set (sort names, MusicBrainz ids, publisher, catalogue
   number, release country...). Tick a field, type a value, Apply to the selection; Save All writes the changed
-  files. Everything is undoable until saved; changed rows are tinted.
+  files. Everything is undoable until saved; changed rows are tinted. Forgot to Apply? Clicking other files
+  (also through Filter List or Find Duplicates) applies what you typed to the files you were editing, as one undo
+  step, and Open Files/Folder, Refresh List, Clear List and closing count it as an unsaved change before they ask.
 - **Check the files**: mp3val's integrity check (and fix), a full ffmpeg decode (Deep Check), tempo (BPM),
   musical key (keyfinder-cli) and loudness (written as ReplayGain). Results are stamped into the file on Save, so
   a later run shows when a file was last checked.
