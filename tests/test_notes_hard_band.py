@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
-from core.discogs_lookup import DiscogsClient  # noqa: E402
+from redactor_common.core.lookups.discogs import DiscogsClient  # noqa: E402
 from core.notes_flow import Confidence, Fetchers, NotesEngine, build_proposals, scan  # noqa: E402
 from core.notes_link import LinkError, parse_link  # noqa: E402
 from core.notes_local import fold_name  # noqa: E402

@@ -137,7 +137,7 @@ def test_load_error_file_is_skipped_with_a_report_line(window, tmp_path, shown, 
 
 
 def test_needs_review_shows_in_the_results_dialog(window, tmp_path, shown, tools, monkeypatch, recycle_bin):
-    from core.musicbrainz_lookup import Release, ReleaseTrack, match_release
+    from redactor_common.core.lookups.musicbrainz import Release, ReleaseTrack, match_release
 
     release = Release(id="r", title="Album", artist="Artist", date="1999",
                       tracks=[ReleaseTrack(1, 1, "Song", 0.4, "rec", "Artist")], track_count=1)

@@ -60,7 +60,8 @@ from PyQt6.QtWidgets import (
 )
 
 from core.app_paths import asset_path, crash_log_path
-from core.cover_art import extension_for, find_folder_image
+from core.cover_art import extension_for
+from redactor_common.core.lookups.cover_finder import find_folder_image
 from core.fields import FIELDS, filename_values
 from core.mp3_file import (
     MP3File,
@@ -1694,7 +1695,7 @@ class MainWindow(QMainWindow):
         through the per-field overwrite review, one Undo step, written on Save), plus label,
         catalogue number, country and genre/style tags. Needs a Discogs token: without one
         the API Keys dialog opens first (Tools > API Keys)."""
-        from core.discogs_lookup import DiscogsClient, load_token
+        from redactor_common.core.lookups.discogs import DiscogsClient, load_token
         from gui.discogs_lookup_dialog import DiscogsLookupDialog, group_by_folder
 
         targets = self._require_targets("look up")
@@ -2778,7 +2779,7 @@ class MainWindow(QMainWindow):
     def set_cover_from_folder_images(self) -> None:
         """For each selected file, embeds the album-art image sitting next
         to it (cover.jpg, folder.jpg, front.jpg, ... -- see
-        core.cover_art.FOLDER_IMAGE_NAMES), so a multi-album selection
+        redactor_common lookups/cover_finder.py FOLDER_IMAGE_NAMES), so a multi-album selection
         gets each album's own art in one go."""
         targets = self._cover_targets("set covers on")
         if not targets:

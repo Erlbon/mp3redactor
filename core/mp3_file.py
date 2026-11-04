@@ -37,7 +37,7 @@ ITUNESADVISORY_DESC = "ITUNESADVISORY"
 # MusicBrainz identifiers, as MusicBrainz Picard writes them (and other
 # taggers read them): the release's id in a TXXX frame, the recording's
 # id in a UFID frame owned by "http://musicbrainz.org". Written by
-# Import > Look Up via MusicBrainz (core/musicbrainz_lookup.py) so a
+# Import > Look Up via MusicBrainz (redactor_common core/lookups/musicbrainz.py) so a
 # file permanently records which release/recording it was matched to.
 MUSICBRAINZ_ALBUM_ID_DESC = "MusicBrainz Album Id"
 # Release details Look Up via Discogs fills: the label (TPUB, a plain

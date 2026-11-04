@@ -158,8 +158,8 @@ def test_a_title_with_no_number_is_searched_as_before(tmp_path):
 
 
 def test_wikipedia_context_terms_find_a_number_in_either_spelling():
-    from core.wikipedia_lookup import _mentions
+    from redactor_common.core.wikipedia import mentions
 
-    assert _mentions("Their 1981 album 7 reached the charts.", "Seven")
-    assert _mentions("Their 1981 album Seven reached the charts.", "7")
-    assert not _mentions("Their album Seventeen reached the charts.", "7")
+    assert mentions("Their 1981 album 7 reached the charts.", "Seven", compare_key)
+    assert mentions("Their 1981 album Seven reached the charts.", "7", compare_key)
+    assert not mentions("Their album Seventeen reached the charts.", "7", compare_key)

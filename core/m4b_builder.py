@@ -41,7 +41,8 @@ from typing import Callable
 from xml.sax.saxutils import escape as xml_escape
 from xml.sax.saxutils import quoteattr
 
-from core.cover_art import extension_for, find_folder_image, read_cover, sniff_mime
+from core.cover_art import extension_for, read_cover, sniff_mime
+from redactor_common.core.lookups.cover_finder import find_folder_image
 from core.ffmpeg_probe import FFPROBE_EXE_NAME, probe_format
 from core.lock_retry import retry_on_lock
 from core.mp3_file import STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING

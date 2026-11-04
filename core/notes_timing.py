@@ -22,7 +22,7 @@ from redactor_common.core.notes_timing import (  # noqa: F401 -- re-exported: th
     MIN_DONE_FOR_ESTIMATE, RECENT, clock, format_duration, lookup_sentence, progress_suffix,
 )
 
-MB_SECONDS = 1.1  # the throttle of core/musicbrainz_lookup.py
+MB_SECONDS = 1.1  # the throttle of redactor_common core/lookups/musicbrainz.py
 WIKI_SECONDS = 0.3
 ARTIST_MB, ARTIST_WIKI = 3, 2  # requests per artist note (measured)
 ALBUM_MB, ALBUM_WIKI = 2, 2  # requests per album note (measured live: release group + release, wikidata + summary)

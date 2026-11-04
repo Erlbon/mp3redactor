@@ -2,7 +2,7 @@
 gui/discogs_lookup_dialog.py
 
 Metadata > Look Up > Discogs...: finds the Discogs release each selected
-folder of MP3s belongs to (core/discogs_lookup.py) -- one row per folder,
+folder of MP3s belongs to (redactor_common core/lookups/discogs.py) -- one row per folder,
 since an album is one folder. Built on redactor_common's shared review
 dialog (LookupDialogBase), like the MusicBrainz one: the release's cover
 next to the files' own, other pressings of the album under Other Matches
@@ -30,7 +30,7 @@ from redactor_common.gui.lookup_dialog import LookupAlternative, LookupDialogBas
 from gui.lookup_covers import CoverSaveMixin
 
 from core.cover_art import read_cover
-from core.discogs_lookup import (
+from redactor_common.core.lookups.discogs import (
     DiscogsClient,
     DiscogsError,
     DiscogsMatch,
@@ -42,7 +42,7 @@ from core.discogs_lookup import (
     genre_text,
 )
 from core.mp3_file import MP3File
-from core.musicbrainz_lookup import facts_from_tags
+from redactor_common.core.lookups.musicbrainz import facts_from_tags
 from gui.musicbrainz_lookup_dialog import AlbumFolder, group_by_folder  # noqa: F401 -- re-exported for callers
 
 

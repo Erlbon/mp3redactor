@@ -1,7 +1,7 @@
 """
 core/notes_musicbrainz.py
 
-What the folder notes (core/notes_flow.py) need from MusicBrainz, on top of core/musicbrainz_lookup.py (same
+What the folder notes (core/notes_flow.py) need from MusicBrainz, on top of redactor_common core/lookups/musicbrainz.py (same
 process-wide throttle of 1 request per 1.1 s, same error type, same `fetch(url) -> bytes` injection):
 
   search_artists(name)             candidate artists for a folder name
@@ -26,7 +26,7 @@ import time
 
 from core.notes_numbers import title_variants
 
-from core.musicbrainz_lookup import (
+from redactor_common.core.lookups.musicbrainz import (
     MusicBrainzError, _credit, _get as _single_get, _leading_int, _lucene,
 )
 from redactor_common.core.lookup_client import make_default_fetch, throttled
@@ -319,7 +319,7 @@ def _fetch() -> Callable:
     the app's MusicBrainz requests (one request per 1.1 s, whoever asks)."""
     global _notes_fetch
     if _notes_fetch is None:
-        from core import musicbrainz_lookup
+        from redactor_common.core.lookups import musicbrainz as musicbrainz_lookup
         from core.version import APP_VERSION
 
         agent = f"mp3redactor/{APP_VERSION} ( https://github.com/Erlbon )"
@@ -408,7 +408,7 @@ def relation_links(detail: dict) -> dict[str, str]:
 
 def wikipedia_hint(detail: dict) -> tuple[str, str]:
     """(English Wikipedia title, Wikidata id) from a detail's url relations; either may be ''."""
-    from core.wikipedia_lookup import language_of_url, title_from_url
+    from redactor_common.core.wikipedia import language_of_url, title_from_url
 
     title = wikidata = ""
     for rel in detail.get("relations", []):

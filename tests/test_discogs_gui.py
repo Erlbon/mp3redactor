@@ -13,7 +13,7 @@ import pytest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox  # noqa: E402
 
 import gui.main_window as mw  # noqa: E402
-from core import discogs_lookup as dl  # noqa: E402
+from redactor_common.core.lookups import discogs as dl  # noqa: E402
 from core.mp3_file import MP3File  # noqa: E402
 from core.settings import Settings  # noqa: E402
 from core.settings_adapter import SECTION_KEYS  # noqa: E402

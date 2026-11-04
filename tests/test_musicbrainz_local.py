@@ -8,7 +8,7 @@ import pytest
 from core import musicbrainz_local as ml
 from core.musicbrainz_import import BuildOptions, build_musicbrainz_database
 from core.musicbrainz_local import LocalQuery, artist_equivalent
-from core.musicbrainz_lookup import FileFacts
+from redactor_common.core.lookups.musicbrainz import FileFacts
 from tests.mb_fixture import GID, default_tables, make_dump, row
 
 

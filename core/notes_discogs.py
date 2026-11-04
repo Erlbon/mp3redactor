@@ -1,7 +1,7 @@
 """
 core/notes_discogs.py
 
-What the folder notes (core/notes_flow.py) need from Discogs, on top of core/discogs_lookup.py (the app's own
+What the folder notes (core/notes_flow.py) need from Discogs, on top of redactor_common core/lookups/discogs.py (the app's own
 DiscogsClient: token from DISCOGS_TOKEN or the credential store, 1 request per 1.1 s, 429 -> DiscogsRateLimited,
 the token never in a message). Without a token nothing here is called: the notes are simply thinner.
 
@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from core.discogs_lookup import (
+from redactor_common.core.lookups.discogs import (
     Candidate as DiscogsHit, DiscogsClient, DiscogsError, DiscogsQuery, DiscogsRelease, clean_artist_name, parse_release,
     search_releases,
 )

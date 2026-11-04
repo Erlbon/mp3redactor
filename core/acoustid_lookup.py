@@ -21,7 +21,7 @@ AcoustID's links aren't perfect (a fingerprint can carry a wrongly
 merged recording -- seen on the first real lookup: "Delia's Gone" under
 Big River), so nothing here trusts one file's top hit: release
 candidates are ranked by how many of the folder's files they contain,
-and core/musicbrainz_lookup.py then matches file to track.
+and redactor_common core/lookups/musicbrainz.py then matches file to track.
 """
 
 from __future__ import annotations

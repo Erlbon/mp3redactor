@@ -2,7 +2,7 @@
 gui/musicbrainz_lookup_dialog.py
 
 Import > Look Up via MusicBrainz...: finds the release each selected
-folder of MP3s belongs to (core/musicbrainz_lookup.py) -- one row per
+folder of MP3s belongs to (redactor_common core/lookups/musicbrainz.py) -- one row per
 folder, since an album is one folder. Built on redactor_common's shared
 review dialog (LookupDialogBase): the release's cover (Cover Art
 Archive) next to the files' own, other editions of the album under
@@ -33,7 +33,7 @@ from gui.lookup_covers import CoverSaveMixin
 from core.acoustid_lookup import AcoustIdError, candidate_releases, identify_files
 from core.cover_art import read_cover
 from core.mp3_file import MP3File
-from core.musicbrainz_lookup import (
+from redactor_common.core.lookups.musicbrainz import (
     AlbumQuery,
     MusicBrainzError,
     ReleaseMatch,

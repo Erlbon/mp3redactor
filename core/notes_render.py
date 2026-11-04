@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
-from core.musicbrainz_lookup import FileFacts, Release, ReleaseTrack, match_release
+from redactor_common.core.lookups.musicbrainz import FileFacts, Release, ReleaseTrack, match_release
 from core.notes_local import LocalAlbum, LocalTrack, fold_name
 from core.notes_numbers import compare_key
 from core.notes_musicbrainz import Credits

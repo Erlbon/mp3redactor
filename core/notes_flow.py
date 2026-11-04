@@ -37,8 +37,10 @@ from core.notes_link import LinkError, LinkTarget, parse_link
 from core.notes_cache import CachedDiscogs, CachedFetch, RequestStats, ResponseCache
 from core.notes_phases import TAGS, PhaseTimer
 from core import notes_musicbrainz as nmb
-from core import wikipedia_lookup as wp
-from core.discogs_lookup import DiscogsClient, DiscogsError, load_token
+from core.notes_numbers import compare_key
+from core.version import APP_VERSION
+from redactor_common.core import wikipedia as wp
+from redactor_common.core.lookups.discogs import DiscogsClient, DiscogsError, load_token
 from core.notes_level import (
     LEVEL_ALBUM, LEVEL_ARTIST, LEVEL_COLLECTION, LEVEL_GENRE, LEVEL_UNCLEAR, SUGGEST_ALBUM, SUGGEST_ARTIST,
     SUGGEST_COLLECTION, SUGGEST_SKIP, LevelDecision, artist_key, artist_level, is_soundtrack_like, is_various,
@@ -73,6 +75,9 @@ __all__ = [
     "Proposal", "ScanResult", "Skipped", "Target", "build_proposals", "live_fetchers", "scan", "summarize",
     "undo_note_entry", "write_proposal", "STATUS_SKIPPED",
 ]
+
+WIKI_USER_AGENT = f"mp3redactor/{APP_VERSION} ( https://github.com/Erlbon )"
+_WIKI_FETCH = wp.make_fetch(WIKI_USER_AGENT)  # one pace for the whole process, as before
 
 LEVEL_LOCAL_TAGS = "local-tags"  # rebuild(level=...): the explicit minimal note from the tags (never automatic)
 DISCOGS_MISSING = "Discogs token not set: add it in Tools > API Keys... to build from Discogs candidates"
@@ -260,7 +265,7 @@ class NotesEngine:
         self.phases = PhaseTimer()  # where the time goes (core/notes_phases.py)
         self.on_status: Optional[Callable[[str], None]] = None  # told 'MusicBrainz is busy, waiting 4 s' and the like
         self._mb = CachedFetch(self.fetchers.mb or nmb._fetch(), "mb", cache, self.stats, self.phases, "musicbrainz")
-        self._wiki = CachedFetch(self.fetchers.wiki or wp.default_fetch(), "wiki", cache, self.stats, self.phases, "wikipedia")
+        self._wiki = CachedFetch(self.fetchers.wiki or _WIKI_FETCH, "wiki", cache, self.stats, self.phases, "wikipedia")
         self._discogs = (CachedDiscogs(self.fetchers.discogs, cache, self.stats, self.phases)
                          if self.fetchers.discogs else None)
         self._mb.busy_hook = self._busy
@@ -397,8 +402,8 @@ class NotesEngine:
         elif target.kind == "discogs-artist":
             discogs_id = target.id
         elif target.kind in ("wikipedia", "wikidata"):
-            ids = (wp.wikidata_identifiers(entity_id=target.id, fetch=self._wiki) if target.kind == "wikidata"
-                   else wp.wikidata_identifiers(title=target.id, fetch=self._wiki, lang=target.lang or "en"))
+            ids = (wp.music_identifiers(entity_id=target.id, fetch=self._wiki) if target.kind == "wikidata"
+                   else wp.music_identifiers(title=target.id, fetch=self._wiki, lang=target.lang or "en"))
             mbid, discogs_id = ids["musicbrainz"], ids["discogs"]
             if not mbid and not discogs_id:
                 page = wp.get_summary(target.id, self._wiki, target.lang or "en") if target.kind == "wikipedia" else None
@@ -715,13 +720,13 @@ class NotesEngine:
         try:
             page = None
             for name in names[:2]:
-                page = wp.find_artist_page(name, context, self._wiki, notes=notes)
+                page = wp.find_artist_page(name, context, self._wiki, notes=notes, compare=compare_key)
                 if page is not None:
                     break
             if page is None:
                 res.reasons.append("Wikipedia: no article about this artist was found and verified")
                 return res
-            ids = wp.wikidata_identifiers(title=page.title, fetch=self._wiki)
+            ids = wp.music_identifiers(title=page.title, fetch=self._wiki)
         except wp.WikipediaError as exc:
             res.problems.append(str(exc))
             return res
@@ -1028,10 +1033,10 @@ class NotesEngine:
             page = res.page if res.via == "wikipedia" else None  # the article that named the ids is the introduction
             try:
                 if page is None:
-                    page = wp.find_page(
+                    page = wp.find_music_page(
                         "artist", name, linked_title=hint_title, wikidata_id=wikidata,
                         context_terms=[t for names_ in titles for t in names_], fetch=self._wiki,
-                        notes=proposal.reasons)
+                        notes=proposal.reasons, compare=compare_key)
             except wp.WikipediaError as exc:
                 page = None
                 proposal.problems.append(str(exc))
@@ -1135,7 +1140,7 @@ class NotesEngine:
             page = None
             if self.fetchers.wikipedia:
                 try:
-                    page = wp.find_page("genre", genre, fetch=self._wiki, notes=notes)
+                    page = wp.find_music_page("genre", genre, fetch=self._wiki, notes=notes, compare=compare_key)
                 except wp.WikipediaError as exc:
                     problems.append(str(exc))
             (found if page is not None else failed).append((genre, page) if page is not None else genre)
@@ -1255,8 +1260,9 @@ class NotesEngine:
         if not self.fetchers.wikipedia:
             return None
         try:
-            return wp.find_page("soundtrack" if soundtrack else kind, work_title(name) if soundtrack else name,
-                                artist=artist, context_terms=context, fetch=self._wiki, notes=proposal.reasons)
+            return wp.find_music_page("soundtrack" if soundtrack else kind, work_title(name) if soundtrack else name,
+                                artist=artist, context_terms=context, fetch=self._wiki, notes=proposal.reasons,
+                                compare=compare_key)
         except wp.WikipediaError as exc:
             proposal.problems.append(str(exc))
             return None
@@ -1343,7 +1349,7 @@ class NotesEngine:
         if not self.fetchers.wikipedia:
             return None
         try:
-            return wp.find_page("page", force.id, linked_title=force.id, fetch=self._wiki)
+            return wp.find_music_page("page", force.id, linked_title=force.id, fetch=self._wiki, compare=compare_key)
         except wp.WikipediaError:
             return None
 
@@ -1593,13 +1599,13 @@ class NotesEngine:
             hint_title, wikidata = nmb.wikipedia_hint(group_detail) if group_detail else ("", "")
             try:
                 if soundtrack:  # the soundtrack's article, or the film / game / series it belongs to
-                    page = wp.find_page(
+                    page = wp.find_music_page(
                         "soundtrack", work_title(title), linked_title=hint_title, wikidata_id=wikidata,
-                        fetch=self._wiki, notes=proposal.reasons)
+                        fetch=self._wiki, notes=proposal.reasons, compare=compare_key)
                 else:
-                    page = wp.find_page(
+                    page = wp.find_music_page(
                         "album", title, artist=artist_name, linked_title=hint_title, wikidata_id=wikidata,
-                        fetch=self._wiki, notes=proposal.reasons)
+                        fetch=self._wiki, notes=proposal.reasons, compare=compare_key)
             except wp.WikipediaError as exc:
                 page = None
                 proposal.problems.append(str(exc))

@@ -1,4 +1,4 @@
-"""Tests for core/musicbrainz_lookup.py (offline: canned MusicBrainz
+"""Tests for redactor_common core/lookups/musicbrainz.py (offline: canned MusicBrainz
 responses shaped like the real web service's JSON), the MusicBrainz id
 tags' round trip through mutagen, and the lookup dialog."""
 
@@ -10,7 +10,7 @@ from urllib.parse import unquote
 
 from PyQt6.QtWidgets import QApplication
 
-from core import musicbrainz_lookup as mb
+from redactor_common.core.lookups import musicbrainz as mb
 from core.mp3_file import MP3File
 from core.tag_reader import load_tags
 from core.tag_writer import save_tags
@@ -203,7 +203,7 @@ def test_fields_for_drops_an_unknown_track_position_and_disc():
 
 
 def test_null_status_and_date_in_a_release_do_not_crash():
-    from core import musicbrainz_lookup as mb
+    from redactor_common.core.lookups import musicbrainz as mb
 
     release = mb.fetch_release("abc", fetch=lambda url: '{"id": "abc", "title": "T", "status": null, "date": null, "country": null}')
     assert (release.status, release.date, release.country) == ("", "", "")

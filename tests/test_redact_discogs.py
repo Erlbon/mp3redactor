@@ -7,7 +7,7 @@ import urllib.error
 import pytest
 
 import core.redact_steps as rs
-from core import discogs_lookup as dl
+from redactor_common.core.lookups import discogs as dl
 from core.settings import Settings
 from core.tag_reader import load_tags
 from core.mp3_file import MP3File

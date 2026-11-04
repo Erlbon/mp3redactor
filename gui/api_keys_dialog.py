@@ -26,7 +26,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.discogs_lookup import SECRET_APP, SECRET_NAME, TOKEN_ENV_VAR, TOKEN_HELP_URL
+import core  # noqa: F401 -- core/__init__.py configures the shared Discogs client (its SECRET_APP)
+from redactor_common.core.lookups import discogs as discogs_client
+from redactor_common.core.lookups.discogs import SECRET_NAME, TOKEN_ENV_VAR, TOKEN_HELP_URL
 from redactor_common.gui.secret_field import SecretField
 from redactor_common.gui.secret_prompts import save_with_fallback_prompt
 from redactor_common.gui.owned_dialog import OwnedDialog
@@ -54,7 +56,7 @@ class ApiKeysDialog(OwnedDialog):
         intro.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(intro)
         form = QFormLayout()
-        self.token_field = SecretField(SECRET_APP, SECRET_NAME, env_var=TOKEN_ENV_VAR)
+        self.token_field = SecretField(discogs_client.SECRET_APP, SECRET_NAME, env_var=TOKEN_ENV_VAR)  # read now: set by core/__init__.py
         form.addRow("Token:", self.token_field)
         layout.addLayout(form)
         outer.addWidget(discogs)

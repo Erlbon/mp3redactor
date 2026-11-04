@@ -1,4 +1,4 @@
-"""core/discogs_lookup.py against MOCKED Discogs replies only -- these tests
+"""redactor_common core/lookups/discogs.py against MOCKED Discogs replies only -- these tests
 never reach the real API and never use a real token (TOKEN below is a
 made-up string whose only job is to be found, or not found, in texts)."""
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from core import discogs_lookup as dl
-from core.musicbrainz_lookup import FileFacts
+from redactor_common.core.lookups import discogs as dl
+from redactor_common.core.lookups.musicbrainz import FileFacts
 from redactor_common.core import secret_store
 
 TOKEN = "tok_SECRET_0123456789_abcdef"

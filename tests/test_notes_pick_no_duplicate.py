@@ -12,7 +12,7 @@ from PyQt6.QtCore import QPoint, Qt  # noqa: E402
 from PyQt6.QtTest import QTest  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
-from core.discogs_lookup import DiscogsClient  # noqa: E402
+from redactor_common.core.lookups.discogs import DiscogsClient  # noqa: E402
 from core.notes_flow import Fetchers  # noqa: E402
 from redactor_common.core.lookup_client import Throttle  # noqa: E402
 from tests.notes_helpers import set_kinds  # noqa: E402,F401

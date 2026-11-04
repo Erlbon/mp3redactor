@@ -112,15 +112,6 @@ def test_saving_other_tags_leaves_existing_pictures_alone(tmp_path):
     assert [f.type for f in frames] == [4]  # untouched: nothing pending
 
 
-def test_find_folder_image(tmp_path):
-    mp3 = _loaded_copy(tmp_path)
-    assert cover_art.find_folder_image(mp3.path) is None
-    (tmp_path / "Folder.JPG").write_bytes(JPEG)
-    assert cover_art.find_folder_image(mp3.path).name == "Folder.JPG"
-    (tmp_path / "cover.png").write_bytes(PNG)
-    assert cover_art.find_folder_image(mp3.path).name == "cover.png"  # cover.* wins
-
-
 def test_versions_are_never_reused():
     seen = {cover_art.next_version() for _ in range(100)}
     assert len(seen) == 100

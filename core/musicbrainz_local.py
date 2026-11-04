@@ -3,7 +3,7 @@ core/musicbrainz_local.py
 
 Looks albums up in the OFFLINE MusicBrainz database that
 core/musicbrainz_import.py builds from the core dump -- the local twin of
-core/musicbrainz_lookup.py, with no network and no rate limit. Qt-free.
+redactor_common core/lookups/musicbrainz.py, with no network and no rate limit. Qt-free.
 
 It returns the SAME shapes as the online lookup (Release, ReleaseTrack,
 ReleaseMatch -- the local ones are subclasses that carry a little more), so
@@ -56,7 +56,7 @@ from redactor_common.core.local_db import (
 )
 
 from core.musicbrainz_import import MusicBrainzDatabaseError
-from core.musicbrainz_lookup import (
+from redactor_common.core.lookups.musicbrainz import (
     AlbumQuery,
     FileFacts,
     Release,

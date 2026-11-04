@@ -12,7 +12,7 @@ from pathlib import Path
 
 from mutagen.id3 import ID3, TALB, TCOM, TCON, TDRC, TIT2, TPE1, TPE2, TRCK
 
-from core.discogs_lookup import DiscogsClient
+from redactor_common.core.lookups.discogs import DiscogsClient
 from core.notes_flow import Fetchers
 from redactor_common.core.lookup_client import Throttle
 

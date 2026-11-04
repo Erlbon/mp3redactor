@@ -30,7 +30,7 @@ from core.musicbrainz_local import (
     find_album_local,
     local_fields_for,
 )
-from core.musicbrainz_lookup import _most_common, album_query, facts_from_tags
+from redactor_common.core.lookups.musicbrainz import _most_common, album_query, facts_from_tags
 from gui.musicbrainz_lookup_dialog import (
     AlbumFolder,
     MusicBrainzLookupDialog,

@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from core.cover_art import find_folder_image, read_cover
+from core.cover_art import read_cover
+from redactor_common.core.lookups.cover_finder import find_folder_image
 from core.notes_local import (
     KIND_ALBUM, KIND_ARTIST, Loader, LocalAlbum, LocalTrack, album_children, album_files, album_from_tags, default_loader,
     split_year,

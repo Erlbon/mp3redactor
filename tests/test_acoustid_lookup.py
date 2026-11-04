@@ -9,7 +9,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from core import acoustid_lookup as ac
-from core import musicbrainz_lookup as mb
+from redactor_common.core.lookups import musicbrainz as mb
 from tests.test_musicbrainz_lookup import RING_OF_FIRE, FakeMusicBrainz, _app, _release_json  # noqa: F401
 
 

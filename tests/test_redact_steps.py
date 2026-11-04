@@ -11,7 +11,7 @@ import core.redact_steps as rs
 from core.mp3_file import (
     MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_WARNING,
 )
-from core.musicbrainz_lookup import MusicBrainzError, Release, ReleaseTrack, match_release
+from redactor_common.core.lookups.musicbrainz import MusicBrainzError, Release, ReleaseTrack, match_release
 from core.settings import Settings
 from core.tag_reader import load_tags
 from redactor_common.core.pipeline import FileStatus, Recipe, run_recipe_on_item

@@ -11,7 +11,7 @@ import urllib.request
 
 import pytest
 
-from core.discogs_lookup import DiscogsClient
+from redactor_common.core.lookups.discogs import DiscogsClient
 from core.notes_cache import (
     CachedDiscogs, CachedFetch, RequestStats, ResponseCache, looks_empty, NEGATIVE_TTL_SECONDS, TTL_SECONDS,
 )

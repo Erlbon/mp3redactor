@@ -67,10 +67,11 @@ from redactor_common.core.rename_pattern import render_filename, unique_path, ze
 from redactor_common.core.save_errors import describe_save_error
 from redactor_common.core.trash import move_to_trash
 
-from core import discogs_lookup as discogs
+from redactor_common.core.lookups import discogs
 from core.acoustid_lookup import FPCALC_EXE_NAME, AcoustIdError, candidate_releases, identify_files
 from core.bpm_detector import detect_bpm
-from core.cover_art import find_folder_image, read_cover, sniff_mime
+from core.cover_art import read_cover, sniff_mime
+from redactor_common.core.lookups.cover_finder import find_folder_image
 from core.ffmpeg_probe import deep_check_integrity, measure_loudness, probe_format
 from core.fields import FIELDS, filename_values
 from core.keyfinder_runner import detect_key
@@ -94,7 +95,7 @@ from core.musicbrainz_local import (
     local_fields_for,
     open_database as open_musicbrainz_database,
 )
-from core.musicbrainz_lookup import (
+from redactor_common.core.lookups.musicbrainz import (
     MusicBrainzError,
     ReleaseMatch,
     album_query,

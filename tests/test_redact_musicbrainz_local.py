@@ -11,7 +11,7 @@ import pytest
 import core.redact_steps as rs
 from core.acoustid_lookup import AcoustIdError, RecordingHit
 from core.musicbrainz_import import BuildOptions, build_musicbrainz_database
-from core.musicbrainz_lookup import MusicBrainzError, Release, ReleaseTrack, match_release
+from redactor_common.core.lookups.musicbrainz import MusicBrainzError, Release, ReleaseTrack, match_release
 from core.settings import Settings
 from redactor_common.core.local_db import forget_cached
 from redactor_common.core.pipeline import FileStatus

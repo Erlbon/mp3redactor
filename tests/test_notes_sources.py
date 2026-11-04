@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from core.discogs_lookup import DiscogsClient
+from redactor_common.core.lookups.discogs import DiscogsClient
 from core.notes_flow import (
     DISCOGS_MISSING, LEVEL_LOCAL_TAGS, Confidence, Fetchers, NotesEngine, build_proposals, scan,
 )

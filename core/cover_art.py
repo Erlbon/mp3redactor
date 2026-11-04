@@ -28,14 +28,8 @@ from pathlib import Path
 FRONT_COVER = 3  # ID3v2 APIC picture type "Cover (front)"
 SUPPORTED_MIMES = ("image/jpeg", "image/png")
 
-# Filenames checked, in order, by find_folder_image() -- the usual names
-# rippers and download stores put next to an album's tracks.
-FOLDER_IMAGE_NAMES = (
-    "cover.jpg", "cover.jpeg", "cover.png",
-    "folder.jpg", "folder.jpeg", "folder.png",
-    "front.jpg", "front.jpeg", "front.png",
-    "albumart.jpg", "albumartsmall.jpg",
-)
+# The album-art image beside the files (cover.jpg, folder.jpg ...) is found by
+# redactor_common's core/lookups/cover_finder.py (moved there 2026-11-04).
 
 # Process-wide, never reused: each change to a file's cover gets a fresh
 # number, so an icon-cache key (path, mtime, version) can't collide
@@ -90,17 +84,3 @@ def read_cover(path: str | Path) -> tuple[bytes, str] | None:
     if frame is None or not frame.data:
         return None
     return bytes(frame.data), (frame.mime or sniff_mime(frame.data) or "image/jpeg")
-
-
-def find_folder_image(audio_path: str | Path) -> Path | None:
-    """The album-art image next to `audio_path` (cover.jpg, folder.jpg,
-    front.jpg, ... case-insensitively), or None."""
-    folder = Path(audio_path).parent
-    try:
-        by_lower = {entry.name.lower(): entry for entry in folder.iterdir() if entry.is_file()}
-    except OSError:
-        return None
-    for name in FOLDER_IMAGE_NAMES:
-        if name in by_lower:
-            return by_lower[name]
-    return None

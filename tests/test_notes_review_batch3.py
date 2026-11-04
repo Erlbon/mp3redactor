@@ -13,7 +13,7 @@ from urllib.parse import unquote_plus
 
 import pytest
 
-from core.discogs_lookup import DiscogsClient
+from redactor_common.core.lookups.discogs import DiscogsClient
 from core.notes_flow import (
     Confidence, Fetchers, GuessCandidate, NotesEngine, build_proposals, scan, write_proposal,
 )

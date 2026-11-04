@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-04#01 -- The MusicBrainz, Discogs and Wikipedia clients now come from redactor_common
+
+Shared part: redactor_common 2026-11-04#01 (core/lookups/, core/wikipedia.py).
+- No visible change. The MusicBrainz client (`core/musicbrainz_lookup.py`), the Discogs client (`core/discogs_lookup.py`), the folder-cover finder (the cover.jpg/folder.jpg part of `core/cover_art.py`) and the Wikipedia music page finder (`core/wikipedia_lookup.py`) moved to redactor_common, because the coming Folder Redactor uses them too. Look Up > MusicBrainz and Discogs, Redact and Create Notes use them from there.
+- The app sets the shared clients up once in `core/__init__.py`: the same User-Agents, and the Discogs token still read from the DISCOGS_TOKEN variable, then the credential store under the same name (app "mp3redactor", entry "discogs_token"), so a stored token keeps working.
+
 ## 2026-10-30#01 -- The exe is no longer UPX-compressed
 
 - Windows Defender flagged a UPX-packed release exe of the family (epubredactor 2026-10-18#03) as `Trojan:Win32/Yomal!rfn`, a false positive that UPX-packed, unsigned programs often draw. The build no longer runs UPX (`upx=False` in the spec, `build_exe.bat` no longer puts it on PATH). The exe grows from 62.7 MB to 77.7 MB (+24%), mostly numpy's OpenBLAS DLL, which UPX used to shrink.
