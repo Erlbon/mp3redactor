@@ -33,23 +33,20 @@ def _labels(menu: QMenu) -> list[str]:
     return [_plain(a.text()) for a in menu.actions() if not a.isSeparator()]
 
 
-# -- M1: no Ctrl+S alias ---------------------------------------------------
+# -- M1: Ctrl+S is Save All (owner, 2026-11-04; the 2026-10-14 removal is reversed) ---
 
 
-def test_save_all_has_only_its_family_shortcut(window):
-    assert window.action_registry["save_all"].shortcuts() == [QKeySequence("Ctrl+Shift+A")]
+def test_save_all_is_ctrl_s_and_ctrl_shift_a(window):
+    assert window.action_registry["save_all"].shortcuts() == [QKeySequence("Ctrl+S"), QKeySequence("Ctrl+Shift+A")]
 
 
-def test_ctrl_s_and_f8_are_not_bound_to_anything(window):
-    for key in ("Ctrl+S", "F8"):
-        seq = QKeySequence(key)
-        assert not any(seq in act.shortcuts() for act in window.findChildren(QAction)), key
+def test_ctrl_s_is_only_save_all_and_f8_is_not_bound(window):
+    save_all = window.action_registry["save_all"]
+    assert [act for act in window.findChildren(QAction) if QKeySequence("Ctrl+S") in act.shortcuts()] == [save_all]
+    assert not any(QKeySequence("F8") in act.shortcuts() for act in window.findChildren(QAction))
 
 
-def test_docs_do_not_mention_ctrl_s():
-    for name in ("README.md", "ABOUT.md"):
-        text = (ROOT / name).read_text(encoding="utf-8")
-        assert not re.search(r"Ctrl\+S\b", text), name
+def test_main_window_uses_no_one_release_aliases():
     assert "with_aliases" not in (ROOT / "gui" / "main_window.py").read_text(encoding="utf-8")
 
 

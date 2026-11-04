@@ -41,7 +41,7 @@ import shutil
 from pathlib import Path
 
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QSize, Qt, QTimer
-from PyQt6.QtGui import QColor, QIcon, QImage
+from PyQt6.QtGui import QColor, QIcon, QImage, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -539,7 +539,8 @@ class MainWindow(QMainWindow):
                 ],
                 # One save action: every changed file (what the old
                 # "Save File(s)" did). The skeleton's separate "Save" is
-                # dropped below. No Ctrl+S alias (owner, 2026-10-14).
+                # dropped below. Its keys are Ctrl+S and Ctrl+Shift+A (owner,
+                # 2026-11-04), set where action_save_all is picked up.
                 save_all=self.save_changed,
                 # Quick, direct rename of the one selected file -- matches
                 # Explorer's F2 exactly. Distinct from "Rename / Export /
@@ -651,6 +652,7 @@ class MainWindow(QMainWindow):
         self.action_load_files = actions["open_files"]
         self.action_load_folder = actions["open_folder"]
         self.action_save_all = actions["save_all"]
+        self.action_save_all.setShortcuts([QKeySequence(shortcuts.SAVE), QKeySequence(shortcuts.SAVE_ALL)])
         self.action_rename_file = actions["rename_file"]
         self.action_rename_files = actions["rename_export_move"]
         self.action_refresh_list = actions["refresh_list"]
@@ -2042,7 +2044,7 @@ class MainWindow(QMainWindow):
         self._update_redo_action()
 
     def save_changed(self) -> None:
-        """File > Save All (Ctrl+Shift+A, Ctrl+S): every file with unsaved tag changes. After EVERY Save All the
+        """File > Save All (Ctrl+S, Ctrl+Shift+A): every file with unsaved tag changes. After EVERY Save All the
         status bar says what happened (counts, or why nothing was saved), a box lists each problem file with its
         reason, and an unexpected error is shown in the "Something went wrong" box."""
         try:

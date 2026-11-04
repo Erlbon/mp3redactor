@@ -26,7 +26,7 @@ KEPT = [
     ("zoom_out", ["Ctrl+-"]),
 ]
 NEW = [
-    ("save_all", ["Ctrl+Shift+A"]),  # no Ctrl+S alias (owner, 2026-10-14)
+    ("save_all", ["Ctrl+S", "Ctrl+Shift+A"]),  # Ctrl+S for good (owner, 2026-11-04)
     ("filter_list", ["Ctrl+F"]),
     ("remove_from_list", ["Delete"]),
     ("search_replace", ["Ctrl+H"]),

@@ -119,7 +119,7 @@ def test_roles_and_standard_shortcuts(window):
     assert registry["about"].menuRole() == QAction.MenuRole.AboutRole
     assert registry["exit"].menuRole() == QAction.MenuRole.QuitRole
     assert registry["remove_from_list"].shortcut() == QKeySequence("Delete")
-    assert registry["save_all"].shortcut() == QKeySequence("Ctrl+Shift+A")
+    assert registry["save_all"].shortcut() == QKeySequence("Ctrl+S")  # primary; Ctrl+Shift+A is the second key
     assert registry["search_replace"].shortcut() == QKeySequence("Ctrl+H")
 
 

@@ -44,7 +44,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | File | Import and Convert… (FLAC/WAV/OGG/M4A/... to MP3 beside the original; the shared conversion policy in Preferences > Conversion, `core/conversion_safety.py`, decides on-open ask/auto/never, keep/quarantine/recycle for the original, and the dry-run default) | |
 | File | Create M4B Audiobook… | |
 | File | Play (plays the one selected file in a separate window; also a Play button on the toolbar and a large one under the cover in the side panel) | Ctrl+P |
-| File | Save All | Ctrl+Shift+A |
+| File | Save All | Ctrl+S or Ctrl+Shift+A |
 | File | Rename File… (the one selected file) | F2 |
 | File | Undo Last Rename | |
 | File | Rename / Export / Move… (by `%field%` pattern) | Ctrl+E |
