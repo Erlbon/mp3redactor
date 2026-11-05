@@ -42,6 +42,7 @@ from xml.sax.saxutils import escape as xml_escape
 from xml.sax.saxutils import quoteattr
 
 from core.cover_art import extension_for, read_cover, sniff_mime
+from redactor_common.core.audio_write import save_tags
 from redactor_common.core.lookups.cover_finder import find_folder_image
 from core.ffmpeg_probe import FFPROBE_EXE_NAME, probe_format
 from core.lock_retry import retry_on_lock
@@ -263,7 +264,7 @@ def add_series_tags(path: Path, spec: BookSpec) -> str:
         audio = MP4(str(copy))
         for name, value in wanted.items():
             audio[f"----:com.apple.iTunes:{name}"] = [MP4FreeForm(value.encode("utf-8"))]
-        audio.save()
+        save_tags(audio)  # redactor_common's one mutagen save
         again = MP4(str(copy))  # the copy must read back, tags and all
         if not all(f"----:com.apple.iTunes:{name}" in again for name in wanted):
             raise ValueError("the tags did not read back")

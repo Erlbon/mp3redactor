@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-05#01 -- Tags are written through the family's one shared writer
+
+- **redactor_common 2026-11-04-02** (was 2026-11-04-01), the tag the other Redactors use.
+- **Every tag save goes through redactor_common's `save_tags`**, the one mutagen save the apps share: it keeps the
+  file's ID3v2 version (2.3 stays 2.3) as before, and the M4B series tags use it too.
+- **A saved copy must read back before it replaces the song.** A temp copy that mutagen can't open again is
+  discarded and the save reported as failed; the original is untouched.
+- `tests/test_shared_writers.py` fails if any code in the app writes tags on its own.
+
 ## 2026-11-04#03 -- Ctrl+S saves again
 
 - **Ctrl+S** is Save All again, for good, and the menu shows it. Ctrl+Shift+A still works too. It was dropped on 2026-10-14 as an expiring alias, but that was never the intent: Ctrl+S is the key everybody presses to save.

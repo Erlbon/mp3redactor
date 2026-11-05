@@ -48,6 +48,7 @@ import os
 import shutil
 import tempfile
 
+from redactor_common.core.audio_write import check_audio_readable, save_tags as save_audio_tags
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
@@ -161,6 +162,11 @@ def _save_tags(mp3: MP3File) -> bool:
 
     error = apply_tags_to_file(mp3, tmp_path)
     if not error:
+        try:  # the copy must read back before it replaces the song
+            retry_on_lock(lambda: check_audio_readable(tmp_path, opener=_open_mp3))
+        except OSError as e:
+            error = f"failed to write tags: {e}"
+    if not error:
         try:
             retry_on_lock(lambda: os.replace(tmp_path, target))
         except OSError as e:
@@ -214,8 +220,6 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
             return f"failed to add a tag header: {describe_save_error(e)}"
 
     tags = audio.tags
-    # Keep the file's ID3v2 version (mutagen would upgrade 2.3 to 2.4).
-    v2_version = 3 if tags.version[:2] == (2, 3) else 4
 
     # Only frames whose value changed since load/last save are touched
     # (MP3File.tag_changed): everything is held as one string, so
@@ -257,10 +261,18 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
     try:
         # Re-saving is safe: the frames are already set in memory, and a lock
         # error happens when the file is opened, before anything is written.
-        retry_on_lock(lambda: audio.save(v2_version=v2_version))
+        # redactor_common's save_tags keeps the file's ID3v2 version (mutagen
+        # would upgrade 2.3 to 2.4): the one mutagen save the apps share.
+        retry_on_lock(lambda: save_audio_tags(audio))
     except Exception as e:  # noqa: BLE001
         return f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
     return ""
+
+
+def _open_mp3(path: str):
+    from mutagen.mp3 import MP3
+
+    return MP3(path)
 
 
 def _discard(tmp_path: str) -> None:
