@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-05#03 -- the release's Linux build gets past its tests
+
+- **The read-only tests skip when run as root.** The Release workflow builds the Linux download in a Docker
+  container and runs the tests there as root, and root can write a read-only file. So the two tests that expect a
+  read-only song to be refused failed, and the last releases have had no Linux download. The ordinary Linux test
+  run uses a normal user and still runs them. No change to the app.
+
 ## 2026-11-05#02 -- `redact --dry-run`, and Undo keeps 50 steps
 
 Shared part: redactor_common 2026-11-05-01 (the engine's dry run, the 50-step undo history).

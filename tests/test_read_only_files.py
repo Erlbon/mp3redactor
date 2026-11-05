@@ -25,6 +25,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "tiny.mp3"
 
 @pytest.fixture
 def ro_mp3(tmp_path):
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root writes read-only files (the Release workflow's Linux build runs the tests as root)")
     path = tmp_path / "a.mp3"
     shutil.copyfile(FIXTURE, path)
     mp3 = MP3File(path=path)
