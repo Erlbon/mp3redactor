@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-05#02 -- `redact --dry-run`, and Undo keeps 50 steps
+
+Shared part: redactor_common 2026-11-05-01 (the engine's dry run, the 50-step undo history).
+- **`mp3redactor redact -n` / `--dry-run`** shows what a real run would change and writes nothing: no file is saved,
+  renamed, moved or sent to the Recycle Bin, no leftover scratch copy is tidied away, and the History is not
+  touched. The JSON output has `"dry_run": true`.
+- In a dry run the integrity check, BPM, key, loudness, deep check, tags from the folder path, the MusicBrainz and
+  Discogs lookups, cover art and lyrics run as usual, on a working copy in the system temp folder instead of beside
+  the song (with "Fix problems" on, mp3val fixes only that copy).
+- Rename by saved pattern and Move into library folders save the file and rename or move it as they run, so a dry
+  run leaves them out and the report names them.
+- **Undo** now keeps the last 50 changes instead of 5 (typed edits in the tag panel each take one step, so 5 ran
+  out fast).
+
 ## 2026-11-05#01 -- Tags are written through the family's one shared writer
 
 - **redactor_common 2026-11-04-02** (was 2026-11-04-01), the tag the other Redactors use.

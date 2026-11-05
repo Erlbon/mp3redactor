@@ -272,6 +272,100 @@ def test_redact_with_every_step_off_changes_nothing(song, capsys):
     assert document["results"][0]["status"] == "unchanged" and open(song, "rb").read() == before
 
 
+def _snapshot(folder):
+    """Every folder and file under `folder` (itself included): relative path -> (bytes, mtime) for a file,
+    ("dir", mtime) for a folder (a file made and removed in a folder changes the folder's time)."""
+    seen = {".": ("dir", os.stat(folder).st_mtime_ns)}
+    for root, dirs, files in os.walk(folder):
+        for name in dirs:
+            path = os.path.join(root, name)
+            seen[os.path.relpath(path, folder)] = ("dir", os.stat(path).st_mtime_ns)
+        for name in files:
+            path = os.path.join(root, name)
+            with open(path, "rb") as f:
+                seen[os.path.relpath(path, folder)] = (f.read(), os.stat(path).st_mtime_ns)
+    return seen
+
+
+def test_redact_dry_run_with_every_step_on_writes_nothing_and_lists_the_changes(tmp_path, capsys, monkeypatch, isolated, recycle_bin):
+    """redact -n with every step on (integrity with Fix problems too): the real tools run where installed (a
+    missing one is a TOOL MISSING note), the lookups answer from canned data, and afterwards the library is
+    byte-, mtime- and listing-identical. The working copy the tools read lives in the system temp folder in a
+    dry run, never beside the song, and is gone afterwards."""
+    import socket
+    import tempfile
+
+    import core.redact_steps as rs
+    from redactor_common.core.lookups.musicbrainz import match_release
+    from tests.test_redact_steps import JPEG, _release
+
+    monkeypatch.setattr(socket.socket, "connect", lambda *a: pytest.fail("a dry run went online"))
+    monkeypatch.setattr(rs, "find_tool", lambda *a, **k: None)  # no fpcalc: no AcoustID
+    monkeypatch.setattr(rs, "find_album", lambda facts, query: [match_release(facts, _release())])
+    monkeypatch.setattr(rs, "fetch_front_cover", lambda *a, **k: pytest.fail("the folder image comes first"))
+    monkeypatch.setattr(rs, "fetch_lyrics", lambda q, artist="", title="": ("la la la\nla", STATUS_OK, ""))
+    system_temp = tmp_path / "system-temp"
+    system_temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(system_temp))
+
+    library = tmp_path / "library"
+    album = library / "Artist" / "Album"
+    album.mkdir(parents=True)
+    song = album / "01 - Song.mp3"
+    shutil.copyfile(FIXTURE, song)
+    mp3 = read_tags(song)
+    mp3.apply_tags({"title": "Song", "album": "Album", "artist": "Artist"})
+    from core.tag_writer import save_tags
+
+    assert save_tags(mp3)
+    (album / "cover.jpg").write_bytes(JPEG)
+    isolated.settings.library_root = str(library)
+    recipe = tmp_path / "recipe.json"
+    recipe.write_text(json.dumps({"order": [], "enabled": {}, "options": {"integrity": {"fix": True}}}), encoding="utf-8")
+    trash = tmp_path / "trash"
+    before = _snapshot(library)
+
+    steps = [r["step"] for r in run_json(capsys, "redact", "--list-steps")[1]["results"]]
+    enable = [arg for key in steps for arg in ("--enable", key)]
+    code, document = run_json(
+        capsys, "redact", "-n", str(library), "--recipe", str(recipe), *enable, "--trash-dir", str(trash),
+    )
+
+    assert _snapshot(library) == before  # same folders, same files, same bytes, same times
+    assert not trash.exists() and recycle_bin.trashed == []
+    assert list(system_temp.iterdir()) == []  # the working copy was removed
+    assert code == 0 and document["dry_run"] is True and document["failed"] == 0
+    (entry,) = document["results"]
+    applied = " ".join(entry["applied"])
+    assert "lyrics embedded" in applied  # lyrics ran
+    assert "embedded folder image cover.jpg" in applied  # cover ran (and only suggested from the folder image)
+    assert "year = '1999'" in applied  # the MusicBrainz lookup ran
+    assert not any("saved" in a for a in entry["applied"])  # no save stage
+    held = " ".join(document["run_notes"])
+    assert "Dry run" in held and "Rename by saved pattern" in held and "Move into library folders" in held
+
+
+def test_redact_dry_run_writes_no_history_journal(song, tmp_path, capsys, monkeypatch):
+    """The History journal (and its move log) is never written in a dry run, even with recording on."""
+    import core.redact_steps as rs
+    from core import history
+
+    monkeypatch.setattr(rs, "begin_save", lambda *a, **k: pytest.fail("a dry run journaled a save"))
+    monkeypatch.setattr(history, "record_file_moves", lambda *a, **k: pytest.fail("a dry run journaled a move"))
+    monkeypatch.setattr(cmd_redact, "JournalMoveLog", lambda: pytest.fail("a dry run made a move log"))
+
+    stale = Path(song).parent / ".mp3redactor-redact-crashed.mp3"  # a crashed real run's leftover: a dry run leaves it
+    stale.write_bytes(b"x")
+    monkeypatch.setattr(rs, "fetch_lyrics", lambda q, artist="", title="": ("", STATUS_ERROR, "no lyrics found"))
+    before = open(song, "rb").read()
+    steps = [r["step"] for r in run_json(capsys, "redact", "--list-steps")[1]["results"]]
+    argv = ["redact", "-n", song]
+    for step in steps:
+        argv += ["--disable", step]
+    code, document = run_json(capsys, *argv, "--enable", "lyrics")
+    assert code == 0 and document["dry_run"] is True and open(song, "rb").read() == before and stale.exists()
+
+
 def test_redact_rejects_unknown_steps_and_thresholds(song):
     with pytest.raises(CliError, match="unknown step"):
         main(["redact", song, "--disable", "nonsense"])

@@ -33,6 +33,19 @@ def test_save_changed_does_not_write_a_load_error_file(window, tmp_path):
     a.dirty = False
 
 
+def test_undo_keeps_more_than_five_steps(window, tmp_path):
+    """redactor_common 2026-11-05#01: the undo history holds 50 steps (it was 5, which typed panel edits used up fast)."""
+    (a,) = _load(window, tmp_path, ["a.mp3"])
+    _select(window, a)
+    for n in range(1, 8):
+        _apply(window, "album", f"Edit {n}")
+    assert a.album == "Edit 7"
+    for _ in range(7):
+        window.undo_last_action()
+    assert a.album == ""
+    a.dirty = False
+
+
 def test_undo_after_rename_keeps_the_new_path(window, tmp_path):
     (a,) = _load(window, tmp_path, ["a.mp3"])
     _select(window, a)

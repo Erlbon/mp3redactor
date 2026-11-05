@@ -28,6 +28,15 @@ dialogs. How one file flows:
      file. The engine runs `finalize` after them, so they call
      Mp3Ctx.save() first; it saves once and the save stage reports it.
 
+A dry run (redact -n; RedactEnv(dry_run=True)) runs only the steps marked
+dry_run_safe and never calls save_stage. Mp3Ctx then makes its scratch
+copy in the system temp folder instead of beside the song, and begin()
+tidies no folder, so nothing in the user's folders is written: the
+measurements, checks (mp3val -f too: it rewrites only the scratch copy),
+path tags, lookups, cover and lyrics change only the working copy in
+memory. Rename and Move into folders save and rename/move the file inside
+run() itself, so they stay out of a dry run.
+
 A scan-based step never acts on a failed tool: TOOL ERROR/TOOL MISSING is
 never stamped (MP3File.record_scan) and never triggers mp3val -f.
 Steps that cannot do their job because something is not installed or the
@@ -136,11 +145,14 @@ _LOOKUP_TRIGGER_FIELDS = ("title", "artist", "albumartist", "album", "track", "y
 class RedactEnv:
     """What the steps of one Redact run share: the app's settings, the
     rename log, the trash function (injectable for tests) and the files
-    in the run (an album lookup works on a whole folder, once)."""
+    in the run (an album lookup works on a whole folder, once).
+    `dry_run`: the scratch copies go to the system temp folder and begin()
+    removes no leftovers, so the run writes nothing in the user's folders."""
 
     settings: Settings
     rename_log: object | None = None  # anything with .record(label, [(old, new)], **move_details)
     trash: Callable[[str], None] | None = None  # None: the Recycle Bin (move_to_trash)
+    dry_run: bool = False
     items: list[MP3File] = field(default_factory=list)
     cleaned: int = 0  # scratch files of an earlier, interrupted run removed by begin()
     # Discogs (DiscogsStep): how its requests are made. None = the real
@@ -161,7 +173,7 @@ class RedactEnv:
         self._discogs.clear()
         self._discogs_releases.clear()
         self._local.clear()
-        self.cleaned = remove_stale_scratch_files(self.items)
+        self.cleaned = 0 if self.dry_run else remove_stale_scratch_files(self.items)
 
 
 def remove_stale_scratch_files(items) -> int:
@@ -218,8 +230,10 @@ class Mp3Ctx:
         if self.skip_reason:
             return
         try:
+            # Beside the original (same volume: the commit is a rename); a dry run never commits, so its copy
+            # goes to the system temp folder and the song's folder is not written at all.
             fd, self.temp = tempfile.mkstemp(
-                prefix=REDACT_SCRATCH_PREFIX, suffix=".mp3", dir=os.path.dirname(self.original)
+                prefix=REDACT_SCRATCH_PREFIX, suffix=".mp3", dir=None if env.dry_run else os.path.dirname(self.original)
             )
             os.close(fd)
             retry_on_lock(lambda: shutil.copy2(self.original, self.temp))  # keeps the permissions...
@@ -311,6 +325,9 @@ class Mp3Step(Step):
 class IntegrityStep(Mp3Step):
     key = "integrity"
     label = "Integrity check (mp3val)"
+    # mp3val (and mp3val -f, restore_temp) work on ctx.temp only, which a dry run keeps in the system temp folder;
+    # the stamp goes into the working copy in memory.
+    dry_run_safe = True
     description = (
         "Checks the file with mp3val and stamps the result inside the file. A file whose stamp already says "
         "OK is checked again but not rewritten when it is still OK. 'Fix problems' is off by default: problems "
@@ -367,6 +384,7 @@ class IntegrityStep(Mp3Step):
 class BpmStep(Mp3Step):
     key = "bpm"
     label = "Detect BPM"
+    dry_run_safe = True  # aubio reads ctx.temp (the ffmpeg fallback decodes to a .wav in the system temp folder)
     description = "Measures the tempo with aubio and writes it to the BPM tag."
     options = (
         OptionSpec(
@@ -395,6 +413,7 @@ class BpmStep(Mp3Step):
 class KeyStep(Mp3Step):
     key = "key"
     label = "Detect key"
+    dry_run_safe = True  # keyfinder-cli is run without -w: it only prints the key of ctx.temp
     description = "Detects the musical key with keyfinder-cli and writes it to the Key tag."
     options = (
         OptionSpec(
@@ -424,6 +443,7 @@ class KeyStep(Mp3Step):
 class LoudnessStep(Mp3Step):
     key = "loudness"
     label = "Measure loudness (ReplayGain)"
+    dry_run_safe = True  # ffmpeg -af loudnorm ... -f null -: reads ctx.temp, writes no file
     description = "Measures loudness with ffmpeg and writes the ReplayGain track gain."
 
     def process(self, ctx: Mp3Ctx) -> StepResult:
@@ -446,6 +466,7 @@ class LoudnessStep(Mp3Step):
 class DeepCheckStep(Mp3Step):
     key = "deep_check"
     label = "Deep check (ffmpeg full decode)"
+    dry_run_safe = True  # ffmpeg -f null - and ffprobe read ctx.temp; the stamp goes into the working copy
     description = "Decodes the whole file with ffmpeg to find corrupt audio and stamps the result. Slow."
     default_enabled = False
 
@@ -593,6 +614,7 @@ def _run_folder_counts(env: RedactEnv, pattern: str, root: str) -> dict:
 class PathTagsStep(Mp3Step):
     key = "path_tags"
     label = "Fill empty tags from the folder path"
+    dry_run_safe = True  # parses the path, fills the working copy in memory
     description = (
         "Reads tags back out of the file's folders, the mirror of Move into folders: with the pattern "
         "%albumartist%/%album%/%track% - %title% and the library root set in Import > Parse Filename (or "
@@ -775,6 +797,8 @@ def _local_confidence(mp3: MP3File, match: LocalMatch, track, fact) -> tuple[flo
 class TagLookupStep(Mp3Step):
     key = "tags"
     label = "Fill missing tags (MusicBrainz / AcoustID)"
+    # MusicBrainz and AcoustID are only asked (fpcalc reads the songs); the local database opens read-only (mode=ro)
+    dry_run_safe = True
     description = (
         "Finds the file's album on MusicBrainz (by its tags or folder name, and by sound when fpcalc is "
         "installed) and fills tags that are EMPTY. Existing values are never replaced unless the option "
@@ -976,6 +1000,7 @@ def _discogs_lookup_folder(ctx: "Mp3Ctx", client, folder: str) -> tuple[DiscogsF
 class DiscogsStep(Mp3Step):
     key = "discogs"
     label = "Fill missing tags (Discogs)"
+    dry_run_safe = True  # Discogs is only asked (token read from the key store); releases are kept in memory
     description = (
         "Finds the file's album on Discogs (by its tags or folder name, after the MusicBrainz step has "
         "filled what it could) and fills tags that are EMPTY: title, artist, album, track, year, genre (with "
@@ -1042,6 +1067,7 @@ class DiscogsStep(Mp3Step):
 class CoverStep(Mp3Step):
     key = "cover"
     label = "Add missing cover art"
+    dry_run_safe = True  # reads a folder image / downloads one into memory; set_cover only stages it (no folder.jpg)
     description = (
         "For a file with no embedded cover: a cover.jpg/folder.jpg next to it, else the release's front "
         "cover from the Cover Art Archive (needs the MusicBrainz Album Id tag, which the tag lookup "
@@ -1120,6 +1146,7 @@ class CoverStep(Mp3Step):
 class LyricsStep(Mp3Step):
     key = "lyrics"
     label = "Fetch lyrics"
+    dry_run_safe = True  # lyricy's search + fetch only (never its save()/add_to_track()): no .lrc file
     description = (
         "Looks the song up on LRCLIB (by artist and title) and embeds the lyrics. "
         "Only a result that matches the file's artist and title is used; a miss is "

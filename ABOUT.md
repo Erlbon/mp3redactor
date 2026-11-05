@@ -102,7 +102,7 @@ mp3redactor set      PATH...  -s FIELD=VALUE ... [--clear FIELD ...] [-n]
 mp3redactor rename   PATH...  [-p PATTERN] [--zero-pad N] [--ascii] [-n]
 mp3redactor move     PATH...  -p PATTERN [--root FOLDER] [--copy] [--zero-pad N] [--ascii] [-n]
 mp3redactor convert  PATH...  [--bitrate KBPS] [--trash-original] [-n]
-mp3redactor redact   [PATH...] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N]
+mp3redactor redact   [PATH...] [-n] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N]
                                [--trash-dir FOLDER] [--list-steps]
 mp3redactor analyze  PATH...  [--integrity] [--deep] [--bpm] [--key] [--loudness] [--save]
 mp3redactor m4b      PATH...  [--into FOLDER | --library FOLDER | --file FILE] [--bitrate KBPS] [--sidecar]
@@ -126,7 +126,7 @@ command line; the commands above are what is.
 | `--json` | Print one JSON document on stdout instead of text (see "JSON output"). Nothing else goes to stdout. |
 | `-q`, `--quiet` | No progress lines and no warnings on stderr (errors are still shown). |
 | `-o FILE`, `--output FILE` | Write the result (the text, or with `--json` the JSON document) to FILE instead of stdout. The file is complete when the program exits. This is the reliable way for a script to read a result. |
-| `-n`, `--dry-run` | On the commands that change files (`set`, `rename`, `move`, `convert`, `m4b`): show what would happen and change nothing. |
+| `-n`, `--dry-run` | On the commands that change files (`set`, `rename`, `move`, `convert`, `redact`, `m4b`): show what would happen and change nothing. |
 | `-h`, `--help` | Help for the program or for one command. |
 | `--version` | The version (top level only). |
 
@@ -235,16 +235,16 @@ Results: `converted`, `skipped`, `planned`, `failed`. The new path is in `new_pa
 
 ### redact
 
-`mp3redactor redact [PATH...] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N] [--trash-dir FOLDER] [--list-steps]`
+`mp3redactor redact [PATH...] [-n] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N] [--trash-dir FOLDER] [--list-steps]`
 
 Runs the Redact recipe on the files, the same steps as Edit > Redact: integrity check, BPM, key, loudness, deep
-check, tags from the folder path, lookups on MusicBrainz and Discogs, cover art, rename, move into folders. Each
-file is saved in place and its original goes to the Recycle Bin (or `--trash-dir`). Guesses below the
-confidence threshold are listed under "needs review" and not applied. There is no `--dry-run`: use `info`
-first, and `--disable` for the steps you do not want.
+check, tags from the folder path, lookups on MusicBrainz and Discogs, cover art, lyrics, rename, move into folders.
+Each file is saved in place and its original goes to the Recycle Bin (or `--trash-dir`). Guesses below the
+confidence threshold are listed under "needs review" and not applied. Preview a run with `--dry-run`.
 
 | Option | Meaning |
 | --- | --- |
+| `-n`, `--dry-run` | Show what a real run would change and write nothing: no file is saved, renamed, moved or sent to the Recycle Bin, and the History is not touched. The checks, measurements, folder-path tags, lookups, cover and lyrics run as usual (on a working copy in the system temp folder, not beside the song; with "Fix problems" on, mp3val fixes only that copy). `rename` and `move_into_folders` save the file to rename or move it, so a dry run leaves them out and names them in the report. The lookups still ask MusicBrainz, AcoustID, Discogs, the Cover Art Archive and LRCLIB. |
 | `--recipe FILE` | Use this recipe (a JSON file in the format the app stores) instead of the one saved in the app. |
 | `--enable STEP` | Turn a step on for this run (repeatable). |
 | `--disable STEP` | Turn a step off for this run (repeatable). |
@@ -321,7 +321,7 @@ the match that was used and `filled`, the names of what it filled in.
 | `set` | `path`, `status`, `changes` (field to `{old, new}`), `message` | `files`, `failed`, `dry_run` |
 | `rename`, `move` | `path`, `status`, `new_path`, `message` | `files`, `failed`, `dry_run`, and `pattern` or `root` |
 | `convert` | `path`, `status`, `new_path`, `message` | `files`, `failed`, `dry_run`, `bitrate_kbps` |
-| `redact` | `file`, `path`, `status`, `applied`, `needs_review` (step, value, confidence, reason), `failures`, `notes`, `skipped`, `not_saved` | `files`, `failed`, `needs_review`, `cancelled`, `confidence_threshold`, `run_notes` |
+| `redact` | `file`, `path`, `status`, `applied`, `needs_review` (step, value, confidence, reason), `failures`, `notes`, `skipped`, `not_saved` | `files`, `failed`, `needs_review`, `cancelled`, `confidence_threshold`, `run_notes`, `dry_run` |
 | `redact --list-steps` | `step`, `label`, `enabled` | `confidence_threshold` |
 | `analyze` | `path`, `status`, `problem`, `checks` (per check: `status`, `message` and its values), `save_error` | `files`, `problems`, `checks`, `saved` |
 | `notes` | `folder`, `kind`, `note`, `status` (`would-write`, `written`, `review`, `no-match`, `has-note`, `failed`), `message`, `confidence`, `level`, `level_reasons`, `suggested_levels`, `title`, `reasons`, `sources`, `candidates`, `problems`, `draft` (with `--show-drafts`) | `total`, `confident`, `uncertain`, `none`, `written`, `would_write`, `has_note`, `failed`, `dry_run`, `cancelled`, `requests`, `from_cache`, `elapsed_seconds` |

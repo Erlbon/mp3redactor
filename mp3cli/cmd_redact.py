@@ -3,8 +3,13 @@ mp3cli/cmd_redact.py
 
   redact PATH...   run the Redact recipe on the MP3 files: the same steps as Edit > Redact in the app
                    (integrity, BPM, key, loudness, deep check, tags from the path, lookups on MusicBrainz and
-                   Discogs, cover, rename, move), saved in place with each original in the Recycle Bin (or
-                   moved to --trash-dir).
+                   Discogs, cover, lyrics, rename, move), saved in place with each original in the Recycle Bin
+                   (or moved to --trash-dir).
+  redact -n PATH   dry run: shows what a real run would change and writes nothing. The checks, measurements,
+                   path tags, lookups, cover and lyrics run as usual on a working copy in the system temp
+                   folder (mp3val's fix too); rename and move into folders save and move the file, so they are
+                   left out and named in the report. Nothing is saved, renamed, moved or trashed, no leftover
+                   scratch copy is tidied away, and the History journal is not touched.
 
 The recipe is the one saved in the app (Edit > Edit Redact Recipe) unless --recipe FILE names a JSON recipe;
 --enable / --disable / --threshold adjust it for this run only. The Discogs token comes from the
@@ -15,6 +20,7 @@ shared ones in redactor_common.cli.commands.
 from __future__ import annotations
 
 import argparse
+import os
 
 from core import redact_steps
 from core.history import JournalMoveLog
@@ -33,13 +39,19 @@ def add_redact_parser(sub) -> None:
     parser = sub.add_parser(
         "redact", help="run the Redact recipe",
         description="Run the Redact recipe on the MP3 files. Each file is saved in place and its original goes to the "
-                    "Recycle Bin (or --trash-dir). Guesses below the confidence threshold are listed, not applied.",
+                    "Recycle Bin (or --trash-dir). Guesses below the confidence threshold are listed, not applied. "
+                    "With -n/--dry-run nothing is written: the report lists what a real run would change "
+                    "(rename and move into folders are left out of a dry run).",
     )
     parser.add_argument("paths", nargs="*", metavar="PATH", help="MP3 files, folders or wildcards")
     parser.add_argument("-R", "--no-recurse", action="store_true", help="for a folder, look only at the files directly in it")
     add_redact_options(parser)
     add_common_options(parser)
     parser.set_defaults(handler=run_redact)
+
+
+def _refuse_in_dry_run(path: str) -> None:
+    raise RuntimeError(f"dry run: {os.path.basename(path)} was not moved to the Recycle Bin")
 
 
 def run_redact(args: argparse.Namespace, out: Output) -> int:
@@ -53,13 +65,20 @@ def run_redact(args: argparse.Namespace, out: Output) -> int:
         raise CliError("give the MP3 files to redact (or --list-steps)")
 
     files = load(collect(args.paths, out, recurse=not args.no_recurse))
-    # No Undo Last Rename from the command line, but the journal's entries follow a renamed/moved file
-    # (history on only); the Redact entry itself is written at the path the save happened at.
-    env = RedactEnv(
-        app_settings, rename_log=JournalMoveLog(), trash=trash_to(args.trash_dir) if args.trash_dir else trash_with_retries(lambda path: redact_steps.move_to_trash(path)),
-    )
-    env.begin(files)
+    if args.dry_run:
+        # Belt and braces: the engine never runs the save stage or rename/move in a dry run, but should
+        # anything call these anyway, nothing is trashed and the History journal's entries are not moved.
+        env = RedactEnv(app_settings, rename_log=None, trash=_refuse_in_dry_run, dry_run=True)
+    else:
+        # No Undo Last Rename from the command line, but the journal's entries follow a renamed/moved file
+        # (history on only); the Redact entry itself is written at the path the save happened at.
+        env = RedactEnv(
+            app_settings, rename_log=JournalMoveLog(),
+            trash=trash_to(args.trash_dir) if args.trash_dir else trash_with_retries(lambda path: redact_steps.move_to_trash(path)),
+        )
+    env.begin(files)  # in a dry run this tidies no leftover scratch copies: it writes nothing
     return redact_items(
         files, recipe, catalogue, make_context=lambda mp3: Mp3Ctx(mp3, env), describe=lambda mp3: mp3.filename,
         finalize=save_stage, finalize_label=FINALIZE_LABEL, path_of=lambda mp3: str(mp3.path), out=out,
+        dry_run=args.dry_run,
     )

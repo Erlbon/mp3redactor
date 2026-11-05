@@ -837,3 +837,40 @@ def test_lyrics_step_miss_and_network_failure_write_nothing(tmp_path, monkeypatc
     monkeypatch.setattr(rs, "fetch_lyrics", lambda q, artist="", title="": ("", STATUS_TOOL_ERROR, "network down"))
     entry, _ = run(mp3, {"lyrics"})
     assert entry.status is FileStatus.FAILED
+
+
+# --- dry run (redactor_common 2026-11-05#01) ------------------------------------------
+
+
+def test_which_steps_may_run_in_a_dry_run():
+    """dry_run_safe: prepare/run/apply_suggestion only read and change the working copy in memory. The tools
+    (mp3val, aubio/ffmpeg, keyfinder-cli, ffmpeg/ffprobe) read the Mp3Ctx scratch copy, which a dry run keeps in
+    the system temp folder; mp3val -f rewrites only that copy. The lookups only ask (MusicBrainz, AcoustID,
+    Discogs, the Cover Art Archive, LRCLIB; the local database opens read-only). Rename and Move into folders
+    SAVE the file and rename/move it inside run(), so they stay out of a dry run."""
+    safe = {s.key for s in rs.build_catalogue(Settings()) if s.dry_run_safe}
+    assert safe == {
+        "integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "lyrics",
+    }
+
+
+def test_a_dry_run_keeps_its_working_copy_out_of_the_songs_folder(tmp_path, monkeypatch):
+    system_temp = tmp_path / "system-temp"
+    system_temp.mkdir()
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(system_temp))
+    folder = tmp_path / "music"
+    folder.mkdir()
+    mp3 = make_file(folder)
+    stale = folder / ".mp3redactor-redact-crashed.mp3"
+    stale.write_bytes(b"x")
+    env = rs.RedactEnv(Settings(), dry_run=True)
+    env.begin([mp3])
+    assert stale.exists() and env.cleaned == 0  # a dry run tidies nothing in the user's folders
+    ctx = rs.Mp3Ctx(mp3, env)
+    assert os.path.dirname(ctx.temp) == str(system_temp)
+    assert os.path.getsize(ctx.temp) == os.path.getsize(mp3.path)
+    assert sorted(p.name for p in folder.iterdir()) == sorted(["a.mp3", stale.name])
+    ctx.close()
+    assert list(system_temp.iterdir()) == []
