@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06#03 -- build_exe.bat builds with this repo's own .venv
+
+- **`build_exe.bat` builds with this repo's own `.venv`** (made at the redactor_common pin by
+  `..\redactor-build-tools\devenv\venv_sync.py`) instead of installing the requirements into the shared Python, which
+  breaks the other Redactor apps' pins. README's setup, test and build commands say the same. No change to the app.
+
 ## 2026-11-06#02 -- no plain web address in the MusicBrainz lookup's fpcalc tip
 
 - **Look Up > MusicBrainz:** the tip about fpcalc no longer shows "acoustid.org/chromaprint" as plain text; it points

@@ -222,8 +222,10 @@ If you want a personal build with `tools\` populated anyway:
    ```
    build_exe.bat
    ```
-   This checks for Python, installs dependencies (including PyInstaller
-   itself), builds a single-file windowed exe (with `assets/icon.ico` as
+   This checks for Python, makes or refreshes this repo's own `.venv` at
+   the redactor_common pin (`..\redactor-build-tools\devenv\venv_sync.py`,
+   so `redactor-build-tools` must sit next to this folder; never
+   `pip install -r requirements.txt` into the shared Python), builds a single-file windowed exe (with `assets/icon.ico` as
    its icon), and copies `tools\` alongside it in `dist\`. Every step is
    checked and stops with a clear message on failure rather than
    continuing to a false "Done."
@@ -261,14 +263,15 @@ binaries on their own.
 ## Setup (dev mode)
 
 ```
-pip install -r requirements.txt
-python main.py
+python ../redactor-build-tools/devenv/venv_sync.py .   # this repo's own .venv at the redactor_common pin (never pip
+                                                       # install -r requirements.txt into the shared Python)
+.venv\Scripts\python main.py
 ```
 
 ## Tests
 
 ```
-pytest
+.venv\Scripts\python -m pytest
 ```
 
 Core logic (mp3val output parsing, BPM fallback math, file discovery)
