@@ -146,3 +146,25 @@ def test_dialog_without_fpcalc_is_stage_one_only(tmp_path, monkeypatch):
         dlg_module.group_by_folder([MP3File(path=folder / "a.mp3")]), fetch=FakeMusicBrainz([], search_hits=[]),
     )
     assert not dialog._row_results[0].found
+
+
+def test_fpcalc_tip_has_no_plain_web_address_and_external_tools_links_it(tmp_path, monkeypatch):
+    # Every URL the app shows is a clickable link (Erlend, 2026-11-06). The lookup's intro label is plain
+    # text, so the tip sends you to Tools > External Tools, whose download links open in the browser.
+    from PyQt6.QtWidgets import QLabel
+    from core.mp3_file import MP3File
+    from gui import external_tools_dialog
+    from gui import musicbrainz_lookup_dialog as dlg_module
+
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
+    folder = tmp_path / "Album"
+    folder.mkdir()
+    albums = dlg_module.group_by_folder([MP3File(path=folder / "a.mp3")])
+    dialog = dlg_module.MusicBrainzLookupDialog(albums, fetch=FakeMusicBrainz([], search_hits=[]))
+    tip = dlg_module.MusicBrainzLookupDialog._info_text(dialog, albums)   # the base class keeps the text under the same name
+    assert "Tools > External Tools" in tip and "acoustid.org" not in tip and "://" not in tip
+    widget = external_tools_dialog.SharedToolPathsWidget([], external_tools_dialog.INTRO,
+                                                         links_html=external_tools_dialog.DOWNLOADS_HTML)
+    links = [label for label in widget.findChildren(QLabel) if 'href="https://acoustid.org/chromaprint"' in label.text()]
+    assert links and links[0].openExternalLinks()

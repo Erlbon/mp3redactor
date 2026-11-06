@@ -112,7 +112,8 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             " Each file is also identified by its sound (AcoustID fingerprints), which finds the album "
             "even when tags and names are missing."
             if self._fpcalc else
-            " Tip: with fpcalc (Chromaprint, free download from acoustid.org/chromaprint) set up under Tools > External Tools, files are also identified "
+            # no web address here: this label is plain text, and Tools > External Tools has fpcalc's download link
+            " Tip: with fpcalc (Chromaprint, a free download linked under Tools > External Tools) set up there, files are also identified "
             "by their sound, even when tags and names are missing."
         )
         return (

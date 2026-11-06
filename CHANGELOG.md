@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06#02 -- no plain web address in the MusicBrainz lookup's fpcalc tip
+
+- **Look Up > MusicBrainz:** the tip about fpcalc no longer shows "acoustid.org/chromaprint" as plain text; it points
+  to Tools > External Tools, where the fpcalc download is a link that opens in your browser (every web address the
+  app shows is a link).
+
 ## 2026-11-06#01 -- menu items call their action plainly
 
 Shared part: redactor_common 2026-11-06#01 (menu items no longer pass Qt's "checked" flag into their slots).
