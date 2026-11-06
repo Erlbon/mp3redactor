@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06#01 -- menu items call their action plainly
+
+Shared part: redactor_common 2026-11-06#01 (menu items no longer pass Qt's "checked" flag into their slots).
+- **Look Up > Discogs…** (menu bar and right-click) handed Qt's "checked" flag to the lookup as its "cover only"
+  setting. It was False, the right value by luck, so nothing went wrong; the lookup now gets its own default.
+
 ## 2026-11-05#03 -- the release's Linux build gets past its tests
 
 - **The read-only tests skip when run as root.** The Release workflow builds the Linux download in a Docker

@@ -263,3 +263,18 @@ def test_search_and_replace_and_change_case_edit_in_memory_and_undo(window, tmp_
         assert a.title == "Changed" and a.dirty
         window.undo_last_action()
         assert a.title == "Original"
+
+
+def test_discogs_menu_item_calls_the_lookup_with_its_default(monkeypatch):
+    """Metadata > Look Up > Discogs... leaves cover_only at its default. PyQt6 used to pass
+    triggered's checked=False into it (harmless only because the default is False too)."""
+    calls = []
+    monkeypatch.setattr(mw.MainWindow, "open_discogs_lookup_dialog",
+                        lambda self, cover_only="default": calls.append(cover_only))
+    monkeypatch.setattr(mw, "save_settings", lambda *a, **k: None)
+    w = mw.MainWindow()
+    try:
+        w.action_registry["discogs_lookup"].trigger()
+    finally:
+        w.close()
+    assert calls == ["default"]
