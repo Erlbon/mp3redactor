@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-21#01 -- redactor_common 2026-11-21-02
+
+- Moved to the family's newest shared code (from 2026-11-18-01), so this app is on the same pin as its siblings. What it brings: the shared notes and folder-cover code also reads and writes folders whose names end in a dot. No other change to the app.
+
 ## 2026-11-19#01 -- redactor_common 2026-11-18-01
 
 - Moved to the family's newest shared code (from 2026-11-06-01), so this release is built on the same pin as its siblings. Brings the shared key store's latest fixes and the column-header menu's on/off switches. No other change to the app.
