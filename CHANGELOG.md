@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-25#04 -- Discogs finds compilations tagged with a series name; cleared search fields stay cleared -- redactor_common 2026-11-25-04
+
+- **Look Up > Discogs** and the Redact step's Discogs lookup now find compilations whose Album Artist is a series
+  name or a band rather than "Various", such as the "Bloodstains Across …" discs. After artist + album it searches
+  both as free text, then the album under "Various", then the album alone. "VA", "V/A", "Various" and "Various
+  Artists" count as one artist. A Various release found under another artist name counts as an exact match only when
+  most of the files' titles are its track titles, and its album may be Album Artist + Album ("Bloodstains Across" +
+  "Switzerland"). Before, "Bloodstains Across Norway" came back at 74% and never exact, and "Bloodstains Across
+  Switzerland" came back as Swiss folk LPs titled "Switzerland".
+- **Look Up dialogs, Search This Item:** a field you clear (a wrong Artist, a Year to drop) is now searched as blank.
+  Before, a cleared field silently came back from the tags, so editing the search seemed to do nothing.
+- A pasted Discogs "link" of junk digits now reads as "not a Discogs link" instead of failing.
+- Shared code moved from redactor_common 2026-11-25-02 to 2026-11-25-04.
+
 ## 2026-11-25#03 -- paste an album link into the lookups; %dummy% in Parse -- redactor_common 2026-11-25-02
 
 - **Look Up > Discogs / MusicBrainz / MusicBrainz (Local Database):** the Search Query form has a new **Link** box.
