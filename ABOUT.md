@@ -38,6 +38,10 @@ time.
   selection (or everything loaded) and saves each file in place, the original going to the Recycle Bin. Guesses
   below the confidence threshold are listed for review, not applied. Edit > Edit Redact Recipe chooses the
   steps.
+- **Tidy Whitespace** (Edit > Tidy Whitespace…): lists every tag with stray whitespace (spaces at the start or
+  end, double spaces, tabs or line breaks in a one-line field, non-breaking or zero-width characters) with the
+  hidden characters made visible, and tidies the ticked ones. Like Search and Replace, nothing is written until
+  you Save, and Undo takes it back. Comment and Lyrics keep their line breaks. Redact's first step does the same.
 - **Convert other formats**: File > Import and Convert turns FLAC, WAV, OGG, M4A, WMA, Opus or AIFF into MP3
   beside the original. Opening a folder that has no MP3 at all but such files offers the same.
   Tools > Preferences > Conversion (the page every Redactor app shares) sets what happens: when such files are opened
@@ -237,7 +241,7 @@ Results: `converted`, `skipped`, `planned`, `failed`. The new path is in `new_pa
 
 `mp3redactor redact [PATH...] [-n] [--recipe FILE] [--enable STEP] [--disable STEP] [--threshold N] [--trash-dir FOLDER] [--list-steps]`
 
-Runs the Redact recipe on the files, the same steps as Edit > Redact: integrity check, BPM, key, loudness, deep
+Runs the Redact recipe on the files, the same steps as Edit > Redact: tidy whitespace in tags, integrity check, BPM, key, loudness, deep
 check, tags from the folder path, lookups on MusicBrainz and Discogs, cover art, lyrics, rename, move into folders.
 Each file is saved in place and its original goes to the Recycle Bin (or `--trash-dir`). Guesses below the
 confidence threshold are listed under "needs review" and not applied. Preview a run with `--dry-run`.
@@ -252,7 +256,7 @@ confidence threshold are listed under "needs review" and not applied. Preview a 
 | `--trash-dir FOLDER` | Move originals into this folder (created if needed) instead of the Recycle Bin, for a machine or a task that has none. |
 | `--list-steps` | Show the steps and whether the recipe has each on, then stop (no `PATH` needed). |
 
-Steps: `integrity`, `bpm`, `key`, `loudness`, `deep_check`, `path_tags`, `tags`, `discogs`, `cover`, `lyrics`, `rename`,
+Steps: `tidy_whitespace`, `integrity`, `bpm`, `key`, `loudness`, `deep_check`, `path_tags`, `tags`, `discogs`, `cover`, `lyrics`, `rename`,
 `move_into_folders`. Without `--recipe` the recipe saved in the app is used (the defaults if none was saved).
 The Discogs token comes from the `DISCOGS_TOKEN` environment variable if it is set, else from the app's saved
 token; the library root and tool paths come from the app's settings. A `--recipe` file that is not valid JSON or not a

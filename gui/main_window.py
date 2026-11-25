@@ -147,6 +147,8 @@ from gui.preferences import build_preferences_dialog
 from core.audio_quality import BITRATE_LEGEND, bitrate_result, display_bitrate, sample_rate_result
 from redactor_common.gui.quality_colour import apply_band_colour
 from gui.tag_panel import TagPanel
+from gui.whitespace_dialog import TidyWhitespaceDialog
+from core.whitespace import find_untidy
 from redactor_common.core import secret_store
 from redactor_common.core.temp_names import is_app_temp_name
 from redactor_common.gui.convert_offer import YES as CONVERT_YES
@@ -576,6 +578,10 @@ class MainWindow(QMainWindow):
                 change_case=self.open_case_conversion_dialog,
                 auto_number=self.open_auto_numbering_dialog,
                 filter_list=self.filter_list,
+                extra_text_tools=[
+                    MenuAction("tidy_whitespace", "Tidy &Whitespace…", self.open_tidy_whitespace_dialog,
+                               tooltip="Find and remove stray spaces, tabs, line breaks and invisible characters in tags"),
+                ],
             ),
             view=standard_view_items(
                 show_metadata_panel=self._toggle_tag_panel,
@@ -1879,6 +1885,37 @@ class MainWindow(QMainWindow):
             notes.append(f"Skipped, the file could not be read: {summarize_errors(unreadable)}")
         if notes:
             QMessageBox.warning(self, "Some Files Not Renamed", "\n\n".join(notes))
+
+    def open_tidy_whitespace_dialog(self) -> None:
+        """Edit > Tidy Whitespace...: lists the selected files' (or, with
+        nothing selected, every loaded file's) tag values with stray
+        whitespace (core/whitespace.py) and tidies the ticked ones in
+        memory, like Search and Replace: Save writes them, Undo reverts."""
+        targets = self._selected_files() or list(self.files)
+        if not targets:
+            QMessageBox.information(self, "No Files Loaded", "Open some files first.")
+            return
+        fixes = find_untidy(targets)
+        if not fixes:
+            QMessageBox.information(
+                self, "Tidy Whitespace", f"No stray whitespace in the tags of the {len(targets)} file(s) checked."
+            )
+            return
+        dialog = TidyWhitespaceDialog(fixes, len(targets), parent=self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self._apply_whitespace_fixes(dialog.ticked_fixes())
+
+    def _apply_whitespace_fixes(self, fixes) -> None:
+        if not fixes:
+            return
+        by_item: dict[int, tuple[MP3File, dict[str, str]]] = {}
+        for fix in fixes:
+            by_item.setdefault(id(fix.item), (fix.item, {}))[1][fix.key] = fix.new
+        self._push_undo("Tidy Whitespace", [item for item, _values in by_item.values()])
+        for item, values in by_item.values():
+            item.apply_tags(values)
+        self._rebuild_table()
 
     def open_case_conversion_dialog(self) -> None:
         """Edit > Change Case...: same shape as Search and Replace."""

@@ -124,6 +124,7 @@ from core.settings import DEFAULT_MOVE_PATTERN, Settings
 from core.tag_reader import load_tags
 from core.tag_writer import apply_tags_to_file
 from core.tool_locator import find_tool
+from core.whitespace import fixes_for
 
 # Confidence of the two cover sources (see CoverStep). A folder image
 # sitting next to the audio is what "Set Cover from Folder Image" uses
@@ -317,6 +318,34 @@ class Mp3Step(Step):
 
     def process(self, ctx: Mp3Ctx) -> StepResult:
         raise NotImplementedError
+
+
+# --- steps: tidy -----------------------------------------------------------------
+
+
+class TidyWhitespaceStep(Mp3Step):
+    """First in the recipe, so the path parse and the lookups after it work
+    with clean values (core/whitespace.py has the rules)."""
+
+    key = "tidy_whitespace"
+    label = "Tidy whitespace in tags"
+    dry_run_safe = True  # changes the working copy in memory only
+    description = (
+        "Removes stray whitespace from the tags: spaces at the start and end, double spaces, tabs and line "
+        "breaks in one-line fields, non-breaking spaces (made plain) and zero-width characters. Comment and "
+        "Lyrics keep their line breaks; only spaces at the ends of lines and of the whole text go. Only "
+        "whitespace is ever removed. Edit > Tidy Whitespace shows the same changes before they are made."
+    )
+
+    def __init__(self, *, default_enabled: bool | None = None):
+        super().__init__(default_enabled=True if default_enabled is None else default_enabled)
+
+    def process(self, ctx: Mp3Ctx) -> StepResult:
+        fixes = fixes_for(ctx.work)
+        if not fixes:
+            return StepResult.nothing()
+        ctx.work.apply_tags({fix.key: fix.new for fix in fixes})
+        return StepResult.applied(*(f"{fix.key}: {fix.old!r} -> {fix.new!r}" for fix in fixes))
 
 
 # --- steps: checks and measurements ------------------------------------------
@@ -1480,6 +1509,7 @@ def build_catalogue(settings: Settings | None = None) -> list[Step]:
     Discogs step does (only once a token is stored). The save stage is
     not a step: pass save_stage / FINALIZE_LABEL to run_redact."""
     return [
+        TidyWhitespaceStep(),
         IntegrityStep(),
         BpmStep(),
         KeyStep(),

@@ -616,7 +616,7 @@ def test_the_save_stage_reports_a_skip_even_when_no_step_runs(tmp_path):
 
 def test_defaults_match_the_brief():
     cat = {s.key: s for s in rs.build_catalogue(Settings())}
-    assert list(cat) == ["integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "lyrics", "rename", "move_into_folders"]
+    assert list(cat) == ["tidy_whitespace", "integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "lyrics", "rename", "move_into_folders"]
     # discogs is on by default only once a Discogs token exists (none in tests)
     assert [k for k, s in cat.items() if not s.default_enabled] == ["deep_check", "discogs", "rename", "move_into_folders"]
 
@@ -850,7 +850,7 @@ def test_which_steps_may_run_in_a_dry_run():
     SAVE the file and rename/move it inside run(), so they stay out of a dry run."""
     safe = {s.key for s in rs.build_catalogue(Settings()) if s.dry_run_safe}
     assert safe == {
-        "integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "lyrics",
+        "tidy_whitespace", "integrity", "bpm", "key", "loudness", "deep_check", "path_tags", "tags", "discogs", "cover", "lyrics",
     }
 
 

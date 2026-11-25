@@ -60,6 +60,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Edit | Change Case… | |
 | Edit | Auto-Number… (Preset "Number Tracks": Track 1..N in table order, no padding) | |
 | Edit | Filter List (show only files whose Filename, Title, Artist, Album or Path contains a text; empty text shows all) | Ctrl+F |
+| Edit | Tidy Whitespace… (stray spaces, tabs, line breaks, non-breaking and zero-width characters in tags) | |
 | View | Show Metadata Panel | |
 | View | Zoom In, Zoom Out, Reset Zoom | Ctrl++, Ctrl+-, Ctrl+0 |
 | View | Refresh List | F5, Ctrl+R |

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-25#05 -- Tidy Whitespace: find and remove stray spaces in tags
+
+- **Edit > Tidy Whitespace…** lists every tag with stray whitespace in the selected files (or all loaded): spaces at
+  the start or end, double spaces, tabs and line breaks in a one-line field, non-breaking spaces (U+00A0, U+202F)
+  and zero-width characters (U+200B, U+FEFF). The hidden characters are made visible (· untidy space, → tab,
+  ↵ line break, ⍽ non-breaking space, ¤ zero-width), with a tick per value. "Tidy Ticked" changes them in the list
+  like Search and Replace: nothing is written until you Save, and Undo takes it back. Found on "[2005] - Bloodstains
+  Across Switzerland", whose Album was "  Switzerland" on every file.
+- Comment and Lyrics keep their line breaks and indentation; only spaces at the ends of lines and blank space at the
+  start and end of the text go.
+- **Redact** has a new first step, **Tidy whitespace in tags** (`tidy_whitespace`), on by default, so the path parse
+  and the lookups after it search with clean values. A recipe saved before today gets it too, ticked and first;
+  untick it in Edit > Edit Redact Recipe.
+
 ## 2026-11-25#04 -- Discogs finds compilations tagged with a series name; cleared search fields stay cleared -- redactor_common 2026-11-25-04
 
 - **Look Up > Discogs** and the Redact step's Discogs lookup now find compilations whose Album Artist is a series

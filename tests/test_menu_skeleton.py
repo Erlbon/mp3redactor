@@ -55,6 +55,7 @@ def test_menu_contents_and_order(window):
     assert edit[0:2] == ["Undo", "Redo"] and edit[2].startswith("Apply to")
     assert edit[3:] == [
         "Redact", "Edit Redact Recipe", "Search and Replace", "Change Case", "Auto-Number", "Filter List",
+        "Tidy Whitespace",
     ]
     assert _menu_tree(menus["View"]) == [
         "Show Metadata Panel", "---", "Zoom In", "Zoom Out", "Reset Zoom", "---",

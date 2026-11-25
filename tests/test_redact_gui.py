@@ -168,7 +168,7 @@ def test_edit_recipe_saves_it_in_the_settings(window, monkeypatch):
 
     class FakeDialog:
         def __init__(self, catalogue, recipe, parent):
-            assert [s.key for s in catalogue][0] == "integrity" and "save" not in [s.key for s in catalogue]
+            assert [s.key for s in catalogue][0] == "tidy_whitespace" and "save" not in [s.key for s in catalogue]
 
         def exec(self):
             return mw.QDialog.DialogCode.Accepted
