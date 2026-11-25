@@ -149,6 +149,35 @@ def test_export_writes_the_cover_bytes(window, tmp_path, monkeypatch):
     assert out.read_bytes() == data
 
 
+def test_export_from_right_click_on_cover_suggests_folder_name(window, tmp_path, monkeypatch):
+    files = _load(window, tmp_path, ["a.mp3"])
+    data = _image_bytes("PNG")
+    files[0].set_cover(data, "image/png")
+    window._rebuild_table()
+    asked = []
+
+    def fake_save(_parent, _caption, default, _filter):
+        asked.append(default)
+        return default, ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(fake_save))
+    window.table.selectRow(0)
+    _app.processEvents()
+    menu = window.tag_panel._build_cover_context_menu()
+    export = menu.actions()[0]
+    assert export.isEnabled()
+    export.trigger()
+    assert asked == [str(tmp_path / "folder.png")]
+    assert (tmp_path / "folder.png").read_bytes() == data
+
+
+def test_cover_right_click_export_disabled_without_cover(window, tmp_path):
+    _load(window, tmp_path, ["a.mp3"])
+    window.table.selectRow(0)
+    _app.processEvents()
+    assert not window.tag_panel._build_cover_context_menu().actions()[0].isEnabled()
+
+
 def test_thumbnails_load_only_for_visible_rows(window, tmp_path, monkeypatch):
     files = _load(window, tmp_path, [f"{i:03}.mp3" for i in range(120)])
     reads = []

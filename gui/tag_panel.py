@@ -38,7 +38,7 @@ set_picked_value() back to apply the result.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, pyqtSignal
+from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QImage
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -47,6 +47,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QSizePolicy,
     QStyle,
@@ -216,6 +217,9 @@ class TagPanel(QWidget):
         (redactor_common's AsyncPreviewLoader) -- this only displays it."""
         self.cover_box = ImagePreviewBox("Cover")
         self.cover_label = self.cover_box.image_label
+        # Right-click on the cover itself offers the same Export as the button below.
+        self.cover_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cover_label.customContextMenuRequested.connect(self._show_cover_context_menu)
 
         # A large Play button directly under the cover: the same action as
         # File > Play (MainWindow wires clicked to it and keeps it enabled
@@ -255,6 +259,16 @@ class TagPanel(QWidget):
         self.cover_box.add_layout(buttons)
         self.show_cover_message("No file selected")
         return self.cover_box
+
+    def _build_cover_context_menu(self) -> QMenu:
+        menu = QMenu(self)
+        export = menu.addAction("Export Cover to Image File…")
+        export.setEnabled(self.cover_export_btn.isEnabled())
+        export.triggered.connect(self.coverExportRequested.emit)
+        return menu
+
+    def _show_cover_context_menu(self, pos: QPoint) -> None:
+        self._build_cover_context_menu().exec(self.cover_label.mapToGlobal(pos))
 
     # -- cover display (driven by MainWindow) ----------------------------
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-25#01 -- export the cover by right-clicking it
+
+- **Side panel cover:** right-click the cover image for "Export Cover to Image File…", the same action as the Export
+  button under it (greyed out unless exactly one file with a cover is selected).
+- **Export Cover** now suggests `folder.jpg` / `folder.png` (by the image's type) in the file's own folder, instead
+  of "<file name> cover".
+
 ## 2026-11-21#01 -- redactor_common 2026-11-21-02
 
 - Moved to the family's newest shared code (from 2026-11-18-01), so this app is on the same pin as its siblings. What it brings: the shared notes and folder-cover code also reads and writes folders whose names end in a dot. No other change to the app.

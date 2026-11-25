@@ -2890,7 +2890,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Export Cover", f"{mp3.filename} has no readable cover.")
             return
         data, mime = cover
-        default = str(mp3.path.with_name(mp3.path.stem + " cover" + extension_for(mime)))
+        default = str(mp3.path.with_name("folder" + extension_for(mime)))
         path, _filter = QFileDialog.getSaveFileName(
             self, "Export Cover", default, f"Image (*{extension_for(mime)})",
         )
