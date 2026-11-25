@@ -65,7 +65,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | View | Refresh List | F5, Ctrl+R |
 | View | Command Palette… | Ctrl+K |
 | Metadata | Parse Filename / Field… (tags from file and folder names, or from another tag such as a Title "Artist - Song") | Ctrl+I |
-| Metadata | Look Up > MusicBrainz…, MusicBrainz (Local Database)…, Discogs…, Lyrics | |
+| Metadata | Look Up > MusicBrainz…, MusicBrainz (Local Database)…, Discogs…, Lyrics (the album lookups' Search Query form has a Link box: paste a Discogs release/master or MusicBrainz release/release-group link and Search This Item uses that release) | |
 | Metadata | Edit Lyrics… | |
 | Metadata | Cover > Set from Image File…, Set from Folder Image, Get from MusicBrainz…, Get from Discogs…, Remove Cover, Export Cover to Image File… | |
 | Analyze | Check Integrity, Fix Integrity Issues…, Deep Check Integrity… | |

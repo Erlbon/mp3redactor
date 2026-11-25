@@ -207,3 +207,29 @@ def test_null_status_and_date_in_a_release_do_not_crash():
 
     release = mb.fetch_release("abc", fetch=lambda url: '{"id": "abc", "title": "T", "status": null, "date": null, "country": null}')
     assert (release.status, release.date, release.country) == ("", "", "")
+
+
+# --- a pasted link (2026-11-25) ---------------------------------------------------------------
+
+ZA_ID = "5c2b4e7a-1f3d-4a8e-9c0b-1234567890ab"
+
+
+def test_dialog_a_pasted_release_link_uses_that_release(tmp_path, monkeypatch):
+    from gui import musicbrainz_lookup_dialog as dlg_module
+
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
+    folder = tmp_path / "Johnny Cash - Ring of Fire"
+    folder.mkdir()
+    files = [MP3File(path=folder / "06.mp3", title="Big River", track="6", duration_seconds=151.0)]
+    fake = FakeMusicBrainz([_release_json(ZA_ID, "Ring of Fire", "ZA", RING_OF_FIRE)], search_hits=[])
+    dialog = dlg_module.MusicBrainzLookupDialog(dlg_module.group_by_folder(files), fetch=fake)
+    assert not dialog._row_results[0].found  # no tags: the search finds nothing
+
+    result = dialog._search_one(dialog.items[0], {"link": f"https://musicbrainz.org/release/{ZA_ID}"})
+    assert result.found and result.used_query["link"].endswith(ZA_ID)
+    dialog.refresh_row(0, result)  # what Search This Item does with it
+    assert {f["musicbrainz_albumid"] for _m, f in dialog.file_changes()} == {ZA_ID}
+
+    bad = dialog._search_one(dialog.items[0], {"link": "https://musicbrainz.org/artist/x"})
+    assert not bad.found and "Not a MusicBrainz" in bad.error

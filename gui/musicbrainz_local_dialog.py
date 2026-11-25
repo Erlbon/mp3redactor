@@ -30,7 +30,8 @@ from core.musicbrainz_local import (
     find_album_local,
     local_fields_for,
 )
-from redactor_common.core.lookups.musicbrainz import _most_common, album_query, facts_from_tags
+from redactor_common.core.lookups.musicbrainz import _most_common, album_query, facts_from_tags, parse_musicbrainz_link
+from gui.lookup_link import LINK_FIELD, LINK_TIP, link_from
 from gui.musicbrainz_lookup_dialog import (
     AlbumFolder,
     MusicBrainzLookupDialog,
@@ -42,7 +43,7 @@ from gui.musicbrainz_lookup_dialog import (
 class MusicBrainzLocalLookupDialog(MusicBrainzLookupDialog):
     window_title = "Look Up via MusicBrainz (Local Database)"
     search_label = "Searching the local MusicBrainz database…"
-    query_fields = [("artist", "Artist"), ("album", "Album"), ("year", "Year")]
+    query_fields = [("artist", "Artist"), ("album", "Album"), ("year", "Year"), LINK_FIELD]
 
     def __init__(self, albums: list[AlbumFolder], db: MusicBrainzLocalDatabase, parent=None,
                  fpcalc: Path | None = None, post=None):
@@ -62,6 +63,7 @@ class MusicBrainzLocalLookupDialog(MusicBrainzLookupDialog):
             "file to its track by number, title and length. Other editions are listed under Other Matches. "
             "Label, catalogue number and country are filled too; MusicBrainz genres and covers are not in the "
             "offline data. Untick anything you don't trust, then Apply; changes are written on Save." + by_sound
+            + LINK_TIP
         )
 
     def _cover(self, release):
@@ -82,6 +84,28 @@ class MusicBrainzLocalLookupDialog(MusicBrainzLookupDialog):
         )
         used = {"artist": query.artist, "album": query.album, "year": query.year}
         facts = [facts_from_tags(m.title, m.track, m.discnumber, m.duration_seconds) for m in album.files]
+        link = link_from(override)
+        if link:  # a pasted release link: that release from the offline database, no search
+            used["link"] = link
+            parsed = parse_musicbrainz_link(link)
+            if parsed is None:
+                return LookupResult(error=f"Not a MusicBrainz release link: {link}", used_query=used)
+            kind, mbid = parsed
+            if kind != "release":
+                return LookupResult(
+                    error="The local database looks up single releases: open one release of that group on "
+                          "musicbrainz.org and paste its link.",
+                    used_query=used,
+                )
+            try:
+                matches = find_album_local(self._db, facts, query, album_ids=(mbid,))
+            except MusicBrainzLocalError as exc:
+                return LookupResult(error=str(exc), used_query=used)
+            matches = [m for m in matches if m.release.id == mbid]
+            if not matches:
+                self._matches.pop(id(album), None)
+                return LookupResult(error=f"Release {mbid} is not in the local database.", used_query=used)
+            return self._link_result(album, facts, matches, used)
         try:
             hits = self._fingerprint(album)
         except AcoustIdError:

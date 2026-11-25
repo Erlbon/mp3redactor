@@ -44,7 +44,9 @@ from redactor_common.core.lookups.musicbrainz import (
     find_album,
     find_album_by_recordings,
     rank_matches,
+    release_ids_from_link,
 )
+from gui.lookup_link import LINK_FIELD, LINK_TIP, link_from, no_tracks_matched
 
 
 @dataclass
@@ -83,7 +85,7 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
     # the cover (the Cover Art Archive is online) and the field mapping.
     window_title = "Look Up via MusicBrainz"
     search_label = "Searching MusicBrainz…"
-    query_fields = [("artist", "Artist"), ("album", "Album")]
+    query_fields = [("artist", "Artist"), ("album", "Album"), LINK_FIELD]
 
     def __init__(self, albums: list[AlbumFolder], parent=None, fetch=None, fpcalc: Path | None = None, post=None,
                  cover_only: bool = False):
@@ -122,7 +124,7 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             "each file to its track by number, title and length. Other editions of the album are "
             "listed under Other Matches. Untick anything you don't trust, then Apply; changes are "
             "written on Save. MusicBrainz is queried at most once per second, so this takes a few "
-            "seconds per album." + by_sound
+            "seconds per album." + by_sound + LINK_TIP
         )
 
     def _cover(self, release):
@@ -149,6 +151,14 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
         )
         used = {"artist": query.artist, "album": query.album}
         facts = [facts_from_tags(m.title, m.track, m.discnumber, m.duration_seconds) for m in album.files]
+        link = link_from(override)
+        if link:  # a pasted release (or release group) link: those releases, no search
+            used["link"] = link
+            try:
+                matches = find_album_by_recordings(facts, release_ids_from_link(link, self._fetch), self._fetch)
+            except MusicBrainzError as exc:
+                return LookupResult(error=str(exc), used_query=used)
+            return self._link_result(album, facts, matches, used)
         try:
             hits = self._fingerprint(album)
         except AcoustIdError as exc:
@@ -177,6 +187,29 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             used_query=used,
             alternatives=[
                 LookupAlternative(label=f"{m.release.label()}  -- {m.summary()}", data=m) for m in matches[1:]
+            ],
+        )
+
+    def _link_result(self, album: AlbumFolder, facts: list, matches: list, used: dict) -> LookupResult:
+        """The release(s) a pasted link named, as one row: the best as the match, the rest
+        of a release group under Other Matches; an error if no file fits any track."""
+        if not matches or not matches[0].matched:
+            self._matches.pop(id(album), None)
+            release = matches[0].release if matches else None
+            return LookupResult(
+                error=no_tracks_matched(len(facts), release.title if release else "?",
+                                        release.track_count if release else 0),
+                used_query=used,
+            )
+        best = matches[0]
+        self._matches[id(album)] = best
+        return LookupResult(
+            fields=_summary_fields(best),
+            cover_bytes=self._cover(best.release),
+            used_query=used,
+            alternatives=[
+                LookupAlternative(label=f"{m.release.label()}  -- {m.summary()}", data=m)
+                for m in matches[1:] if m.matched
             ],
         )
 

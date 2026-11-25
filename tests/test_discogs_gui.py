@@ -439,3 +439,32 @@ def test_cover_only_dialog_changes_no_tags(tmp_path, monkeypatch):
     dialog = dlg_module.DiscogsLookupDialog(dlg_module.group_by_folder(_folder(tmp_path)), client, cover_only=True)
     assert dialog.file_changes() == [] and len(dialog.cover_changes()) == 2
     assert "Cover Only" in dialog.windowTitle()
+
+
+# --- a pasted link (2026-11-25) ---------------------------------------------------------------
+
+def test_a_pasted_link_uses_that_release_without_a_search(tmp_path, monkeypatch):
+    fake = _two_pressings()
+    dialog = _dialog(_folder(tmp_path), fake, monkeypatch)
+    searches = len(fake.searches())
+    result = dialog._search_one(dialog.items[0], {"link": "https://www.discogs.com/release/2-Miles-Davis-Kind-Of-Blue"})
+    assert len(fake.searches()) == searches  # no new search
+    assert result.found and result.fields["label"] == "Legacy CK 64935" and result.alternatives == []
+    assert result.used_query["link"].endswith("/release/2-Miles-Davis-Kind-Of-Blue")
+    assert {fields["catalognumber"] for _m, fields in dialog.file_changes()} == {"CK 64935"}
+
+
+def test_a_bad_link_or_a_release_with_no_matching_track_says_so(tmp_path, monkeypatch):
+    fake = _two_pressings()
+    fake.releases[3] = _release(3, title="Other", tracklist=[{"position": "1", "title": "Elsewhere", "type_": "track"}])
+    dialog = _dialog(_folder(tmp_path), fake, monkeypatch)
+    bad = dialog._search_one(dialog.items[0], {"link": "https://www.discogs.com/artist/23755"})
+    assert not bad.found and "Not a Discogs release" in bad.error
+    wrong = dialog._search_one(dialog.items[0], {"link": "https://www.discogs.com/release/3"})
+    assert not wrong.found and "None of the folder's 2 file(s) matched" in wrong.error
+    assert dialog.file_changes() == []  # the earlier match was dropped too
+
+
+def test_the_search_form_has_a_link_box(tmp_path, monkeypatch):
+    dialog = _dialog(_folder(tmp_path), _two_pressings(), monkeypatch)
+    assert "link" in dialog._query_edits

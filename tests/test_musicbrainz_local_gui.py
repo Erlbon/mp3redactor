@@ -207,3 +207,19 @@ def test_lookup_applies_through_the_overwrite_review_and_undoes(window, tmp_path
     assert (a.publisher, a.catalognumber) == ("Apple Records", "CDP 7 46446 2") and a.dirty
     window.undo_last_action()
     assert a.publisher == "" and a.catalognumber == ""
+
+
+# --- a pasted link (2026-11-25) -----------------------------------------------------------------
+
+
+def test_a_pasted_release_link_picks_that_edition(tmp_path, db, monkeypatch):
+    dialog = make_dialog(abbey(tmp_path), db, monkeypatch)
+    link = f"https://musicbrainz.org/release/{GID['abbey_lp']}"
+    result = dialog._search_one(dialog.items[0], {"link": link})
+    assert result.found and result.used_query["link"] == link
+    assert {f["musicbrainz_albumid"] for _m, f in dialog.file_changes()} == {GID["abbey_lp"]}
+
+    group = dialog._search_one(dialog.items[0], {"link": f"https://musicbrainz.org/release-group/{GID['abbey_lp']}"})
+    assert not group.found and "single releases" in group.error
+    missing = dialog._search_one(dialog.items[0], {"link": "abcdefab-cdef-4abc-8def-abcdefabcdef"})
+    assert not missing.found and "not in the local database" in missing.error

@@ -35,12 +35,15 @@ from redactor_common.core.lookups.discogs import (
     DiscogsError,
     DiscogsMatch,
     DiscogsQuery,
+    build_match,
     discogs_query,
     fetch_cover,
     fields_for,
     find_release,
     genre_text,
+    release_from_link,
 )
+from gui.lookup_link import LINK_FIELD, LINK_TIP, link_from, no_tracks_matched
 from core.mp3_file import MP3File
 from redactor_common.core.lookups.musicbrainz import facts_from_tags
 from gui.musicbrainz_lookup_dialog import AlbumFolder, group_by_folder  # noqa: F401 -- re-exported for callers
@@ -76,12 +79,12 @@ class DiscogsLookupDialog(CoverSaveMixin, LookupDialogBase):
                 "matching each file to its track by number, then by title. Other pressings of the album are "
                 "listed under Other Matches. Untick anything you don't trust, then Apply; changes are "
                 "written on Save. Discogs allows about one request per second, so this takes a few "
-                "seconds per album."
+                "seconds per album." + LINK_TIP
             ),
             search_label="Searching Discogs…",
             item_label=lambda album: f"{album.folder.name}  ({len(album.files)} file(s))",
             search_one=self._search_one,
-            query_fields=[("artist", "Artist"), ("album", "Album"), ("year", "Year")],
+            query_fields=[("artist", "Artist"), ("album", "Album"), ("year", "Year"), LINK_FIELD],
             get_local_cover=self._local_cover,
             resolve_alternative=self._resolve,
             item_noun="folder",
@@ -123,6 +126,23 @@ class DiscogsLookupDialog(CoverSaveMixin, LookupDialogBase):
         )
         used = {"artist": query.artist, "album": query.album, "year": query.year}
         facts = [facts_from_tags(m.title, m.track, m.discnumber, m.duration_seconds) for m in album.files]
+        link = link_from(override)
+        if link:  # a pasted release/master link: that release, no search
+            used["link"] = link
+            try:
+                match = build_match(query, facts, release_from_link(self._client, link, cache=self._releases))
+            except DiscogsError as exc:
+                return LookupResult(error=str(exc), used_query=used)
+            if not match.matched:
+                self._matches.pop(id(album), None)
+                return LookupResult(
+                    error=no_tracks_matched(len(facts), match.release.title, match.release.track_count),
+                    used_query=used,
+                )
+            self._matches[id(album)] = match
+            return LookupResult(
+                fields=_summary_fields(match, self._include_styles), cover_bytes=self._cover(match), used_query=used,
+            )
         try:
             matches = find_release(self._client, facts, query, cache=self._releases)
         except DiscogsError as exc:

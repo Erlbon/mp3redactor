@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-25#03 -- paste an album link into the lookups; %dummy% in Parse -- redactor_common 2026-11-25-02
+
+- **Look Up > Discogs / MusicBrainz / MusicBrainz (Local Database):** the Search Query form has a new **Link** box.
+  Paste the album's link and press Search This Item: that release is used as it is, with no search, and the folder's
+  files are matched to its tracks as usual. Discogs takes a release link, a master link (its main release), `[r123]`
+  or a bare release number. MusicBrainz takes a release link, a bare release id, or a release group link (its
+  releases are matched and the best is picked, the rest listed under Other Matches). The local database takes
+  release links only. A link that matches none of the folder's files says so.
+- **Metadata > Parse Filename / Field:** a new `%dummy%` placeholder skips text you don't want, and can be used
+  several times in one pattern, e.g. `%track% - %dummy% - %title% [%dummy%]`. It works in folder parts too.
+- Shared code moved from redactor_common 2026-11-25-01 to 2026-11-25-02, which brings the link readers and `%dummy%`.
+
 ## 2026-11-25#02 -- fill tags from another tag (Parse Filename / Field) -- redactor_common 2026-11-25-01
 
 - **Metadata > Parse Filename / Field…** (Ctrl+I, was "Parse Filename…") has a new "Parse from" choice: Filename
