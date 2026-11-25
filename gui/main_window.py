@@ -286,6 +286,12 @@ DEFAULT_HIDDEN_COLUMNS: frozenset[str] = frozenset({
 # bulk-edit panel, and these filename placeholders never drift out of
 # sync with each other.
 FILENAME_PLACEHOLDERS: list[tuple[str, str]] = [(key, label) for key, label, _m in FIELDS]
+# Parse Filename / Field's "Parse from" choices besides the filename: the text tags
+# that end up holding several values (Title "Artist - Song", Album "Artist - Album" ...).
+PARSE_SOURCE_FIELDS: list[tuple[str, str]] = [
+    (key, label) for key, label, _m in FIELDS
+    if key in ("title", "artist", "albumartist", "album", "composer", "comment")
+]
 # Fields Parse Filename should extract/coerce as numbers rather than
 # leaving as free-text strings, and that Rename/Export's zero-pad
 # checkbox can apply to (see redactor_common.core.rename_pattern.
@@ -581,7 +587,7 @@ class MainWindow(QMainWindow):
             app_menus=[
                 AppMenu(labels.MENU_METADATA, [
                     MenuAction(
-                        "parse_filename", labels.PARSE_FILENAME, self.open_parse_filename_dialog,
+                        "parse_filename", "&Parse Filename / Field…", self.open_parse_filename_dialog,
                         shortcut=shortcuts.PARSE_FILENAME,
                     ),
                     Separator(),
@@ -1565,21 +1571,28 @@ class MainWindow(QMainWindow):
             valid_field_keys={key for key, _label in FILENAME_PLACEHOLDERS},
             numeric_fields=NUMERIC_FILENAME_FIELDS,
             strip_leading_zeros_fields={"track"},
-            title="Parse Filename → Metadata",
+            title="Parse Filename / Field → Metadata",
             item_noun="file",
             library_root=self.settings.library_root,
             on_library_root_changed=self._remember_library_root,
+            # "Parse from": a tag whose text holds several values, e.g. Title "Artist - Song".
+            source_fields=PARSE_SOURCE_FIELDS,
+            get_field_text=lambda mp3, key: getattr(mp3, key, "") or "",
+            initial_source=self.settings.parse_source,
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
         self._remember_pattern_used(dialog.pattern_edit.text())
+        if self.settings.parse_source != dialog.source_key():
+            self.settings.parse_source = dialog.source_key()
+            save_settings(self.settings)
         changes = dialog.accepted_changes()  # index into targets -> {field: value}
         if not changes:
             return
 
-        self._push_undo("Parse Filename", targets)
+        self._push_undo("Parse Field" if dialog.source_key() else "Parse Filename", targets)
         for index, fields in changes.items():
             targets[index].apply_tags(fields)
         self._rebuild_table()

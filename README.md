@@ -64,7 +64,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | View | Zoom In, Zoom Out, Reset Zoom | Ctrl++, Ctrl+-, Ctrl+0 |
 | View | Refresh List | F5, Ctrl+R |
 | View | Command Palette… | Ctrl+K |
-| Metadata | Parse Filename… (tags from file and folder names) | Ctrl+I |
+| Metadata | Parse Filename / Field… (tags from file and folder names, or from another tag such as a Title "Artist - Song") | Ctrl+I |
 | Metadata | Look Up > MusicBrainz…, MusicBrainz (Local Database)…, Discogs…, Lyrics | |
 | Metadata | Edit Lyrics… | |
 | Metadata | Cover > Set from Image File…, Set from Folder Image, Get from MusicBrainz…, Get from Discogs…, Remove Cover, Export Cover to Image File… | |

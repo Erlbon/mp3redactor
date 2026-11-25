@@ -80,3 +80,39 @@ def test_a_path_pattern_in_the_history_does_not_become_the_filename_starting_pat
     _select_all(window)
     window.open_parse_filename_dialog()
     assert seen["start"] == "%track% - %title%"
+
+
+def test_parse_from_title_fills_artist_and_trims_title_and_remembers_the_source(window, tmp_path, monkeypatch):
+    a, b = _load(window, tmp_path, ["01.mp3", "02.mp3"])
+    a.apply_tags({"title": "Johnny Cash - Big River"})
+    b.apply_tags({"title": "Untitled"})  # no " - ": left alone
+    for mp3 in (a, b):
+        mp3.dirty = False
+    saved = []
+    monkeypatch.setattr(mw, "save_settings", lambda s, *a_, **k: saved.append(s.parse_source))
+
+    class FromTitle(mw.ParseFilenameDialog):
+        def exec(self):
+            self.source_combo.setCurrentIndex(self.source_combo.findData("title"))
+            self.pattern_edit.setText("%artist% - %title%")
+            return self.DialogCode.Accepted
+
+    monkeypatch.setattr(mw, "ParseFilenameDialog", FromTitle)
+    _select_all(window)
+    window.open_parse_filename_dialog()
+
+    assert (a.artist, a.title) == ("Johnny Cash", "Big River") and a.dirty
+    assert b.title == "Untitled" and not b.dirty
+    assert window.settings.parse_source == "title" and "title" in saved
+    assert "Parse Field" in window.action_undo.text()
+
+    seen = {}
+
+    class Probe(mw.ParseFilenameDialog):
+        def exec(self):
+            seen["source"] = self.source_key()
+            return self.DialogCode.Rejected
+
+    monkeypatch.setattr(mw, "ParseFilenameDialog", Probe)
+    window.open_parse_filename_dialog()
+    assert seen["source"] == "title"  # opens on the field used last time

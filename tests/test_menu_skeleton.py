@@ -61,7 +61,7 @@ def test_menu_contents_and_order(window):
         "Refresh List", "Command Palette",
     ]
     assert _menu_tree(menus["Metadata"]) == [
-        "Parse Filename", "---",
+        "Parse Filename / Field", "---",
         ("Look Up", ["MusicBrainz", "MusicBrainz (Local Database)", "Discogs", "Lyrics"]), "---",
         "Edit Lyrics", "---",
         ("Cover", [

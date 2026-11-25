@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-25#02 -- fill tags from another tag (Parse Filename / Field) -- redactor_common 2026-11-25-01
+
+- **Metadata > Parse Filename / Field…** (Ctrl+I, was "Parse Filename…") has a new "Parse from" choice: Filename
+  (as before), Title, Artist, Album Artist, Album, Composer or Comment. Example: Parse from Title with
+  `%artist% - %title%` turns a Title of "Johnny Cash - Big River" into Artist "Johnny Cash" and Title "Big River".
+  Values that don't match the pattern, and empty fields, are left alone. The preview, Undo ("Parse Field") and Save
+  work as before. The dialog opens on the source you used last.
+- Shared code moved from redactor_common 2026-11-21-02 to 2026-11-25-01, which brings the "Parse from" choice.
+
 ## 2026-11-25#01 -- export the cover by right-clicking it
 
 - **Side panel cover:** right-click the cover image for "Export Cover to Image File…", the same action as the Export

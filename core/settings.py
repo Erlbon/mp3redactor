@@ -177,6 +177,8 @@ class Settings:
     move_pattern: str = ""
     # "Move into folders": the root every moved file is filed under.
     library_root: str = ""
+    # Parse Filename / Field: the field the pattern last read ("" = the filename).
+    parse_source: str = ""
 
     # The Redact recipe (which steps run, their order/options, the
     # confidence threshold) as one line of JSON -- see
@@ -291,6 +293,7 @@ class Settings:
             "rename_pattern": self.rename_pattern,
             "move_pattern": self.move_pattern,
             "library_root": self.library_root,
+            "parse_source": self.parse_source,
             "recycle_fallback_folder": self.recycle_fallback_folder,
             "redact_recipe": self.redact_recipe,
             "allow_unencrypted_fallback": str(self.allow_unencrypted_fallback),
@@ -357,6 +360,7 @@ class Settings:
             rename_pattern=section.get("rename_pattern", fallback=""),
             move_pattern=section.get("move_pattern", fallback=""),
             library_root=section.get("library_root", fallback=""),
+            parse_source=section.get("parse_source", fallback=""),
             recycle_fallback_folder=section.get("recycle_fallback_folder", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
             allow_unencrypted_fallback=_get_bool(section, "allow_unencrypted_fallback", False),
