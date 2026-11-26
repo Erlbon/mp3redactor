@@ -30,7 +30,7 @@ from core.keyfinder_runner import detect_key
 from core.lyrics_fetcher import build_query, fetch_lyrics
 from core.mp3_converter import CANCELLED_MESSAGE, DEFAULT_BITRATE_KBPS, convert_to_mp3
 from core.mp3_file import (
-    BASELINE_KEYS, MP3File, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING,
+    BASELINE_KEYS, MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_WARNING,
 )
 from core.mp3val_runner import check_integrity, fix_integrity
 from core.tag_reader import load_tags
@@ -123,6 +123,13 @@ def run_integrity_fix(
     run_integrity_check() writes -- a fix is just a check that also
     mutates the file, so there's no separate set of fields to track).
 
+    The post-fix result comes from checking the file again: like mp3val
+    -f, fix_integrity() returns the problems it found BEFORE rebuilding,
+    and stamping those would mark a repaired file as still damaged
+    (2026-11-26#07). What the re-check still finds is what could not be
+    fixed (too few frames, no tags, ...). A re-check that fails is a
+    TOOL ERROR, never stamped.
+
     delete_backup forwards to fix_integrity()'s -nb toggle, mp3val_path
     forwards to its override_path -- see core.settings for where both
     preferences live.
@@ -137,6 +144,9 @@ def run_integrity_fix(
         status, message = fix_integrity(
             mp3.path, delete_backup=delete_backup, override_path=mp3val_path
         )
+        if status in (STATUS_WARNING, STATUS_ERROR):
+            # The fix's findings are from before the rebuild: check again.
+            status, message = check_integrity(mp3.path, override_path=mp3val_path)
         if status != STATUS_TOOL_MISSING:
             # mp3val -f rewrote the file. Also after a TOOL ERROR: a
             # timed-out or crashed fix may have modified it anyway.

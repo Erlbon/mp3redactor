@@ -170,7 +170,8 @@ def test_fix_stamp_survives_reload_from_disk(tmp_path):
         t.save(p)
         return STATUS_WARNING, "left over"
 
-    with patch("core.scan_service.fix_integrity", side_effect=fake_fix):
+    with patch("core.scan_service.fix_integrity", side_effect=fake_fix), \
+            patch("core.scan_service.check_integrity", return_value=(STATUS_WARNING, "left over")):
         run_integrity_fix([mp3])
     assert mp3.album == "Fixed"
     assert mp3.integrity_status == STATUS_WARNING
@@ -178,6 +179,46 @@ def test_fix_stamp_survives_reload_from_disk(tmp_path):
     assert mp3.dirty
     assert save_tags(mp3)
     assert str(ID3(path)["TXXX:REDACTOR_INTEGRITY"].text[0]).startswith("WARNING;")
+
+
+def test_fix_stamps_the_state_after_the_rebuild_not_before(tmp_path):
+    # Real fix, no mocks: a file with garbage in the middle. mp3val -f (and
+    # the port) report the problem they found before rebuilding; the stamp
+    # must say what the file is now.
+    from tests.mp3val_samples import samples
+
+    path = tmp_path / "damaged.mp3"
+    path.write_bytes(samples()["garbage_mid"])
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    run_integrity_fix([mp3])
+    assert mp3.integrity_status == STATUS_OK, mp3.integrity_message
+    assert mp3.integrity_stamp.startswith("OK;")
+    assert (tmp_path / "damaged.mp3.bak").exists()
+
+
+def test_fix_keeps_what_could_not_be_fixed(tmp_path):
+    from tests.mp3val_samples import samples
+
+    path = tmp_path / "few.mp3"
+    path.write_bytes(samples()["few_frames_no_tags"])
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    run_integrity_fix([mp3])
+    assert mp3.integrity_status == STATUS_WARNING
+    assert "Too few MPEG frames" in mp3.integrity_message
+
+
+def test_fix_whose_recheck_fails_is_not_stamped(tmp_path):
+    path = _copy(tmp_path)
+    _put_frame(path, "REDACTOR_INTEGRITY", STAMP)
+    mp3 = MP3File(path=path)
+    load_tags(mp3)
+    with patch("core.scan_service.fix_integrity", return_value=(STATUS_WARNING, "before")), \
+            patch("core.scan_service.check_integrity", return_value=(STATUS_TOOL_ERROR, "could not read")):
+        run_integrity_fix([mp3])
+    assert mp3.integrity_status == STATUS_TOOL_ERROR
+    assert mp3.integrity_stamp == STAMP
 
 
 def test_reload_keeps_unsaved_scan_and_takes_changed_disk_stamp(tmp_path):

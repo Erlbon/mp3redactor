@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-26#07 -- Fix Integrity Issues stamps what the file is after the fix -- redactor_common 2026-11-26-02
+
+- **A fixed file is no longer stamped with the problems it had before the fix.** mp3val -f, and the built-in port of
+  it, report what they found before rebuilding the file. Fix Integrity Issues stamped that, so a repaired file still
+  showed WARNING (for example "MPEG stream error") until it was checked again. It now checks each fixed file once more
+  and stamps that result: OK when everything was repaired, or what is left that a fix cannot change (too few MPEG
+  frames, no tags, ...). If that second check fails, the file shows TOOL ERROR and is not stamped. The Redact step
+  already checked again after a fix and is unchanged.
+
 ## 2026-11-26#06 -- The integrity check and fix are built in: mp3val.exe is no longer needed -- redactor_common 2026-11-26-02
 
 - **Check Integrity and Fix Integrity Issues work without mp3val.exe.** They now run in-process in
