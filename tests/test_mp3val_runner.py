@@ -7,6 +7,25 @@ from core.mp3_file import (
 from core.mp3val_runner import _parse_output, check_integrity, fix_integrity
 
 
+def test_parse_output_cannot_open_is_a_tool_error_not_clean():
+    # Real mp3val 0.1.8 for a file named in Japanese or Polish: exit code 0,
+    # this line on stderr and no WARNING/ERROR line, so it used to pass as clean.
+    for stderr in ('Cannot open input file "??.mp3" or it is empty\n', "Cannot open input file L?dz.mp3\n"):
+        status, message = _parse_output("", 0, stderr)
+        assert status == STATUS_TOOL_ERROR
+        assert "could not open" in message
+    status, _ = _parse_output("Cannot open input file x.mp3\n", 0, "")
+    assert status == STATUS_TOOL_ERROR
+
+
+@patch("core.mp3val_runner.subprocess.run")
+def test_cannot_open_on_a_non_ascii_path_explains_why(mock_run):
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="Cannot open input file L?dz.mp3\n")
+    status, message = check_integrity(Path("Łódź.mp3"), tool_path=Path("mp3val.exe"))
+    assert status == STATUS_TOOL_ERROR
+    assert "Windows code page" in message
+
+
 def test_parse_output_clean_file():
     stdout = "Analyzing song.mp3\n"
     status, message = _parse_output(stdout)

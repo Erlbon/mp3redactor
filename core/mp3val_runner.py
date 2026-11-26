@@ -105,14 +105,34 @@ def _run(
     except (OSError, UnicodeDecodeError) as e:
         return STATUS_TOOL_ERROR, f"failed to run mp3val: {e}"
 
-    return _parse_output(result.stdout, result.returncode, result.stderr)
+    status, message = _parse_output(result.stdout, result.returncode, result.stderr)
+    if status == STATUS_TOOL_ERROR and not str(path).isascii():
+        message += (
+            " (mp3val cannot open a path with letters outside the Windows code page,"
+            " for example Polish or Japanese letters; rename the file or folder to check it)"
+        )
+    return status, message
 
 
 def _parse_output(stdout: str, returncode: int = 0, stderr: str = "") -> tuple[str, str]:
     warning_lines = []
     error_lines = []
+    for line in (stderr or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Cannot open input file"):
+            # mp3val exits 0 when it cannot open the file at all (for
+            # example a name with letters outside the ANSI code page) and
+            # prints only this, on stderr: without this check the file
+            # would pass as clean although it was never read.
+            return STATUS_TOOL_ERROR, f"mp3val could not open the file: {stripped}"
     for line in stdout.splitlines():
         stripped = line.strip()
+        if stripped.startswith("Cannot open input file"):
+            # mp3val exits 0 when it cannot open the file at all (for
+            # example a name with letters outside the ANSI code page) and
+            # prints no WARNING/ERROR line: without this the file would
+            # pass as clean although it was never read.
+            return STATUS_TOOL_ERROR, f"mp3val could not open the file: {stripped}"
         if stripped.startswith("WARNING:"):
             warning_lines.append(stripped)
         elif stripped.startswith("ERROR:"):

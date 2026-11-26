@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-26#05 -- mp3val no longer passes files it could not open as clean -- redactor_common 2026-11-26-02
+
+- **Integrity check: a file mp3val cannot open is no longer reported as clean.** mp3val 0.1.8 cannot open a path with
+  letters outside the Windows code page (Polish, Czech, Cyrillic, Greek, Japanese, ...; Norwegian letters and ü are
+  fine). It then prints "Cannot open input file" on stderr and exits 0 with no WARNING/ERROR line, so the file was
+  stamped OK without being read. It is now TOOL ERROR (never stamped), and the message says to rename the file or
+  folder. The same goes for Fix, which never touched such files.
+- fpcalc 1.6.2 (Look Up by sound) was tested the same way and opens every name.
+
 ## 2026-11-26#04 -- Key detection is built in: keyfinder-cli is no longer needed -- redactor_common 2026-11-26-02
 
 - **Detect Key works without keyfinder-cli.exe and its four FFmpeg DLLs.** The key is now found in-process by
