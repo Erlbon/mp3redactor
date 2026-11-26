@@ -120,8 +120,10 @@ def test_no_build_is_packed_with_upx():
 def test_build_exe_builds_both_programs_and_the_installer_with_this_repos_venv():
     bat = read("build_exe.bat")
     commands = [line for line in bat.splitlines() if not line.lstrip().upper().startswith(("REM", "ECHO"))]
-    assert "venv_sync.py" in bat and not any("pip install" in line for line in commands)
-    assert bat.count(".venv\\Scripts\\python -m PyInstaller mp3redactor.spec --noconfirm") == 2
+    assert "venv_sync.py --build ." in bat and not any("pip install" in line for line in commands)
+    # the clean build venv (no shared packages): the test .venv let PyInstaller bundle Pillow, lxml and cryptography (+20 MB)
+    assert bat.count(".venv-build\\Scripts\\python -m PyInstaller mp3redactor.spec --noconfirm") == 2
+    assert not any(".venv\\Scripts" in line for line in commands)
     assert bat.index('set "MP3REDACTOR_BUILD="') < bat.index('set "MP3REDACTOR_BUILD=folder"')
     assert "installer\\mp3redactor.iss" in bat and "--no-pause" in bat
     for built in ("dist\\mp3redactor.exe", "dist\\mp3redactor\\mp3redactor.exe", "dist\\mp3redactor-setup.exe"):
