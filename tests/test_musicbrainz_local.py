@@ -245,6 +245,64 @@ def test_text_search_ignores_punctuation_and_ampersands(tmp_path):
         database.close()
 
 
+def _series_db(tmp_path):
+    """Two other releases called "Switzerland" (one by a band, one by Various Artists)
+    and the compilation "Bloodstains Across Switzerland" by Various Artists."""
+    tables = default_tables()
+    tables["artist"].append(row("artist", id=6, gid="a0000006-0000-4000-8000-000000000006", name="Electric Six",
+                                sort_name="Electric Six"))
+    tables["artist_credit_name"].append(
+        row("artist_credit_name", artist_credit=5, position=0, artist=6, name="Electric Six", join_phrase=""))
+    for rg, rid, gid, name, ac in (
+        (9, 13, "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "Switzerland", 5),
+        (10, 14, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "Switzerland", 3),
+        (11, 15, "ffffffff-ffff-4fff-8fff-ffffffffffff", "Bloodstains Across Switzerland", 3),
+    ):
+        tables["release_group"].append(row("release_group", id=rg, gid=f"d00000{rg:02d}-0000-4000-8000-0000000000{rg:02d}",
+                                           name=name, artist_credit=ac, type=1))
+        tables["release"].append(row("release", id=rid, gid=gid, name=name, artist_credit=ac, release_group=rg, status=1))
+    return ml.MusicBrainzLocalDatabase(_build(tmp_path / "series", tables=tables))
+
+
+def test_a_series_name_split_over_album_artist_and_album_is_searched_as_one_title(tmp_path):
+    """"Bloodstains Across Switzerland" (2026-11-26): album artist "Bloodstains Across",
+    album "  Switzerland". The album alone finds every other "Switzerland"."""
+    database = _series_db(tmp_path)
+    try:
+        found = ml.search_releases_local(database, LocalQuery(artist="Bloodstains Across", album="  Switzerland"))
+        assert [r.title for r in found] == ["Bloodstains Across Switzerland"]
+        # A Various Artists tag searches the album's words alone: both Various "Switzerland"s and the band's
+        various = ml.search_releases_local(database, LocalQuery(artist="VA", album="Switzerland"))
+        assert len(various) == 3
+    finally:
+        database.close()
+
+
+def test_a_compilation_tagged_with_a_band_falls_back_to_various_artists_before_the_album_alone(tmp_path, monkeypatch):
+    database = _series_db(tmp_path)
+    seen = []
+    real_query = database.query
+
+    def recording(sql, params=()):
+        if "releases_fts" in sql:
+            seen.append(params[0])
+        return real_query(sql, params)
+
+    monkeypatch.setattr(database, "query", recording)
+    try:
+        found = ml.search_releases_local(database, LocalQuery(artist="Sperma", album="Switzerland"))
+        # both Various Artists releases with the word "Switzerland", never the band's
+        assert sorted(r.title for r in found) == ["Bloodstains Across Switzerland", "Switzerland"]
+        assert {r.artist for r in found} == {"Various Artists"}
+        assert seen == [
+            'title : ("switzerland") AND artist_credit_text : ("sperma")',
+            'title : ("sperma" "switzerland")',
+            'title : ("switzerland") AND artist_credit_text : ("various" "artists")',
+        ]
+    finally:
+        database.close()
+
+
 def test_no_match_is_empty_not_an_error(db):
     assert ml.find_album_local(db, ABBEY, LocalQuery(artist="Nobody", album="Nothing Here")) == []
     assert ml.find_album_local(db, ABBEY, LocalQuery()) == []

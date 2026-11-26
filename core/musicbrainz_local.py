@@ -283,8 +283,12 @@ _BARCODE_TEXT = re.compile(r"^\s*\d[\d \-]{6,}\d\s*$")
 
 
 def search_releases_local(db: MusicBrainzLocalDatabase, query: AlbumQuery, limit: int = TEXT_POOL) -> list[LocalRelease]:
-    """Release summaries (no track lists) for the artist + album text, then, if
-    that finds nothing, by album alone -- the local twin of search_releases()."""
+    """Release summaries (no track lists) from the first search that finds
+    anything -- the local twin of search_releases(): artist + album; for a
+    compilation tagged with a series name as its artist, the name + album as
+    one title ("Bloodstains Across" + "Switzerland", 2026-11-26) and the album
+    under "Various Artists"; last the album alone (which for "Switzerland"
+    finds every other release of that name)."""
     if not db.has_release_search:
         raise MusicBrainzLocalError("This MusicBrainz database has no release search index -- rebuild it.")
     if not (query.album or "").strip():
@@ -294,6 +298,9 @@ def search_releases_local(db: MusicBrainzLocalDatabase, query: AlbumQuery, limit
     if (query.artist or "").strip() and not is_various(query.artist):
         artist = _match_tokens(query.artist, drop=("and", "the"))
         attempts.append(f"title : ({album}) AND artist_credit_text : ({artist})")
+        if not normalize_words(query.album).startswith(normalize_words(query.artist)):
+            attempts.append(f"title : ({_match_tokens(f'{query.artist} {query.album}', drop=())})")
+        attempts.append(f'title : ({album}) AND artist_credit_text : ("various" "artists")')
     attempts.append(f"title : ({album})")
     for match in attempts:
         ids = [r[0] for r in db.query(
