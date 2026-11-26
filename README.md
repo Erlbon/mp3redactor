@@ -18,7 +18,7 @@ Where each part lives:
 | --- | --- |
 | Integrity check and fix | `core/mp3val_runner.py` (mp3val, shelled out) |
 | BPM | `core/bpm_detector.py` (aubio in-process, ffmpeg fallback) |
-| Key | `core/keyfinder_runner.py` (keyfinder-cli; Windows build at [Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)) |
+| Key | `core/key_detector.py` (Python/numpy port of libkeyfinder, in-process; aubio decodes, ffmpeg fallback), called through `core/keyfinder_runner.py`, which falls back to keyfinder-cli ([Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)) only if the port fails. `tools/compare_keyfinder.py` compares the two on a folder of files. |
 | Deep check, loudness, format details | `core/ffmpeg_probe.py` (ffmpeg / ffprobe) |
 | Tags, covers, lyrics on disk | `core/tag_reader.py`, `core/tag_writer.py`, `core/cover_art.py` (mutagen) |
 | Find Duplicates | `core/mp3_duplicates.py` on redactor_common's duplicates dialog |
@@ -117,7 +117,7 @@ order, with the default recipe:
 | --- | --- | --- |
 | Integrity check (mp3val) | yes | Checks and stamps the result. "Fix problems" is off by default; with it on, a fix also leaves mp3val's backup as `<name>.mp3.bak` unless Tools > Preferences > Fixing deletes those. |
 | Detect BPM | yes | Tempo into the BPM tag (an existing one is kept unless "replace"). |
-| Detect key | yes | Musical key (keyfinder-cli). |
+| Detect key | yes | Musical key (built-in port of keyfinder-cli's libkeyfinder). |
 | Measure loudness (ReplayGain) | yes | Track gain to -18 LUFS. |
 | Deep check (ffmpeg full decode) | no | Decodes the whole file to find damage mp3val misses. |
 | Fill empty tags from the folder path | yes | From a `%field%` pattern over the folder names. |
@@ -149,6 +149,10 @@ Every command and option is documented in [ABOUT.md](ABOUT.md#command-line).
   requires MSVC Build Tools to build locally. `aubio-ledfx` is a fork
   that ships prebuilt Windows wheels; code still does `import aubio`
   unchanged.
+- Key detection runs in-process since 2026-11-26 (`core/key_detector.py`,
+  a numpy port of libkeyfinder 2.2.8 that gave the same key as
+  keyfinder-cli 1.2.0 on every test file); keyfinder-cli is now only a
+  fallback for files the port cannot decode, and optional.
 - **mp3val**, **keyfinder-cli**, and **ffmpeg/ffprobe** are all shelled
   out to -- no Python bindings exist for mp3val/keyfinder-cli, and
   ffmpeg/ffprobe are used as real binaries (not a Python wrapper

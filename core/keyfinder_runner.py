@@ -1,6 +1,10 @@
 """
-Runs keyfinder-cli against a file and returns the detected musical key.
+Musical key detection. detect_key() uses the in-process Python port
+(core.key_detector) and falls back to the external keyfinder-cli tool
+only when the port fails; detect_key_with_exe() runs keyfinder-cli
+alone (the fallback, and tools/compare_keyfinder.py's reference).
 
+The rest of this note is about keyfinder-cli:
 Much simpler output to parse than mp3val's: keyfinder-cli prints just
 the key to stdout on success (nothing at all if the file is silent --
 genuinely has no key, not a failure) and exits 0. Any non-zero exit, a
@@ -16,6 +20,7 @@ core.subprocess_utils): no console window, stdin=DEVNULL, UTF-8 output.
 import subprocess
 from pathlib import Path
 
+from core.key_detector import detect_key_native
 from core.mp3_file import STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING
 from core.subprocess_utils import run_tool
 from core.tool_locator import find_tool
@@ -31,7 +36,30 @@ def detect_key(
     path: Path, tool_path: Path | None = None, override_path: str | None = None
 ) -> tuple[str, str, str]:
     """
-    Returns (key, status, message). status is one of STATUS_OK /
+    Detects the key in-process (core.key_detector, the Python port of
+    keyfinder-cli's libkeyfinder) and falls back to keyfinder-cli only
+    when the port cannot decode or analyse the file and the tool is
+    present. Same (key, status, message) contract as
+    detect_key_with_exe() below; tool_path/override_path are passed on
+    to it for the fallback.
+    """
+    key, status, message = detect_key_native(path)
+    if status == STATUS_OK:
+        return key, status, message
+    exe = tool_path if tool_path is not None else find_tool(KEYFINDER_EXE_NAME, override=override_path)
+    if exe is None:
+        return key, status, message
+    fallback = detect_key_with_exe(path, tool_path=exe)
+    if fallback[1] == STATUS_OK:
+        return fallback
+    return "", STATUS_TOOL_ERROR, f"{message}; keyfinder-cli: {fallback[2]}"
+
+
+def detect_key_with_exe(
+    path: Path, tool_path: Path | None = None, override_path: str | None = None
+) -> tuple[str, str, str]:
+    """
+    Runs keyfinder-cli. Returns (key, status, message). status is one of STATUS_OK /
     STATUS_TOOL_ERROR / STATUS_TOOL_MISSING -- keyfinder-cli has no
     WARNING-equivalent and no file verdict besides "no key". key is the
     detected key (e.g. "A", standard

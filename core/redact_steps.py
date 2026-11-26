@@ -442,8 +442,8 @@ class BpmStep(Mp3Step):
 class KeyStep(Mp3Step):
     key = "key"
     label = "Detect key"
-    dry_run_safe = True  # keyfinder-cli is run without -w: it only prints the key of ctx.temp
-    description = "Detects the musical key with keyfinder-cli and writes it to the Key tag."
+    dry_run_safe = True  # detection only reads ctx.temp (keyfinder-cli, the fallback, runs without -w)
+    description = "Detects the musical key (built-in port of keyfinder-cli) and writes it to the Key tag."
     options = (
         OptionSpec(
             "replace", "Replace an existing Key tag", "bool", False,

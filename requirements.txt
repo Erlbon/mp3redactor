@@ -44,6 +44,11 @@ send2trash
 # Tools) if that provenance ever becomes a concern.
 aubio-ledfx
 
+# Key detection (core/key_detector.py, the port of libkeyfinder) does its
+# FFTs and filtering in numpy. aubio already pulls it in; listed because
+# this code imports it directly.
+numpy
+
 # Dev/build only -- not needed to run the app itself:
 pytest
 pyinstaller>=6.3

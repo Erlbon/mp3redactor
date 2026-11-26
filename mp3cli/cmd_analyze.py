@@ -33,7 +33,7 @@ def add_analyze_parser(sub) -> None:
     parser.add_argument("--integrity", action="store_true", help="mp3val integrity check (the default check)")
     parser.add_argument("--deep", action="store_true", help="full ffmpeg decode, plus encoder / sample rate / channels")
     parser.add_argument("--bpm", action="store_true", help="detect the tempo")
-    parser.add_argument("--key", action="store_true", help="detect the musical key (keyfinder-cli)")
+    parser.add_argument("--key", action="store_true", help="detect the musical key (built in; keyfinder-cli only as a fallback)")
     parser.add_argument("--loudness", action="store_true", help="measure the integrated loudness (LUFS) and the gain to the target")
     parser.add_argument("--save", action="store_true", help="write the results into the files' tags (BPM, key, scan stamps)")
     add_common_options(parser)

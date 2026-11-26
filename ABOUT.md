@@ -16,7 +16,7 @@ time.
   (also through Filter List or Find Duplicates) applies what you typed to the files you were editing, as one undo
   step, and Open Files/Folder, Refresh List, Clear List and closing count it as an unsaved change before they ask.
 - **Check the files**: mp3val's integrity check (and fix), a full ffmpeg decode (Deep Check), tempo (BPM),
-  musical key (keyfinder-cli) and loudness (written as ReplayGain). Results are stamped into the file on Save, so
+  musical key (built in, the same method as keyfinder-cli) and loudness (written as ReplayGain). Results are stamped into the file on Save, so
   a later run shows when a file was last checked.
 - **Find Duplicates** across everything loaded: identical audio (tags ignored), the same MusicBrainz recording,
   or the same artist, title and length. A review aid -- every group says why it matched, nothing is chosen for
@@ -275,7 +275,7 @@ nothing is written to the files unless `--save`.
 | `--integrity` | The mp3val integrity check (the default check). |
 | `--deep` | A full ffmpeg decode, plus the encoder, sample rate and channel count. |
 | `--bpm` | Detect the tempo. |
-| `--key` | Detect the musical key (keyfinder-cli). |
+| `--key` | Detect the musical key (built in; keyfinder-cli only as a fallback). |
 | `--loudness` | Measure the integrated loudness (LUFS) and the gain to the target. |
 | `--save` | Write the results into the files' tags: BPM, key, the loudness (as ReplayGain, with `--loudness`) and the scan stamps. |
 
@@ -467,8 +467,8 @@ could be a prompt in the window is a flag here or a skipped file in the report.
   drive has none), and nothing is overwritten.
 - **Fail loud, not silent.** A file that cannot be read, saved or checked says so in its row and in the report;
   a missing tool shows TOOL MISSING rather than a fake result.
-- **Use the real tools.** Tags go through mutagen; checks shell out to mp3val, ffmpeg/ffprobe, keyfinder-cli
-  and fpcalc.
+- **Use the real tools.** Tags go through mutagen; checks shell out to mp3val, ffmpeg/ffprobe and fpcalc;
+  key detection is a faithful port of keyfinder-cli's libkeyfinder, checked against the real tool.
 
 ## License
 

@@ -18,6 +18,11 @@ The ɏP3 Redactor is built on the work of a number of other projects.
   **[aubio-ledfx](https://pypi.org/project/aubio-ledfx/)** fork (built
   by the [LedFx](https://github.com/LedFx) project to ship prebuilt
   Windows wheels the original PyPI package doesn't).
+- **[libkeyfinder](https://github.com/mixxxdj/libkeyfinder)** (GPL-3.0,
+  Ibrahim Sha'ath and the Mixxx project) — musical key detection. The
+  app carries a Python/NumPy port of its method and constants
+  (`core/key_detector.py`).
+- **[NumPy](https://numpy.org/)** — the maths behind key detection.
 
 ## External tools
 
@@ -30,7 +35,8 @@ system or in `tools/`:
   2.1) — the audio fingerprints for identifying songs by sound. Optional;
   found on PATH or via Settings > Locate External Tools, never bundled.
 - **[keyfinder-cli](https://github.com/EvanPurkhiser/keyfinder-cli)**
-  (v2+) — musical key detection.
+  (v2+) — musical key detection; now only a fallback for files the
+  built-in port cannot decode.
 
 ## Online services
 

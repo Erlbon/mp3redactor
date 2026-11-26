@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-26#04 -- Key detection is built in: keyfinder-cli is no longer needed -- redactor_common 2026-11-26-02
+
+- **Detect Key works without keyfinder-cli.exe and its four FFmpeg DLLs.** The key is now found in-process by
+  `core/key_detector.py`, a Python/NumPy port of libkeyfinder 2.2.8 (the engine inside keyfinder-cli), with its
+  constants and steps copied from the C++. aubio decodes the audio (as for BPM); ffmpeg decodes when aubio cannot.
+- **Same keys as before.** On 40 test files (real tracks and synthetic tracks in all 24 keys, MP3 and WAV, 44.1 and
+  48 kHz) the port gave the same key as keyfinder-cli 1.2.0 on every one, with both decoders, at about 0.3 s per file
+  against 0.8 s. `tools/compare_keyfinder.py <folder>` repeats the comparison on any music folder and writes a report.
+- keyfinder-cli stays as a fallback for a file the port cannot decode, if it is installed; it is optional now.
+- numpy is listed in requirements.txt (it was only there through aubio before).
+
 ## 2026-11-26#03 -- Delete Files (Recycle Bin), and the Delete key asks what you mean -- redactor_common 2026-11-26-02
 
 - **File > Delete Files (Recycle Bin)… (Shift+Delete)** sends the selected files to the Recycle Bin, after a Yes/No
