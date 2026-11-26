@@ -5,7 +5,8 @@ PyQt6 Windows desktop tool for bulk-checking and bulk-editing MP3 metadata, mp3t
 ## Commands
 - Set up: `python ../redactor-build-tools/devenv/venv_sync.py .` makes this repo's own `.venv` at the redactor_common pin (never `pip install -r requirements.txt` into the shared Python: one repo's pin then breaks the others, 2026-11-04). Run: `.venv/Scripts/python main.py`
 - Test: `.venv/Scripts/python -m pytest`, as the pre-push hook does (tests in `tests/`)
-- Build exe: `build_exe.bat` (`mp3redactor.spec`). Releases deliberately do not bundle the external tools.
+- Build: `build_exe.bat` (`mp3redactor.spec`, `installer/mp3redactor.iss`; needs Inno Setup 6) builds `dist/mp3redactor.exe` (channel windows-exe) and `dist/mp3redactor-setup.exe`. Releases deliberately do not bundle the external tools.
+- Release: `.venv/Scripts/python -m redactor_common.release publish` (config in `pyproject.toml`; redactor_common `docs/update-framework.md`). It needs `docs/releases/v<build>.md` first (`python -m redactor_common.core.release_notes <tag> <published tags file> <out>` drafts it). `.github/workflows/release.yml` only adds the Linux tarball once the release is published.
 - Bump version: `.venv/Scripts/python bump_version.py`
 
 ## Layout
@@ -30,5 +31,5 @@ PyQt6 Windows desktop tool for bulk-checking and bulk-editing MP3 metadata, mp3t
 Full text of these rules: `.claude/skills/redactor-conventions/SKILL.md` in redactor_common.
 
 ## Machine-local, not in git
-The release scripts (`release.ps1`, `release-<project>.ps1`, `release-all.ps1`) and a hand-placed `upx.exe` lived in a machine-local `_shared-tools` folder that is deliberately not in git. They are not in this repo and must be recreated or copied over by hand.
+The old release scripts (`release.ps1`, `release-<project>.ps1`, `release-all.ps1`) and a hand-placed `upx.exe` lived in a machine-local `_shared-tools` folder that is deliberately not in git. Since 2026-11-26 releases go through redactor_common's release tool instead (above); do not use `release-mp3redactor.ps1`, which uploads no manifest.
 

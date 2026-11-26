@@ -1,23 +1,20 @@
 @echo off
-REM Builds a standalone Windows .exe using PyInstaller.
-REM Run this from a Windows machine with Python 3.11+ installed.
+REM Builds everything a release publishes, with this repo's own .venv:
+REM   dist\mp3redactor.exe        the one-file program (the portable download; update channel windows-exe)
+REM   dist\mp3redactor-setup.exe  the per-user installer around the one-folder build (channel windows-installer)
+REM Run this from a Windows machine with Python 3.11+ and Inno Setup 6 (https://jrsoftware.org/isdl.php; a per-user
+REM install is enough).
 REM
 REM Checks the result of every step and stops with a clear message on
 REM failure, instead of continuing to a false "Done" message.
 REM
 REM Does NOT bump the version number -- run bump_version.py yourself
-REM first if this build should carry a new version. Keeping that a
-REM separate, deliberate step means a test/debug build doesn't inflate
-REM the official version history every time you run this script.
-REM
-REM mp3val.exe and keyfinder-cli.exe are external binaries this app
-REM shells out to, not data assets -- so they are NOT passed through
-REM the spec file's datas. They're copied into dist\tools as a separate
-REM step after the build instead, since core\tool_locator.py looks for
-REM tools\ next to the exe itself, not PyInstaller's onefile temp
-REM extraction dir. See README.md for where to get those two binaries.
+REM first if this build should carry a new version. Does not publish anything either: a release is made with
+REM .venv\Scripts\python -m redactor_common.release publish (pyproject.toml), which runs this with --no-pause.
 
 cd /d "%~dp0"
+set "PAUSE=pause"
+if "%~1"=="--no-pause" set "PAUSE="
 echo Working directory: %cd%
 echo.
 
@@ -28,10 +25,23 @@ if errorlevel 1 (
     echo ERROR: "python" was not found on your PATH.
     echo Install Python 3.11+ from python.org and make sure to check
     echo "Add python.exe to PATH" during installation, then try again.
-    pause
+    %PAUSE%
     exit /b 1
 )
 echo.
+
+set "ISCC="
+for %%P in ("%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe") do (
+    if exist %%P set "ISCC=%%~P"
+)
+if not defined ISCC (
+    where iscc >nul 2>nul && set "ISCC=iscc"
+)
+if not defined ISCC (
+    echo ERROR: Inno Setup 6 was not found. Install it from https://jrsoftware.org/isdl.php
+    %PAUSE%
+    exit /b 1
+)
 
 echo Making this repo's own .venv at the redactor_common pin ^(a minute the first time^)...
 REM Never "pip install -r requirements.txt" into the shared Python: one repo's pin then breaks the others (2026-11-04).
@@ -40,50 +50,89 @@ if errorlevel 1 (
     echo.
     echo ERROR: venv_sync failed. It lives in ..\redactor-build-tools\devenv\ next to this repo;
     echo common causes: that folder is missing, no internet connection, or a proxy/firewall blocking pip.
-    pause
+    %PAUSE%
     exit /b 1
 )
 echo.
 
-echo Building mp3redactor.exe ...
 REM "python -m PyInstaller" with the .venv's python: the pyinstaller console script is often not on PATH.
-REM
-REM No UPX (2026-10-30): the spec has upx=False, because Defender
-REM flagged the UPX-packed release exe as a trojan (false positive).
+REM No UPX: the spec has upx=False (Defender flagged a UPX-packed sibling exe, a false positive).
+echo Building dist\mp3redactor.exe ...
+set "MP3REDACTOR_BUILD="
 .venv\Scripts\python -m PyInstaller mp3redactor.spec --noconfirm
 if errorlevel 1 (
     echo.
     echo ERROR: PyInstaller failed. See the error output above for details.
-    echo Common causes: missing Python dependencies or a PyQt6 install
-    echo problem.
-    pause
+    %PAUSE%
     exit /b 1
 )
-echo.
-
 if not exist "dist\mp3redactor.exe" (
     echo.
-    echo ERROR: PyInstaller reported success but dist\mp3redactor.exe
-    echo was not found. Please copy the full output above and report it.
-    pause
+    echo ERROR: PyInstaller reported success but dist\mp3redactor.exe was not found.
+    %PAUSE%
+    exit /b 1
+)
+echo.
+
+echo Building the one-folder program dist\mp3redactor\ for the installer ...
+set "MP3REDACTOR_BUILD=folder"
+.venv\Scripts\python -m PyInstaller mp3redactor.spec --noconfirm
+if errorlevel 1 (
+    echo.
+    echo ERROR: PyInstaller failed on the one-folder build. See above.
+    %PAUSE%
+    exit /b 1
+)
+set "MP3REDACTOR_BUILD="
+if not exist "dist\mp3redactor\mp3redactor.exe" (
+    echo.
+    echo ERROR: PyInstaller reported success but dist\mp3redactor\mp3redactor.exe was not found.
+    %PAUSE%
+    exit /b 1
+)
+echo.
+
+REM The family's installer contract (relaunch, update-channel, waiting for the program to stop) ships with redactor_common.
+set "CONTRACT="
+for /f "delims=" %%p in ('.venv\Scripts\python -m redactor_common.release contract-path') do set "CONTRACT=%%p"
+if not defined CONTRACT (
+    echo ERROR: redactor_common's installer contract was not found ^(python -m redactor_common.release contract-path^).
+    %PAUSE%
+    exit /b 1
+)
+set "APPBUILD="
+for /f "usebackq delims=" %%L in (`.venv\Scripts\python -c "from core.version import APP_VERSION; print(APP_VERSION)"`) do set "APPBUILD=%%L"
+if not defined APPBUILD (
+    echo ERROR: could not read APP_VERSION from core\version.py.
+    %PAUSE%
     exit /b 1
 )
 
-echo Copying external tool binaries ^(mp3val.exe, keyfinder-cli.exe^) alongside the exe...
+echo Building dist\mp3redactor-setup.exe ...
+"%ISCC%" /Q "/DAppBuild=%APPBUILD%" "/DUpdateContract=%CONTRACT%" installer\mp3redactor.iss
+if errorlevel 1 (
+    echo.
+    echo ERROR: the installer build failed. See above.
+    %PAUSE%
+    exit /b 1
+)
+if not exist "dist\mp3redactor-setup.exe" (
+    echo.
+    echo ERROR: Inno Setup reported success but dist\mp3redactor-setup.exe was not found.
+    %PAUSE%
+    exit /b 1
+)
+
+REM mp3val.exe and keyfinder-cli.exe are external programs this app runs, not data: core\tool_locator.py looks for them in
+REM tools\ next to the exe. A local build copies a local tools\ folder to dist\tools for this PC; releases do not bundle them.
 if exist "tools\" (
     xcopy /E /I /Y tools dist\tools >nul
-) else (
-    echo   NOTE: no tools\ folder found -- skipping. File-integrity
-    echo   checking/fixing and key detection will report TOOL MISSING
-    echo   until mp3val.exe / keyfinder-cli.exe are placed in tools\
-    echo   and this build is re-run. See README.md.
 )
-echo.
 
 echo.
 echo ================================================================
-echo  SUCCESS. Your app is at: %cd%\dist\mp3redactor.exe
-echo  That one file ^(plus the dist\tools folder alongside it, if
-echo  present^) can be copied anywhere and run with no Python install
-echo  needed.
+echo  SUCCESS. Built with this repo's .venv:
+echo    %cd%\dist\mp3redactor.exe        ^(one file, can be copied anywhere and run^)
+echo    %cd%\dist\mp3redactor-setup.exe  ^(per-user installer^)
 echo ================================================================
+%PAUSE%

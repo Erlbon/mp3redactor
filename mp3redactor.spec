@@ -1,8 +1,10 @@
 # PyInstaller spec file for The ɯP3 Redactor.
 #
-# Build on Windows with: pyinstaller mp3redactor.spec
+# Build on Windows with: build_exe.bat (both programs and the installer), or
+#   .venv/Scripts/python -m PyInstaller mp3redactor.spec --noconfirm
 # (PyInstaller builds for whatever platform it runs ON -- cannot be
-# cross-compiled from Linux/macOS to produce a Windows .exe.)
+# cross-compiled from Linux/macOS to produce a Windows .exe. The Linux
+# download is built from this same spec by redactor-build-tools.)
 #
 # IMPORTANT: mp3val.exe and keyfinder-cli.exe are NOT bundled by this
 # spec -- they're external binaries the app shells out to (or finds
@@ -18,10 +20,25 @@
 # gui/, so PyInstaller's static import analysis picks it up
 # automatically without any special-casing.
 
+import os
 import sys
-from pathlib import Path
 
 block_cipher = None
+
+# MP3REDACTOR_BUILD=folder: the one-folder build the installer ships (dist/mp3redactor/mp3redactor.exe and its
+# _internal folder), which starts faster than the one-file exe (that one unpacks itself at every start). The default
+# stays the one-file dist/mp3redactor.exe: the portable download, and the file a bare copy's Check for Updates swaps.
+FOLDER = os.environ.get("MP3REDACTOR_BUILD", "") == "folder"
+
+# The update framework's channel (redactor_common docs/update-framework.md): how this copy updates itself. The one-file
+# exe carries "windows-exe" inside (it swaps itself), the Linux one-file build "linux-tarball" (it cannot replace itself
+# and says so); the folder build gets "windows-zip" beside its exe below, which the installer's contract replaces with
+# "windows-installer".
+CHANNEL = os.path.join(workpath, "update-channel")
+if not FOLDER:
+    os.makedirs(workpath, exist_ok=True)
+    with open(CHANNEL, "w", encoding="utf-8") as channel:
+        channel.write("windows-exe\n" if sys.platform == "win32" else "linux-tarball\n")
 
 a = Analysis(
     ["main.py"],
@@ -33,7 +50,7 @@ a = Analysis(
         ("ABOUT.md", "."),
         ("CHANGELOG.md", "."),
         ("CREDITS.md", "."),
-    ],
+    ] + ([] if FOLDER else [(CHANNEL, ".")]),
     # send2trash is imported lazily inside redactor_common.core.trash (Redact's
     # Recycle Bin), so name it here rather than rely on static analysis
     # following a function-level import into an installed package. keyring
@@ -63,10 +80,9 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
+    *([] if FOLDER else [a.binaries, a.zipfiles, a.datas]),
     [],
+    exclude_binaries=FOLDER,
     name="mp3redactor",
     debug=False,
     bootloader_ignore_signals=False,
@@ -84,3 +100,8 @@ exe = EXE(
     entitlements_file=None,
     icon="assets/icon.ico",
 )
+
+if FOLDER:
+    coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, strip=False, upx=False, upx_exclude=[], name="mp3redactor")
+    with open(os.path.join(DISTPATH, "mp3redactor", "update-channel"), "w", encoding="utf-8") as channel:
+        channel.write("windows-zip\n")
