@@ -2737,10 +2737,10 @@ class MainWindow(QMainWindow):
             ).exec()
 
     def run_integrity_check(self) -> None:
-        self._run_check_with_progress(
+        # Four files at once (core.scan_service.run_integrity_check): faster on a network share.
+        self._run_concurrent_check_with_progress(
             "Checking file integrity...",
             run_integrity_check,
-            self._selected_files(),
             mp3val_path=self.settings.mp3val_path or None,
         )
 

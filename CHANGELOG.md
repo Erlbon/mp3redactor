@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-26#08 -- Check Integrity checks four files at once -- redactor_common 2026-11-26-02
+
+- **Check Integrity is faster on a network share.** It now checks four files at once, as Detect BPM and Detect Key
+  already do. Measured on a 130 MB album on the home server: 17.2 s down to 12.6 s when the files were not cached,
+  5.0 s down to 2.9 s when they were. On a local disk it makes no difference (the check is quick Python work that
+  runs one file at a time either way). Cancel stops files that have not started; the ones running finish.
+- Fix Integrity Issues still fixes one file at a time, on purpose: it rewrites files and keeps backups.
+
 ## 2026-11-26#07 -- Fix Integrity Issues stamps what the file is after the fix -- redactor_common 2026-11-26-02
 
 - **A fixed file is no longer stamped with the problems it had before the fix.** mp3val -f, and the built-in port of

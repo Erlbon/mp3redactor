@@ -181,6 +181,44 @@ def test_fix_stamp_survives_reload_from_disk(tmp_path):
     assert str(ID3(path)["TXXX:REDACTOR_INTEGRITY"].text[0]).startswith("WARNING;")
 
 
+def test_integrity_check_runs_files_at_once_and_records_each(tmp_path):
+    import threading
+
+    files = []
+    for i in range(6):
+        mp3 = MP3File(path=_copy(tmp_path, f"s{i}.mp3"))
+        load_tags(mp3)
+        files.append(mp3)
+    seen, lock, two_running = set(), threading.Lock(), threading.Barrier(2, timeout=5)
+
+    def fake_check(path, override_path=None):
+        with lock:
+            seen.add(threading.current_thread().name)
+        if path.name in ("s0.mp3", "s1.mp3"):
+            two_running.wait()  # only passes if two checks run at the same time
+        return (STATUS_WARNING, f"w {path.name}") if path.name == "s3.mp3" else (STATUS_OK, "")
+
+    progress = []
+    with patch("core.scan_service.check_integrity", side_effect=fake_check):
+        run_integrity_check(files, progress=lambda done, total: progress.append((done, total)))
+    assert len(seen) > 1
+    assert progress[-1] == (6, 6) and len(progress) == 6
+    assert [m.integrity_status for m in files] == [STATUS_OK] * 3 + [STATUS_WARNING] + [STATUS_OK] * 2
+    assert files[3].integrity_message == "w s3.mp3"
+    assert all(m.dirty for m in files)
+
+
+def test_integrity_check_cancel_stops_starting_files(tmp_path):
+    files = []
+    for i in range(8):
+        mp3 = MP3File(path=_copy(tmp_path, f"s{i}.mp3"))
+        load_tags(mp3)
+        files.append(mp3)
+    with patch("core.scan_service.check_integrity", return_value=(STATUS_OK, "")):
+        run_integrity_check(files, max_workers=1, should_cancel=lambda: True)
+    assert sum(1 for m in files if m.integrity_status == STATUS_OK) == 1
+
+
 def test_fix_stamps_the_state_after_the_rebuild_not_before(tmp_path):
     # Real fix, no mocks: a file with garbage in the middle. mp3val -f (and
     # the port) report the problem they found before rebuilding; the stamp

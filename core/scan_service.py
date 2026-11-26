@@ -11,9 +11,9 @@ run_key_detection(), and run_lyrics_fetch() are exceptions to "one file
 at a time" -- each runs a thread pool across the whole batch instead,
 since each file's work is independent and (measured, not assumed for
 BPM/key -- see either one's own docstring) genuinely benefits from it.
-mp3val's integrity check stays sequential -- its header-scan-only cost
-per file is small enough that thread-pool overhead isn't obviously
-worth it, and it hasn't been asked for or measured the way these are.
+run_integrity_check() also runs a small pool (INTEGRITY_WORKERS, see its
+docstring: it pays on a network share); run_integrity_fix() stays one
+file at a time on purpose (it rewrites files and keeps backups).
 """
 
 import os
@@ -37,6 +37,8 @@ from core.tag_reader import load_tags
 from core.tag_writer import save_tags
 
 ProgressCallback = Callable[[int, int], None]  # (completed, total) -> None
+
+INTEGRITY_WORKERS = 4  # files checked at once by run_integrity_check()
 
 MP3_EXTENSIONS = {".mp3"}
 
@@ -95,6 +97,8 @@ def run_integrity_check(
     files: list[MP3File],
     progress: ProgressCallback | None = None,
     mp3val_path: str | None = None,
+    max_workers: int | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> None:
     """
     Mutates each file's integrity_status/integrity_message in place and,
@@ -102,13 +106,39 @@ def run_integrity_check(
     MP3File.record_scan(): Save writes the stamp into the file).
     mp3val_path is the user's manual override from Settings > Locate
     External Tools (core.settings.Settings.mp3val_path), if set.
+
+    Checks INTEGRITY_WORKERS files at once (2026-11-26#08, decided by
+    Erlend after measuring): the check is the in-process mp3val port,
+    pure Python, so threads gain nothing on a local disk (the GIL; 1.5 s
+    either way for 188 files), but on a network share most of the time
+    is reading the file and four reads overlap (Bloodstains, 130 MB on
+    homeserver3: 17.2 s -> 12.6 s uncached, 5.0 s -> 2.9 s cached).
+    Results are recorded on this thread, as they complete.
+    should_cancel works as in run_key_detection(): files not started
+    yet are dropped, the ones running finish.
     """
+    if not files:
+        return
     total = len(files)
-    for i, mp3 in enumerate(files, start=1):
-        status, message = check_integrity(mp3.path, override_path=mp3val_path)
-        mp3.record_scan("integrity", status, message)
-        if progress is not None:
-            progress(i, total)
+    workers = max_workers or min(total, INTEGRITY_WORKERS)
+    completed = 0
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_mp3 = {
+            executor.submit(check_integrity, mp3.path, override_path=mp3val_path): mp3 for mp3 in files
+        }
+        for future in as_completed(future_to_mp3):
+            mp3 = future_to_mp3[future]
+            try:
+                status, message = future.result()
+            except Exception as e:  # noqa: BLE001 -- see run_bpm_check()
+                status, message = STATUS_TOOL_ERROR, _describe(e)
+            mp3.record_scan("integrity", status, message)
+            completed += 1
+            if progress is not None:
+                progress(completed, total)
+            if should_cancel is not None and should_cancel():
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
 
 
 def run_integrity_fix(

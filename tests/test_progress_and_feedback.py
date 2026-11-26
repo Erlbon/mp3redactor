@@ -140,16 +140,18 @@ def test_the_analyze_checks_run_on_a_worker_thread(window, tmp_path, monkeypatch
             mp3.key_value, mp3.key_status = "Am", STATUS_OK
             progress(i, len(files))
 
-    def fake_integrity(files, **kwargs):
+    def fake_integrity(files, progress=None, should_cancel=None, **kwargs):
         threads.append(("integrity", threading.current_thread()))
-        for mp3 in files:
+        for i, mp3 in enumerate(files, start=1):
             mp3.integrity_status = STATUS_ERROR
+            progress(i, len(files))
 
     monkeypatch.setattr(mw, "run_key_detection", fake_key_detection)
     monkeypatch.setattr(mw, "run_integrity_check", fake_integrity)
     window.run_key_detection()
     window.run_integrity_check()
-    assert [kind for kind, _t in threads] == ["key", "integrity", "integrity"]
+    # Both get the whole selection at once (each runs its own thread pool).
+    assert [kind for kind, _t in threads] == ["key", "integrity"]
     assert all(t is not threading.main_thread() for _k, t in threads)
     assert all(mp3.key_value == "Am" and mp3.integrity_status == STATUS_ERROR for mp3 in window.files)
     col = window._col_index["key"]
