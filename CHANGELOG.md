@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-26#06 -- The integrity check and fix are built in: mp3val.exe is no longer needed -- redactor_common 2026-11-26-02
+
+- **Check Integrity and Fix Integrity Issues work without mp3val.exe.** They now run in-process in
+  `core/mp3_validator.py`, a Python port of mp3val 0.1.8 that follows its C++ function by function, quirks included.
+- **Same results as before.** On 1,253 test files (real encodes at MPEG 1, 2 and 2.5, Layer II, VBR with and
+  without a Xing header, synthetic streams with CRCs, VBRI headers, APEv2 tags and RIFF wrappers, files damaged on
+  purpose, and 1,000 randomly mutated files) the port printed the same WARNING/ERROR/INFO lines as mp3val.exe for
+  every file, and the fix wrote byte-identical files and the same .bak backups, with and without "delete .bak".
+  About ten times faster. `tools/compare_mp3val.py <folder> --exe <mp3val.exe> --fix` repeats the comparison on any
+  music folder (the fix only ever works on copies) and writes a report.
+- **Files with any letters in their path are checked.** mp3val.exe could not open a path with letters outside the
+  Windows code page (Polish, Czech, Cyrillic, Greek, Japanese, ...): since 2026-11-26#05 those were TOOL ERROR, now
+  they are checked and fixed like any other file.
+- A file mp3val.exe would hang or crash on (for example a tag whose size field points backwards) is TOOL ERROR with a
+  message saying why, at once instead of after the 30-second timeout.
+- mp3val.exe stays as a fallback only if the port itself fails on a file, if it is installed; it is optional now.
+- Not changed: as with mp3val -f, the result of a fix lists the problems found before the rebuild, not what remains.
+
 ## 2026-11-26#05 -- mp3val no longer passes files it could not open as clean -- redactor_common 2026-11-26-02
 
 - **Integrity check: a file mp3val cannot open is no longer reported as clean.** mp3val 0.1.8 cannot open a path with

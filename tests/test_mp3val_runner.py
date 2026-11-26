@@ -4,7 +4,11 @@ from unittest.mock import MagicMock, patch
 from core.mp3_file import (
     STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_TOOL_MISSING, STATUS_WARNING,
 )
-from core.mp3val_runner import _parse_output, check_integrity, fix_integrity
+# These tests are about running mp3val.exe (the fallback); the built-in
+# port is tested in tests/test_mp3_validator.py.
+from core.mp3val_runner import _parse_output
+from core.mp3val_runner import check_integrity_with_exe as check_integrity
+from core.mp3val_runner import fix_integrity_with_exe as fix_integrity
 
 
 def test_parse_output_cannot_open_is_a_tool_error_not_clean():

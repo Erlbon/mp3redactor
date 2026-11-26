@@ -22,6 +22,10 @@ The ɏP3 Redactor is built on the work of a number of other projects.
   Ibrahim Sha'ath and the Mixxx project) — musical key detection. The
   app carries a Python/NumPy port of its method and constants
   (`core/key_detector.py`).
+- **[mp3val](https://mp3val.sourceforge.net/)** 0.1.8 (GPL-2.0-or-later,
+  Alexey Kuznetsov (ring0) and Eugen Tikhonov (jetsys)) — MP3 stream
+  integrity checking and repair. The app carries a Python port of it
+  (`core/mp3_validator.py`).
 - **[NumPy](https://numpy.org/)** — the maths behind key detection.
 
 ## External tools
@@ -29,8 +33,8 @@ The ɏP3 Redactor is built on the work of a number of other projects.
 Not bundled — installed separately, and only used if present on the
 system or in `tools/`:
 
-- **[mp3val](https://mp3val.sourceforge.net/)** — MP3 stream integrity
-  checking and repair.
+- **[mp3val](https://mp3val.sourceforge.net/)** — now only a fallback
+  for the built-in port, if that fails on a file.
 - **[Chromaprint](https://acoustid.org/chromaprint)** (`fpcalc`, LGPL
   2.1) — the audio fingerprints for identifying songs by sound. Optional;
   found on PATH or via Settings > Locate External Tools, never bundled.

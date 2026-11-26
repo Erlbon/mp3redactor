@@ -40,8 +40,8 @@ INTRO = (
     "If mp3val, keyfinder-cli, ffmpeg, ffprobe or fpcalc (Chromaprint -- identifies songs by their "
     "sound in Look Up via MusicBrainz) aren't on your system "
     "PATH, point directly at their executables here. Leave blank to "
-    "auto-detect via PATH (the default). Key detection is built in; keyfinder-cli is only "
-    "a fallback for files it cannot decode."
+    "auto-detect via PATH (the default). The integrity check and fix and key detection are "
+    "built in; mp3val and keyfinder-cli are only fallbacks, used if the built-in version fails."
 )
 DOWNLOADS_HTML = (
     "Downloads: "

@@ -21,7 +21,8 @@ from core.mp3_file import (  # noqa: E402
     MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_ERROR, STATUS_WARNING, parse_scan_stamp,
     scan_display, scan_tooltip,
 )
-from core.mp3val_runner import check_integrity, fix_integrity  # noqa: E402
+from core.mp3val_runner import check_integrity_with_exe as check_integrity  # noqa: E402
+from core.mp3val_runner import fix_integrity_with_exe as fix_integrity  # noqa: E402
 from core.scan_service import run_deep_check, run_integrity_check, run_integrity_fix  # noqa: E402
 from core.tag_reader import load_tags  # noqa: E402
 from core.tag_writer import save_tags  # noqa: E402

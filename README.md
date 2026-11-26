@@ -16,7 +16,7 @@ Where each part lives:
 
 | Feature | Code |
 | --- | --- |
-| Integrity check and fix | `core/mp3val_runner.py` (mp3val, shelled out) |
+| Integrity check and fix | `core/mp3_validator.py` (port of mp3val, in-process), `core/mp3val_runner.py` (mp3val.exe fallback) |
 | BPM | `core/bpm_detector.py` (aubio in-process, ffmpeg fallback) |
 | Key | `core/key_detector.py` (Python/numpy port of libkeyfinder, in-process; aubio decodes, ffmpeg fallback), called through `core/keyfinder_runner.py`, which falls back to keyfinder-cli ([Erlbon/keyfinder-cli-windows](https://github.com/Erlbon/keyfinder-cli-windows)) only if the port fails. `tools/compare_keyfinder.py` compares the two on a folder of files. |
 | Deep check, loudness, format details | `core/ffmpeg_probe.py` (ffmpeg / ffprobe) |
@@ -153,6 +153,13 @@ Every command and option is documented in [ABOUT.md](ABOUT.md#command-line).
   a numpy port of libkeyfinder 2.2.8 that gave the same key as
   keyfinder-cli 1.2.0 on every test file); keyfinder-cli is now only a
   fallback for files the port cannot decode, and optional.
+- The integrity check and fix run in-process since 2026-11-26#06
+  (`core/mp3_validator.py`, a port of mp3val 0.1.8 that printed the same
+  findings and wrote byte-identical fixed files on 1,253 test files, and
+  opens any file name, which mp3val.exe cannot); mp3val.exe is now only
+  a fallback if the port itself fails, and optional.
+  `tools/compare_mp3val.py <folder> --exe <mp3val.exe> [--fix]` repeats
+  the comparison on any folder (the fix works on copies).
 - **mp3val**, **keyfinder-cli**, and **ffmpeg/ffprobe** are all shelled
   out to -- no Python bindings exist for mp3val/keyfinder-cli, and
   ffmpeg/ffprobe are used as real binaries (not a Python wrapper

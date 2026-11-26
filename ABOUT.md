@@ -15,7 +15,7 @@ time.
   files. Everything is undoable until saved; changed rows are tinted. Forgot to Apply? Clicking other files
   (also through Filter List or Find Duplicates) applies what you typed to the files you were editing, as one undo
   step, and Open Files/Folder, Refresh List, Clear List and closing count it as an unsaved change before they ask.
-- **Check the files**: mp3val's integrity check (and fix), a full ffmpeg decode (Deep Check), tempo (BPM),
+- **Check the files**: the integrity check (and fix; built in, the same checks as mp3val), a full ffmpeg decode (Deep Check), tempo (BPM),
   musical key (built in, the same method as keyfinder-cli) and loudness (written as ReplayGain). Results are stamped into the file on Save, so
   a later run shows when a file was last checked.
 - **Find Duplicates** across everything loaded: identical audio (tags ignored), the same MusicBrainz recording,
@@ -467,8 +467,9 @@ could be a prompt in the window is a flag here or a skipped file in the report.
   drive has none), and nothing is overwritten.
 - **Fail loud, not silent.** A file that cannot be read, saved or checked says so in its row and in the report;
   a missing tool shows TOOL MISSING rather than a fake result.
-- **Use the real tools.** Tags go through mutagen; checks shell out to mp3val, ffmpeg/ffprobe and fpcalc;
-  key detection is a faithful port of keyfinder-cli's libkeyfinder, checked against the real tool.
+- **Use the real tools.** Tags go through mutagen; checks shell out to ffmpeg/ffprobe and fpcalc; the integrity
+  check and fix are a faithful port of mp3val and key detection one of keyfinder-cli's libkeyfinder, each checked
+  against the real tool.
 
 ## License
 
