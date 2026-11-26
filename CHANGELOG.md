@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-26#01 -- MusicBrainz finds "Bloodstains Across" compilations, online and in the local database; retries when busy -- redactor_common 2026-11-25-05
+## 2026-11-26#01 -- MusicBrainz finds "Bloodstains Across" compilations, online and in the local database; retries when busy -- redactor_common 2026-11-26-01
 
 - **MusicBrainz (online), Look Up and Redact:** a "currently busy" answer (HTTP 503, frequent on 2026-11-25) is now
   retried after 2, 5 and 10 seconds instead of failing the lookup. A compilation whose Album Artist is a series name,
@@ -9,7 +9,8 @@
   "VA" / "V/A" / "Various" are searched as "Various Artists".
 - **MusicBrainz (Local Database):** the same two extra searches -- Album Artist + Album as one title, then the album
   under "Various Artists" -- before the album alone. This matters most when musicbrainz.org is down.
-- Shared code moved from redactor_common 2026-11-25-04 to 2026-11-25-05.
+- Shared code moved from redactor_common 2026-11-25-04 to 2026-11-26-01 (not 2026-11-25-05: its extra MusicBrainz
+  retry stacked on the band-notes flow's own, announced one and made it wait silently).
 
 ## 2026-11-25#05 -- Tidy Whitespace: find and remove stray spaces in tags
 
