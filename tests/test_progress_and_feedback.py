@@ -334,13 +334,13 @@ def test_files_and_folders_dropped_on_the_window_are_opened(window, tmp_path):
 # --- T4: Redact's integrity step and the results header about .bak files -----------------------------------------
 
 
-def test_integrity_fix_is_off_by_default_and_the_texts_explain_the_bak_files():
+def test_integrity_fix_is_on_by_default_and_the_texts_explain_the_bak_files():
     from core.redact_steps import IntegrityStep
 
     step = IntegrityStep()
     fix = next(o for o in step.options if o.key == "fix")
-    assert fix.default is False
-    assert "off by default" in step.description and "<name>.mp3.bak" in step.description
+    assert fix.default is True  # 2026-11-26#09 (Erlend): Redact fixes what the check finds
+    assert "on by default" in step.description and "<name>.mp3.bak" in step.description
     assert "by hand" in step.description
     note = mw.REDACT_UNDO_NOTE
-    assert "off by" in note and "<name>.mp3.bak" in note and ".redact-orig.mp3" in note and "delete them" in note
+    assert "on by default" in note and "<name>.mp3.bak" in note and ".redact-orig.mp3" in note and "delete them" in note

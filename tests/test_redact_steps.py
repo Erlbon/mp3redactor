@@ -641,7 +641,9 @@ def test_recipe_round_trips_through_the_settings_file(tmp_path):
     recipe.options["path_tags"] = {"pattern": "%genre%/%artist%/%title%"}
     recipe.confidence_threshold = 0.75
     recipe.order.reverse()
-    save_settings(Settings(redact_recipe=rs.recipe_to_setting(recipe)), tmp_path)
+    # redact_fix_switched_on: a settings file saved after the one-time switch of "Fix problems"
+    # (core.settings._switch_redact_fix_on_once), so "fix": False is the user's own choice and stays.
+    save_settings(Settings(redact_recipe=rs.recipe_to_setting(recipe), redact_fix_switched_on=True), tmp_path)
     loaded = rs.recipe_from_setting(load_settings(tmp_path).redact_recipe, cat)
     assert loaded.to_dict() == recipe.to_dict()
     assert loaded.options["path_tags"] == {"pattern": "%genre%/%artist%/%title%"} and loaded.enabled["path_tags"] is False

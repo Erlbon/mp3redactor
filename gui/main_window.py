@@ -311,8 +311,8 @@ REDACT_UNDO_NOTE = (
     "Redact can't be undone with Undo. The original of each changed file was sent to the Recycle Bin: "
     "restore it from there to go back. Where the Recycle Bin is not available (a network share or "
     "removable drive) the original was kept beside the file as <name>.redact-orig.mp3 instead; such files "
-    "are named in the notes below. Only when the Integrity step's 'Fix problems' option is on (it is off by "
-    "default) and a file was fixed, mp3val's backup is also left beside it as <name>.mp3.bak, unless Tools > "
+    "are named in the notes below. When the Integrity step fixed a file ('Fix problems', on by default), "
+    "mp3val's backup is also left beside it as <name>.mp3.bak, unless Tools > "
     "Preferences > Fixing deletes .bak files automatically. Leftover .redact-orig.mp3 and .bak files are plain "
     "copies of the original: delete them in Explorer once you are happy with the result."
 )

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-26#09 -- Redact fixes integrity problems again by default -- redactor_common 2026-11-26-02
+
+- **Redact repairs what the integrity check finds.** The Integrity step's "Fix problems" option is on by default
+  again: fixable problems are repaired on Redact's working copy, the file is checked again and that result is
+  stamped. It had been off by default since 2026-10-13#04 (review point A14), so Redact only reported warnings and a
+  separate Fix Integrity Issues pass was needed afterwards.
+- **Saved recipes are switched on once.** A recipe saved while the option was off by default has it stored as off.
+  The first time the settings are loaded after this update it is turned on, once; if you turn it off again in Edit >
+  Edit Redact Recipe, that stays. A recipe file given with `--recipe` on the command line is used as it is.
+
 ## 2026-11-26#08 -- Check Integrity checks four files at once -- redactor_common 2026-11-26-02
 
 - **Check Integrity is faster on a network share.** It now checks four files at once, as Detect BPM and Detect Key

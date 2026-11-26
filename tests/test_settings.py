@@ -259,3 +259,41 @@ def test_include_subfolders_defaults_on_and_round_trips(tmp_path):
     assert Settings().include_subfolders is True
     save_settings(Settings(include_subfolders=False), tmp_path)
     assert load_settings(tmp_path).include_subfolders is False
+
+
+# -- Redact "Fix problems" switched on once (2026-11-26#09) --------------------------------------
+
+def _saved_recipe(fix):
+    import json
+
+    return json.dumps({"order": ["integrity", "bpm"], "enabled": {"integrity": True, "bpm": False},
+                       "options": {"integrity": {"fix": fix}, "bpm": {"replace": False}}})
+
+
+def test_a_saved_recipe_with_fix_off_is_switched_on_once(tmp_path):
+    import json
+
+    save_settings(Settings(redact_recipe=_saved_recipe(False)), target_dir=tmp_path)
+    loaded = load_settings(target_dir=tmp_path)
+    data = json.loads(loaded.redact_recipe)
+    assert data["options"]["integrity"]["fix"] is True
+    assert data["options"]["bpm"] == {"replace": False} and data["enabled"] == {"integrity": True, "bpm": False}
+    assert loaded.redact_fix_switched_on is True
+
+
+def test_turning_fix_off_after_the_switch_sticks(tmp_path):
+    import json
+
+    save_settings(Settings(redact_recipe=_saved_recipe(False)), target_dir=tmp_path)
+    loaded = load_settings(target_dir=tmp_path)
+    loaded.redact_recipe = _saved_recipe(False)  # the user turns it off again in the recipe editor
+    save_settings(loaded, target_dir=tmp_path)
+    again = load_settings(target_dir=tmp_path)
+    assert json.loads(again.redact_recipe)["options"]["integrity"]["fix"] is False
+
+
+def test_no_or_unreadable_recipe_is_left_alone(tmp_path):
+    save_settings(Settings(), target_dir=tmp_path)
+    assert load_settings(target_dir=tmp_path).redact_recipe == ""
+    save_settings(Settings(redact_recipe="{not json"), target_dir=tmp_path)
+    assert load_settings(target_dir=tmp_path).redact_recipe == "{not json"

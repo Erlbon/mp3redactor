@@ -185,6 +185,10 @@ class Settings:
     # core.redact_steps.recipe_to_setting(). "" = never edited: every step
     # at its default.
     redact_recipe: str = ""
+    # 2026-11-26#09: Redact's "Fix problems" (integrity step) is on by default again; a recipe saved
+    # while it was off by default (2026-10-13#04 .. #08) has "fix": false stored and is switched on once
+    # when loaded (_switch_redact_fix_on_once). True once done, so turning it off later sticks.
+    redact_fix_switched_on: bool = False
 
     # The user agreed to keep an API key/token in a plain, UNENCRYPTED file
     # because this computer has no secure credential store (asked once by
@@ -296,6 +300,7 @@ class Settings:
             "parse_source": self.parse_source,
             "recycle_fallback_folder": self.recycle_fallback_folder,
             "redact_recipe": self.redact_recipe,
+            "redact_fix_switched_on": str(self.redact_fix_switched_on),
             "allow_unencrypted_fallback": str(self.allow_unencrypted_fallback),
             "musicbrainz_database": self.musicbrainz_database,
             "musicbrainz_dump": self.musicbrainz_dump,
@@ -319,6 +324,7 @@ class Settings:
     @classmethod
     def from_config(cls, config: configparser.ConfigParser) -> "Settings":
         settings = cls._from_general(config)
+        _switch_redact_fix_on_once(settings)
         if HISTORY_SECTION in config:
             settings.history_enabled = _get_bool(config[HISTORY_SECTION], "enabled", False)
         if CONVERSION_SECTION in config:
@@ -363,6 +369,7 @@ class Settings:
             parse_source=section.get("parse_source", fallback=""),
             recycle_fallback_folder=section.get("recycle_fallback_folder", fallback=""),
             redact_recipe=section.get("redact_recipe", fallback=""),
+            redact_fix_switched_on=_get_bool(section, "redact_fix_switched_on", False),
             allow_unencrypted_fallback=_get_bool(section, "allow_unencrypted_fallback", False),
             musicbrainz_database=section.get("musicbrainz_database", fallback=""),
             musicbrainz_dump=section.get("musicbrainz_dump", fallback=""),
@@ -377,6 +384,28 @@ class Settings:
             notes_norwegian_numbers=_get_bool(section, "notes_norwegian_numbers", False),
             **_band_limits(section),
         )
+
+
+def _switch_redact_fix_on_once(settings: "Settings") -> None:
+    """Turns Redact's "Fix problems" on in a saved recipe that has it off, once (see
+    Settings.redact_fix_switched_on): it was off only because that was the default from 2026-10-13#04
+    to #08, and Erlend wants Redact to fix (2026-11-26). Saved with the next settings save."""
+    if settings.redact_fix_switched_on:
+        return
+    settings.redact_fix_switched_on = True
+    text = (settings.redact_recipe or "").strip()
+    if not text:
+        return  # no saved recipe: the step default (on) applies
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return  # unreadable: core.redact_steps.recipe_from_setting() falls back to the defaults anyway
+    if not isinstance(data, dict):
+        return
+    integrity = (data.get("options") or {}).get("integrity") if isinstance(data.get("options"), dict) else None
+    if isinstance(integrity, dict) and integrity.get("fix") is False:
+        integrity["fix"] = True
+        settings.redact_recipe = json.dumps(data, separators=(",", ":"))
 
 
 def _band_limits(section) -> dict:

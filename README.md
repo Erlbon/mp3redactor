@@ -115,7 +115,7 @@ order, with the default recipe:
 
 | Step | On by default | What it does |
 | --- | --- | --- |
-| Integrity check (mp3val) | yes | Checks and stamps the result. "Fix problems" is off by default; with it on, a fix also leaves mp3val's backup as `<name>.mp3.bak` unless Tools > Preferences > Fixing deletes those. |
+| Integrity check (mp3val) | yes | Checks and stamps the result. "Fix problems" is on by default (off from 2026-10-13#04 to #08; a saved recipe with it off is switched on once): fixable problems are repaired, the file is checked again and that is stamped; a fix also leaves mp3val's backup as `<name>.mp3.bak` unless Tools > Preferences > Fixing deletes those. |
 | Detect BPM | yes | Tempo into the BPM tag (an existing one is kept unless "replace"). |
 | Detect key | yes | Musical key (built-in port of keyfinder-cli's libkeyfinder). |
 | Measure loudness (ReplayGain) | yes | Track gain to -18 LUFS. |

@@ -47,21 +47,22 @@ def test_a14_redact_does_not_skip_a_file_whose_only_unsaved_change_is_a_stamp(tm
     assert entry.status is FileStatus.SKIPPED
 
 
-def test_a14_fix_is_off_by_default_and_an_ok_stamped_file_is_not_rewritten(tmp_path, monkeypatch):
+def test_a14_an_ok_stamped_file_is_not_rewritten_and_fix_off_only_reports(tmp_path, monkeypatch):
+    # A14 made the fix opt-in; 2026-11-26#09 (Erlend) turned it on by default again, so "off" is passed here.
     step = next(s for s in rs.build_catalogue(rs.Settings()) if s.key == "integrity")
-    assert step.options[0].key == "fix" and step.options[0].default is False
+    assert step.options[0].key == "fix" and step.options[0].default is True
     mp3 = make_file(tmp_path)
     monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
-    monkeypatch.setattr(rs, "fix_integrity", lambda *a, **k: pytest.fail("must not fix by default"))
+    monkeypatch.setattr(rs, "fix_integrity", lambda *a, **k: pytest.fail("an OK file is never fixed"))
     first, _ = run(mp3, {"integrity"})
     assert first.status is FileStatus.CHANGED  # first run: stamped
     stamped = mp3.path.read_bytes()
     second, _ = run(mp3, {"integrity"})
     assert second.status is FileStatus.UNCHANGED and mp3.path.read_bytes() == stamped
     assert any("already stamped" in n for n in second.notes)
-    # a problem found is still reported (scanning stays on), just not fixed
+    # with "Fix problems" off, a problem found is still reported (scanning stays on), just not fixed
     monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_WARNING, "WARNING: a"))
-    third, _ = run(mp3, {"integrity"})
+    third, _ = run(mp3, {"integrity"}, {"integrity": {"fix": False}})
     assert any("not fixed" in a for a in third.applied)
 
 
