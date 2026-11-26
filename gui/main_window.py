@@ -179,6 +179,7 @@ from redactor_common.gui.standard_menus import (
     StandardMenuSpec,
     build_standard_menu_bar,
     look_up_submenu,
+    remove_or_delete_action,
     set_apply_count,
     standard_edit_items,
     standard_file_items,
@@ -186,6 +187,7 @@ from redactor_common.gui.standard_menus import (
     standard_tools_items,
     standard_view_items,
 )
+from redactor_common.gui.remove_or_delete import DELETE, REMOVE, ask_remove_or_delete
 from redactor_common.gui.command_palette import add_command_palette
 from redactor_common.gui.case_conversion_dialog import CaseConversionDialog
 from redactor_common.gui.search_replace_dialog import FILENAME_FIELD_KEY, SearchReplaceDialog
@@ -208,7 +210,7 @@ from redactor_common.gui.move_runner import run_planned_moves
 from redactor_common.gui.quick_pick_dialog import QuickPickDialog
 from redactor_common.core.rename_log import RenameLog
 from redactor_common.core.duplicates import JsonDismissStore
-from redactor_common.core.trash import TrashError, move_to_trash
+from redactor_common.core.trash import TrashError, move_to_trash, move_to_trash_retrying
 from redactor_common.gui.duplicates_dialog import run_find_duplicates
 from core import mp3_duplicates
 from redactor_common.gui.rename_undo import undo_last_rename
@@ -561,6 +563,7 @@ class MainWindow(QMainWindow):
                 import_settings=self.import_settings_file,
                 remove_from_list=self.remove_selected_from_list,
                 clear_list=self.clear_list,
+                delete_files=self.delete_files,
                 # No explicit shortcut -- Alt+F4 already closes this (or
                 # any) plain QMainWindow at the OS level.
                 exit_slot=self.close,
@@ -653,6 +656,9 @@ class MainWindow(QMainWindow):
                 APP_NAME, self.open_changelog_dialog, self.open_credits_dialog, self.open_about_dialog,
                 updates_slot=self.updates.check_now,
             ),
+            # The Delete key asks Remove from List or Delete Files (Erlend, 2026-11-26): Remove from
+            # List alone left the file on disk, which is not what most people expect from Delete.
+            hidden=[remove_or_delete_action(self.on_delete_key)],
         )
         build_standard_menu_bar(self, spec)
         actions = self.action_registry
@@ -680,6 +686,9 @@ class MainWindow(QMainWindow):
         self.action_import_convert = actions["import_convert"]
         self.action_redact = actions["redact"]
         self.action_remove_from_list = actions["remove_from_list"]
+        self.action_delete_files = actions["delete_files"]
+        self.action_delete_files.setText("&Delete Files (Recycle Bin)…")
+        self.action_delete_files.setToolTip("Send the selected files to the Recycle Bin (Shift+Delete)")
         self.action_show_panel = actions["show_metadata_panel"]
         self.action_show_panel.setChecked(True)
         self.action_undo = actions["undo"]
@@ -990,6 +999,94 @@ class MainWindow(QMainWindow):
         gone = {id(mp3) for mp3 in targets}
         self.files = [mp3 for mp3 in self.files if id(mp3) not in gone]
         self._after_list_shrunk()
+
+    def on_delete_key(self) -> None:
+        """The Delete key: asks whether the selected files are to be removed
+        from the list (the files stay) or sent to the Recycle Bin. Remove from
+        List is the default button, so Delete then Enter never deletes a file.
+        The menu items act at once; this question is only for the key."""
+        selected = self._selected_files()
+        if not selected:
+            self.statusBar().showMessage("Delete: select the tracks first.", 6000)
+            return
+        choice = ask_remove_or_delete(
+            self, len(selected), names=[os.path.basename(str(m.path)) for m in selected], noun="track",
+        )
+        if choice == REMOVE:
+            self.remove_selected_from_list()
+        elif choice == DELETE:
+            self.delete_files(confirm=False)  # the question above already asked
+
+    def delete_files(self, confirm: bool = True) -> None:
+        """File > Delete Files (Recycle Bin): sends the selected files to the
+        Recycle Bin (recoverable, not a permanent delete) and removes them
+        from the list. A file with unsaved changes is refused, not trashed
+        (that would throw the edits away). An open player window is closed
+        first so it does not hold the file. `confirm=False` skips the Yes/No
+        question (the Delete key's own question already asked)."""
+        targets = self._selected_files()
+        if not targets:
+            QMessageBox.information(self, "No files selected", "Select at least one file to delete.")
+            return
+        if confirm:
+            preview = "\n".join(f"- {os.path.basename(str(m.path))}" for m in targets[:10])
+            if len(targets) > 10:
+                preview += f"\n...and {len(targets) - 10} more"
+            reply = QMessageBox.question(
+                self,
+                "Delete Files (Recycle Bin)?",
+                f"Send {len(targets)} file(s) to the Recycle Bin?\n\n{preview}\n\n"
+                "This removes them from disk (recoverable from the Recycle Bin) "
+                "and from this list.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self._close_players_for([str(m.path) for m in targets])
+        deleted: list[MP3File] = []
+        errors: list[tuple[str, str]] = []
+
+        def _trash(mp3: MP3File, _i: int) -> None:
+            if mp3.dirty:
+                errors.append((str(mp3.path), "it has unsaved changes -- save or discard them first"))
+                return
+            try:
+                move_to_trash_retrying(str(mp3.path))  # the player or a scan may still hold the file a moment
+                deleted.append(mp3)
+            except TrashError as exc:
+                errors.append((str(mp3.path), str(exc)))
+
+        # Cancellable: each file is trashed independently, so stopping
+        # partway leaves the rest untouched and in the list.
+        run_with_progress(
+            self, targets, _trash, "Deleting files…", threshold=3,
+            label_for=lambda mp3: f"Deleting: {os.path.basename(str(mp3.path))}",
+        )
+
+        if deleted:
+            self._remove_trashed_from_list(deleted)
+        if errors:
+            details = "\n".join(f"- {os.path.basename(p)}: {err}" for p, err in errors)
+            QMessageBox.warning(
+                self, "Some files failed to delete",
+                f"{len(deleted)} of {len(targets)} sent to the Recycle Bin.\n\nFailed:\n{details}",
+            )
+        else:
+            # Success needs no extra click: the rows are already gone from the list.
+            self.statusBar().showMessage(f"Sent {len(deleted)} file(s) to the Recycle Bin.", 8000)
+
+    @staticmethod
+    def _close_players_for(paths: list[str]) -> None:
+        """Closes the read-only player window (Play, Ctrl+P) when it has one of `paths` open."""
+        from redactor_common.gui import media_preview
+
+        wanted = {os.path.normcase(os.path.abspath(p)) for p in paths}
+        for win in list(getattr(media_preview, "_open_windows", [])):
+            opened = getattr(win, "_path", None)
+            if opened and os.path.normcase(os.path.abspath(str(opened))) in wanted:
+                win.close()
 
     def clear_list(self) -> None:
         """File > Clear List: empties the list (nothing on disk is touched)."""
@@ -3363,7 +3460,8 @@ class MainWindow(QMainWindow):
                     MenuAction("edit_lyrics", "Edit Lyrics…", lambda: self.open_lyrics_dialog(files[0]))
                 )
             items.append(MenuAction("create_notes_here", "Create Notes for This Folder…", self.create_notes_for_selection))
-            items.extend([Separator(), self.action_redact])  # Remove from List: File menu (Delete key) only
+            # Remove from List: File menu only (the Delete key asks which)
+            items.extend([Separator(), self.action_redact, self.action_delete_files])
             return items
 
         show_table_context_menu(

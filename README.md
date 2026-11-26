@@ -50,7 +50,9 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | File | Undo Last Rename | |
 | File | Rename / Export / Move… (by `%field%` pattern) | Ctrl+E |
 | File | Export Settings…, Import Settings… | |
-| File | Remove from List, Clear List (nothing on disk changes) | Del (Remove) |
+| File | Remove from List, Clear List (nothing on disk changes) | |
+| File | Delete Files (Recycle Bin)… (sends the selected files to the Recycle Bin, recoverable, after a Yes/No question listing them; a file with unsaved changes is refused, an open Play window on it is closed first; the status bar reports how many went) | Shift+Del |
+| (Delete key) | The Delete key asks what you mean: **Remove from List** (the default; the files stay on disk), **Delete Files (Recycle Bin)** or **Cancel**. The two File menu items act at once without this question. | Del |
 | File | Exit | Alt+F4 |
 | Edit | Undo, Redo | Ctrl+Z, Ctrl+Y |
 | Edit | Apply to N Selected (the side panel's ticked fields) | Ctrl+Return |
@@ -80,7 +82,7 @@ Ctrl+Alt shortcuts (AltGr types them on European keyboards).
 | Help | Changelog…, Credits…, Check for Updates…, About The ɯP3 Redactor | |
 
 The table's right-click menu has the everyday subset: Preview (one file), Rename File (one file), Look Up, Organize (Rename /
-Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Create Notes for This Folder, Redact, Remove from List, plus Open in Default App,
+Export / Move, Auto-Number), Analyze, Cover, Edit Lyrics, Create Notes for This Folder, Redact, Delete Files (Recycle Bin), plus Open in Default App,
 Open Containing Folder and Copy Path. Double-click a Filename cell to rename that file, a Lyrics cell to edit its
 lyrics. Click a header to sort (Track, Disc, Year, BPM, Loudness, Bitrate, Sample Rate and Channels sort as numbers), drag
 a header to reorder, right-click a header to show or hide columns.

@@ -28,7 +28,7 @@ KEPT = [
 NEW = [
     ("save_all", ["Ctrl+S", "Ctrl+Shift+A"]),  # Ctrl+S for good (owner, 2026-11-04)
     ("filter_list", ["Ctrl+F"]),
-    ("remove_from_list", ["Delete"]),
+    ("remove_from_list", []),  # the Delete key asks (on_delete_key); see test_delete_key_asks.py
     ("search_replace", ["Ctrl+H"]),
     ("apply", ["Ctrl+Return"]),
     ("reset_zoom", ["Ctrl+0"]),
