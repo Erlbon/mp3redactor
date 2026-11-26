@@ -8,6 +8,9 @@
 - **Same keys as before.** On 40 test files (real tracks and synthetic tracks in all 24 keys, MP3 and WAV, 44.1 and
   48 kHz) the port gave the same key as keyfinder-cli 1.2.0 on every one, with both decoders, at about 0.3 s per file
   against 0.8 s. `tools/compare_keyfinder.py <folder>` repeats the comparison on any music folder and writes a report.
+- **Files with non-English letters in their path now get a key.** The Windows build of keyfinder-cli could not open
+  any file whose path held a letter outside plain ASCII (å, ø, æ, ü, Polish, Japanese, ...): Detect Key failed on them
+  with "Unable to open audio file". The built-in detector reads them (tested in tests/test_key_detector.py).
 - keyfinder-cli stays as a fallback for a file the port cannot decode, if it is installed; it is optional now.
 - numpy is listed in requirements.txt (it was only there through aubio before).
 

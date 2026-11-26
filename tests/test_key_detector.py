@@ -91,6 +91,50 @@ def test_detect_key_native_reads_a_wav(tmp_path):
     assert kd.detect_key_native(path) == ("Am", STATUS_OK, "")
 
 
+NON_ENGLISH_NAMES = [
+    "Züri Punx.wav",               # u-umlaut (inside the Windows-1252 code page)
+    "blåbær søt.wav",    # Norwegian letters (inside Windows-1252)
+    "Łódź.wav",          # Polish (outside Windows-1252)
+    "日本.wav",                 # Japanese
+]
+
+
+def _write_a_minor_wav(path: Path, fs: int = 22050) -> None:
+    data = _triad(220.0, True, fs, 3)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(fs)
+        w.writeframes(np.clip(data, -32767, 32767).astype("<i2").tobytes())
+
+
+@pytest.mark.parametrize("name", NON_ENGLISH_NAMES)
+def test_non_english_file_names_are_read(tmp_path, name):
+    # The Windows build of keyfinder-cli could not open any file whose path
+    # had a letter outside plain ASCII (its argv arrives in the ANSI code
+    # page, FFmpeg wants UTF-8), so such files never got a key. The port
+    # must read them, folder name included.
+    folder = tmp_path / "Müsik ø"
+    folder.mkdir()
+    path = folder / name
+    _write_a_minor_wav(path)
+    assert kd.detect_key_native(path) == ("Am", STATUS_OK, "")
+
+
+@pytest.mark.parametrize("name", NON_ENGLISH_NAMES)
+def test_non_english_file_names_are_read_by_the_ffmpeg_fallback(tmp_path, name):
+    from core.tool_locator import find_tool
+
+    ffmpeg = find_tool("ffmpeg.exe")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not installed")
+    path = tmp_path / name
+    _write_a_minor_wav(path)
+    rate, blocks, finish = kd._ffmpeg_blocks(str(ffmpeg), str(path))
+    assert kd.key_name(kd._analyse_blocks(rate, blocks)) == "Am"
+    assert finish() == ""
+
+
 def test_detect_key_native_missing_file_without_ffmpeg_is_a_tool_error(tmp_path, monkeypatch):
     monkeypatch.setattr("core.tool_locator.find_tool", lambda *a, **k: None)
     key, status, message = kd.detect_key_native(tmp_path / "missing.mp3")
