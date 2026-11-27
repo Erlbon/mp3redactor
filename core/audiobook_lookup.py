@@ -86,11 +86,30 @@ class LookupOutcome:
 # --- plumbing ---------------------------------------------------------------------
 
 
+MAX_FETCH_BYTES = 8 * 1024 * 1024  # a search answer or a cover is far smaller; a runaway answer is cut off
+
+
+def _check_web_url(url: str) -> None:
+    """Only http and https are followed: a service's answer must not make us open file:, ftp: or a scheme-less URL."""
+    try:
+        parts = urllib.parse.urlparse(url)
+    except ValueError as exc:
+        raise AudiobookLookupError(f"not a usable web address: {exc}") from exc
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise AudiobookLookupError(f"not an http or https address: {url[:80]}")
+
+
 def default_fetch(url: str) -> bytes:
+    _check_web_url(url)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            return response.read()
+            data = response.read(MAX_FETCH_BYTES + 1)
+        if len(data) > MAX_FETCH_BYTES:
+            raise AudiobookLookupError(f"the answer from {urllib.parse.urlparse(url).netloc} is too large")
+        return data
+    except ValueError as exc:  # a malformed URL the parse above let through
+        raise AudiobookLookupError(f"not a usable web address: {exc}") from exc
     except urllib.error.HTTPError as exc:
         raise AudiobookLookupError(f"{exc.code} {exc.reason} from {urllib.parse.urlparse(url).netloc}") from exc
     except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:  # IncompleteRead is one
@@ -297,7 +316,8 @@ def download_cover(url: str, fetch: Fetch | None = None) -> tuple[bytes, str]:
     """(image bytes, MIME type) of a result's cover; raises AudiobookLookupError."""
     if not url:
         raise AudiobookLookupError("this result has no cover")
-    data = (fetch or default_fetch)(url)
+    _check_web_url(url)
+    data =(fetch or default_fetch)(url)
     for magic, mime in _IMAGE_MIMES.items():
         if data.startswith(magic):
             return data, mime

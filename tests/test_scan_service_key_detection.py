@@ -17,7 +17,7 @@ from core.mp3_file import MP3File, STATUS_ERROR, STATUS_OK, STATUS_TOOL_MISSING,
 from core.scan_service import run_key_detection
 
 
-def _fake_detect_key(path, override_path=None):
+def _fake_detect_key(path, override_path=None, ffmpeg_path=None):
     return (f"KEY-{path.name}", STATUS_OK, "")
 
 
@@ -104,7 +104,7 @@ def test_run_key_detection_forwards_override_path(mock_detect):
 
     run_key_detection(files, keyfinder_cli_path="C:/custom/keyfinder-cli.exe")
 
-    mock_detect.assert_called_once_with(Path("song.mp3"), override_path="C:/custom/keyfinder-cli.exe")
+    mock_detect.assert_called_once_with(Path("song.mp3"), override_path="C:/custom/keyfinder-cli.exe", ffmpeg_path=None)
 
 
 @patch("core.scan_service.detect_key", side_effect=_fake_detect_key)

@@ -39,9 +39,10 @@ FFMPEG_DECODE_RATE = 22050
 FFMPEG_TIMEOUT_SECONDS = 120
 
 
-def detect_bpm(path: Path) -> tuple[float | None, str, str]:
+def detect_bpm(path: Path, ffmpeg_path: str | None = None) -> tuple[float | None, str, str]:
     """
-    Returns (bpm, status, message).
+    Returns (bpm, status, message). ffmpeg_path is the user's ffmpeg from External Tools (the decode
+    fallback's find_tool override).
 
     bpm is None unless status is STATUS_OK. status is one of
     STATUS_OK / STATUS_ERROR / STATUS_TOOL_ERROR / STATUS_TOOL_MISSING.
@@ -64,11 +65,13 @@ def detect_bpm(path: Path) -> tuple[float | None, str, str]:
     try:
         return _analyze(aubio, str(path))
     except Exception as direct_error:  # noqa: BLE001 -- any aubio/decoder failure is a per-file result, not a crash
-        return _detect_via_ffmpeg(aubio, path, direct_error)
+        return _detect_via_ffmpeg(aubio, path, direct_error, ffmpeg_path)
 
 
-def _detect_via_ffmpeg(aubio, path: Path, direct_error: Exception) -> tuple[float | None, str, str]:
-    exe = find_tool(FFMPEG_EXE_NAME)
+def _detect_via_ffmpeg(
+    aubio, path: Path, direct_error: Exception, ffmpeg_path: str | None = None
+) -> tuple[float | None, str, str]:
+    exe = find_tool(FFMPEG_EXE_NAME, override=ffmpeg_path)
     if exe is None:
         return None, STATUS_TOOL_ERROR, (
             f"BPM needs ffmpeg to decode this file (ffmpeg not found; aubio said: {direct_error})"

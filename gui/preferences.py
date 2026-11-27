@@ -36,6 +36,7 @@ from core.audio_quality import DEFAULT_GOOD_KBPS, DEFAULT_POOR_KBPS, MAX_KBPS, M
 from core.settings import Settings
 from gui.external_tools_dialog import ToolPathsWidget
 
+PAD_WIDTH_MAX = 10  # what the Auto-Number spin box (0-10) shows; the Rename dialog adds the saved width to its list
 KEY_LIBRARY_ROOT = "library_root"
 KEY_RECYCLE_FALLBACK = "recycle_fallback_folder"  # redactor_common.core.trash.RECYCLE_FALLBACK_FOLDER_KEY
 KEY_DELETE_BACKUP = "delete_backup_after_fix"
@@ -98,8 +99,9 @@ def notes_cache_help() -> str:
 
 def preference_sections() -> list[PrefSection]:
     return [
-        # mp3 stores 0-99 digits (0 = no padding), wider than the shared 1-9.
-        filenames_section(width_min=0, width_max=99),
+        # 0-10 digits (0 = no padding): the Auto-Number spin box takes 0-10, and the Rename dialog's width
+        # list is built to include the saved width (review card 27, 2026-11-27).
+        filenames_section(width_min=0, width_max=PAD_WIDTH_MAX),
         PrefSection("library", "Library", (
             PrefSpec(
                 KEY_LIBRARY_ROOT, "Library folder", "path", "",

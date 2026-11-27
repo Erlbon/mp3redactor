@@ -33,7 +33,7 @@ TIMEOUT_SECONDS = 60
 
 
 def detect_key(
-    path: Path, tool_path: Path | None = None, override_path: str | None = None
+    path: Path, tool_path: Path | None = None, override_path: str | None = None, ffmpeg_path: str | None = None
 ) -> tuple[str, str, str]:
     """
     Detects the key in-process (core.key_detector, the Python port of
@@ -43,7 +43,7 @@ def detect_key(
     detect_key_with_exe() below; tool_path/override_path are passed on
     to it for the fallback.
     """
-    key, status, message = detect_key_native(path)
+    key, status, message = detect_key_native(path, ffmpeg_path=ffmpeg_path)
     if status == STATUS_OK:
         return key, status, message
     exe = tool_path if tool_path is not None else find_tool(KEYFINDER_EXE_NAME, override=override_path)

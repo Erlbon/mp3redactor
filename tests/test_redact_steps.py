@@ -167,8 +167,8 @@ def test_mp3val_backup_follows_the_setting(tmp_path, monkeypatch, keep_backups):
 
 def test_bpm_key_loudness_are_written(tmp_path, monkeypatch):
     mp3 = make_file(tmp_path)
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (127.6, STATUS_OK, ""))
-    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("Am", STATUS_OK, ""))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (127.6, STATUS_OK, ""))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None, **k: ("Am", STATUS_OK, ""))
     monkeypatch.setattr(rs, "measure_loudness", lambda p, override_path=None: (-14.0, -4.0, STATUS_OK, ""))
     entry, _ = run(mp3, {"bpm", "key", "loudness"})
     assert entry.status is FileStatus.CHANGED
@@ -185,16 +185,16 @@ def test_existing_bpm_and_key_tags_are_kept_by_default(tmp_path, monkeypatch):
     tags.add(TBPM(encoding=3, text="90"))
     tags.add(TKEY(encoding=3, text="C"))
     tags.save(str(mp3.path))
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: pytest.fail("must not measure"))
-    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: pytest.fail("must not detect"))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: pytest.fail("must not measure"))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None, **k: pytest.fail("must not detect"))
     entry, _ = run(mp3, {"bpm", "key"})
     assert entry.status is FileStatus.UNCHANGED
 
 
 def test_missing_and_failed_tools_do_not_touch_the_file(tmp_path, monkeypatch, recycle_bin):
     mp3 = make_file(tmp_path)
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_TOOL_MISSING, "aubio is not installed"))
-    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("", STATUS_ERROR, "boom"))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (None, STATUS_TOOL_MISSING, "aubio is not installed"))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None, **k: ("", STATUS_ERROR, "boom"))
     monkeypatch.setattr(rs, "measure_loudness", lambda p, override_path=None: (None, None, STATUS_TOOL_MISSING, "ffmpeg not found"))
     entry, _env = run(mp3, {"bpm", "key", "loudness"})
     assert entry.status is FileStatus.FAILED and len(entry.failures) == 1  # only the key tool failing
@@ -468,7 +468,7 @@ def test_move_files_the_saved_file_under_the_library_root_and_undo_puts_it_back(
 
     # Not the real aubio: on Linux its wheel can't open an MP3 at all (a TOOL ERROR),
     # and this test is about the move. A genuine "no tempo found" is only a note.
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_ERROR, "not enough detected beats"))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (None, STATUS_ERROR, "not enough detected beats"))
 
     root = _library(tmp_path)
     log = RenameLog(str(tmp_path / "log.json"))
@@ -495,7 +495,7 @@ def test_move_files_the_saved_file_under_the_library_root_and_undo_puts_it_back(
 
 def test_move_saves_pending_changes_first_and_reports_the_save_once(tmp_path, monkeypatch):
     root = _library(tmp_path)
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (100.0, STATUS_OK, ""))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (100.0, STATUS_OK, ""))
     mp3 = make_file(tmp_path, title="Song", artist="Band", album="Album", track="1")
     opts = {"move_into_folders": {"pattern": "%artist%/%title%"}}
     entry, _ = run(mp3, {"bpm", "move_into_folders"}, opts, settings=Settings(library_root=str(root)))

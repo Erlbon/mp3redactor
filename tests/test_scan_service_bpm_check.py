@@ -16,7 +16,7 @@ from core.mp3_file import MP3File, STATUS_OK, STATUS_UNCHECKED
 from core.scan_service import run_bpm_check
 
 
-def _fake_detect_bpm(path):
+def _fake_detect_bpm(path, *args, **kwargs):
     return (120.0, STATUS_OK, "")
 
 

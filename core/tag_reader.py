@@ -18,6 +18,7 @@ core/tag_writer.py's _write_bpm_frame()/_write_key_frame()/
 _write_loudness_frame() for the write side of this same round trip.
 """
 
+import math
 from pathlib import Path
 
 from core.ffmpeg_probe import REPLAYGAIN_REFERENCE_LUFS
@@ -116,7 +117,10 @@ def load_tags(mp3: MP3File) -> None:
         bpm_text = _first(tags, "TBPM")
         if bpm_text:
             try:
-                mp3.bpm = float(bpm_text)
+                bpm_value = float(bpm_text)
+                if not math.isfinite(bpm_value):  # "nan"/"inf" parse as floats but cannot be rounded or saved
+                    raise ValueError(bpm_text)
+                mp3.bpm = bpm_value
                 mp3.bpm_status = STATUS_OK
                 mp3.bpm_message = ""
             except ValueError:

@@ -92,9 +92,12 @@ def run_analyze(args: argparse.Namespace, out: Output) -> int:
     if "deep" in checks:
         run_deep_check(readable, progress=step("deep check"), ffmpeg_path=app.ffmpeg_path or None, ffprobe_path=app.ffprobe_path or None)
     if "bpm" in checks:
-        run_bpm_check(readable, progress=step("BPM"))
+        run_bpm_check(readable, progress=step("BPM"), ffmpeg_path=app.ffmpeg_path or None)
     if "key" in checks:
-        run_key_detection(readable, progress=step("key"), keyfinder_cli_path=app.keyfinder_cli_path or None)
+        run_key_detection(
+            readable, progress=step("key"), keyfinder_cli_path=app.keyfinder_cli_path or None,
+            ffmpeg_path=app.ffmpeg_path or None,
+        )
     if "loudness" in checks:
         run_loudness_measurement(readable, progress=step("loudness"), ffmpeg_path=app.ffmpeg_path or None)
     if args.save:

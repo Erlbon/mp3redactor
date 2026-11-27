@@ -94,6 +94,7 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
         self._fpcalc = fpcalc  # None: identify by tags/names only
         self._post = post  # AcoustID transport (tests)
         self._matches: dict[int, ReleaseMatch] = {}  # id(album) -> the chosen match
+        self._fingerprint_problem: dict[int, str] = {}  # id(album) -> the first AcoustID problem of the last pass
         self._fingerprints: dict[int, list] = {}  # id(album) -> AcoustID hits per file (computed once)
         super().__init__(
             albums,
@@ -179,6 +180,9 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             return LookupResult(error=str(exc), used_query=used)
         if not matches or matches[0].matched == 0:
             self._matches.pop(id(album), None)
+            problem = self._fingerprint_problem.get(id(album), "")
+            if problem:  # nothing matched and the sound lookup failed: say so instead of "nothing matched"
+                return LookupResult(error=f"no match; the sound lookup failed ({problem})", used_query=used)
             return LookupResult(used_query=used)
         best = matches[0]
         self._matches[id(album)] = best
@@ -221,7 +225,10 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             return [[] for _ in album.files]
         key = id(album)
         if key not in self._fingerprints:
-            hits, _problems = identify_files([m.path for m in album.files], self._fpcalc, self._post)
+            hits, problems = identify_files([m.path for m in album.files], self._fpcalc, self._post)
+            self._fingerprint_problem[key] = problems[0] if problems else ""
+            if problems:  # a dropped connection is not an answer: do not keep it, the next search asks again
+                return hits
             self._fingerprints[key] = hits
         return self._fingerprints[key]
 

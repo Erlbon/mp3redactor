@@ -150,6 +150,9 @@ def _unique(items: Iterable[str]) -> list[str]:
     return out
 
 
+_MBID_SHAPE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
 def _is_network_down(message: str) -> bool:
     return message.startswith("Could not reach")
 
@@ -404,7 +407,9 @@ class NotesEngine:
         elif target.kind in ("wikipedia", "wikidata"):
             ids = (wp.music_identifiers(entity_id=target.id, fetch=self._wiki) if target.kind == "wikidata"
                    else wp.music_identifiers(title=target.id, fetch=self._wiki, lang=target.lang or "en"))
-            mbid, discogs_id = ids["musicbrainz"], ids["discogs"]
+            # Wikidata is user-edited: an id of the wrong shape counts as no id (review card 35).
+            mbid = ids["musicbrainz"] if _MBID_SHAPE.fullmatch(ids["musicbrainz"] or "") else ""
+            discogs_id = ids["discogs"] if (ids["discogs"] or "").isascii() and (ids["discogs"] or "").isdigit() else ""
             if not mbid and not discogs_id:
                 page = wp.get_summary(target.id, self._wiki, target.lang or "en") if target.kind == "wikipedia" else None
                 if page is None:
@@ -691,8 +696,10 @@ class NotesEngine:
                 res.discogs = more.discogs
             if more.mb_ok or more.discogs_ok:
                 res.via, res.page = more.via, more.page
-        if down or any(_is_network_down(p) for p in res.problems):
-            self._artists.pop(key, None)  # a timeout is not an answer: the next folder of this artist asks again
+        if down or res.problems:
+            # A timeout or a busy MusicBrainz is not an answer: the next folder of this artist asks again
+            # (review card 24; before, only "Could not reach" was dropped and a busy answer spoiled every album).
+            self._artists.pop(key, None)
         return res
 
     def _evaluate_mb(self, hit: "nmb.ArtistHit", names, partial, local_titles, local_years):

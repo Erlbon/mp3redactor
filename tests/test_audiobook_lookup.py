@@ -153,7 +153,7 @@ def test_an_answer_cut_short_is_a_lookup_error_not_an_http_exception(monkeypatch
         def __exit__(self, *a):
             return False
 
-        def read(self):
+        def read(self, n=-1):
             raise http.client.IncompleteRead(b"par")
 
     monkeypatch.setattr(al.urllib.request, "urlopen", lambda *a, **k: Cut())

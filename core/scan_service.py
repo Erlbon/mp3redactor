@@ -224,9 +224,11 @@ def run_bpm_check(
     progress: ProgressCallback | None = None,
     max_workers: int | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    ffmpeg_path: str | None = None,
 ) -> None:
     """
-    Mutates each file's bpm/bpm_status/bpm_message in place.
+    Mutates each file's bpm/bpm_status/bpm_message in place. ffmpeg_path is the External Tools override
+    for the decode fallback.
 
     Like run_key_detection() (see its docstring), this runs concurrently
     via a thread pool rather than one file at a time -- confirmed by
@@ -246,7 +248,7 @@ def run_bpm_check(
     completed = 0
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        future_to_mp3 = {executor.submit(detect_bpm, mp3.path): mp3 for mp3 in files}
+        future_to_mp3 = {executor.submit(detect_bpm, mp3.path, ffmpeg_path): mp3 for mp3 in files}
         for future in as_completed(future_to_mp3):
             mp3 = future_to_mp3[future]
             try:
@@ -306,9 +308,11 @@ def run_key_detection(
     keyfinder_cli_path: str | None = None,
     max_workers: int | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    ffmpeg_path: str | None = None,
 ) -> None:
     """
-    Mutates each file's key_value/key_status/key_message in place.
+    Mutates each file's key_value/key_status/key_message in place. ffmpeg_path is the External Tools
+    override for the built-in detector's decode fallback.
     keyfinder_cli_path is the user's manual override from Settings >
     Locate External Tools (core.settings.Settings.keyfinder_cli_path),
     if set -- same convention as run_integrity_check()'s mp3val_path.
@@ -343,7 +347,7 @@ def run_key_detection(
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_mp3 = {
-            executor.submit(detect_key, mp3.path, override_path=keyfinder_cli_path): mp3
+            executor.submit(detect_key, mp3.path, override_path=keyfinder_cli_path, ffmpeg_path=ffmpeg_path): mp3
             for mp3 in files
         }
         for future in as_completed(future_to_mp3):

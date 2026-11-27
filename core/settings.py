@@ -28,6 +28,7 @@ mp3val_path/keyfinder_cli_path.
 import configparser
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -453,10 +454,21 @@ def load_settings(target_dir: Path | None = None) -> Settings:
     config = configparser.ConfigParser(interpolation=None)  # see to_config()'s comment
     try:
         if path.exists():
-            config.read(path, encoding="utf-8")
-    except (OSError, configparser.Error):
+            config.read(path, encoding="utf-8-sig")  # an editor's BOM must not hide the first section header
+    except (OSError, ValueError, configparser.Error):  # ValueError covers UnicodeDecodeError (an ANSI-saved file)
+        _keep_unreadable_copy(path)
         return Settings()
     return Settings.from_config(config)
+
+
+def _keep_unreadable_copy(path: Path) -> None:
+    """The next save replaces an unreadable settings file with defaults: keep what the user had, as
+    <name>.bad, so it can be repaired by hand (review card 21)."""
+    try:
+        if path.exists():
+            shutil.copyfile(path, path.with_name(path.name + ".bad"))
+    except OSError:
+        pass
 
 
 def save_settings(settings: Settings, target_dir: Path | None = None) -> None:

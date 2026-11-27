@@ -31,8 +31,8 @@ def shown(monkeypatch, recycle_bin):
 @pytest.fixture
 def tools(monkeypatch):
     monkeypatch.setattr(rs, "check_integrity", lambda p, override_path=None: (STATUS_OK, ""))
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (120.0, STATUS_OK, ""))
-    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("C", STATUS_OK, ""))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (120.0, STATUS_OK, ""))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None, **k: ("C", STATUS_OK, ""))
     monkeypatch.setattr(rs, "measure_loudness", lambda p, override_path=None: (-16.0, -2.0, STATUS_OK, ""))
     monkeypatch.setattr(rs, "find_tool", lambda *a, **k: None)
     monkeypatch.setattr(rs, "find_album", lambda facts, query: [])

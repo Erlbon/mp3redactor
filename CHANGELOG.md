@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-11-27#04 -- Crashes and wrong results (code review batch 2)
+
+- **Key detection works in the released exe again.** The build no longer leaves out `numpy.fft`, which the built-in
+  key detector needs. A test now fails if the build list excludes something `core/` uses.
+- **Delete Files accepts files that were only checked.** A completed integrity or deep check no longer counts as
+  "unsaved changes", in Delete Files and in Find Duplicates.
+- **Auto-Number numbers in table order**, not in the order you clicked the rows, and leaves out files that could
+  not be read (and says so).
+- **A settings file saved as ANSI no longer stops the app from starting**, and one saved with a byte-order mark keeps
+  its settings. An unreadable file is kept as `.bad` before the next save replaces it.
+- **Local MusicBrainz search copes with names made only of symbols** ("+", "!!!"): no more "Database query failed",
+  and an exact release id found earlier is kept. An album such as "1980 - 1990" is no longer taken for a barcode only.
+- **AcoustID answers that are cut off or of the wrong shape** become a normal "(error)" instead of an exception.
+- **Create Notes:** a busy MusicBrainz no longer makes every other album of that artist come out as not found; a bad
+  Wikidata value in a pasted link gives a message instead of crashing.
+- **A BPM tag of "nan" or "inf"** is ignored, so the file can be saved again.
+- **BPM and key detection use the ffmpeg path set in External Tools** (Detect BPM, Detect Key, Redact, `analyze`).
+- **Preferences:** zero-pad widths are limited to 0-10, and the Rename dialog offers the saved width.
+- **Redact, Tidy Whitespace and Create M4B with nothing selected and a filter on** take only the files shown, and
+  Redact says how many of how many.
+- **Redact's integrity messages name the song**, not the hidden scratch file.
+- **Lyrics** now match an artist or title made only of symbols ("!!!").
+- **Look Up (MusicBrainz):** a failed AcoustID pass is shown on the row and is not kept until the dialog closes.
+- **Create Notes, Local files tab:** a read error is not remembered for the whole session.
+- **Audiobook cover URLs:** only http and https are followed, a malformed URL no longer stops `m4b --lookup`, and an
+  answer is cut off at 8 MB.
+
 ## 2026-11-27#03 -- Safer saves, fixes and undo (code review batch 1) -- redactor_common 2026-11-27-06
 
 - **redactor_common 2026-11-27-06** (was 2026-11-27-05): safe Windows device names in file names, and a folder

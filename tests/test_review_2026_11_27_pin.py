@@ -66,5 +66,5 @@ def test_lyrics_fetch_is_paced(monkeypatch):
     starts.sort()
     gaps = [b - a for a, b in zip(starts, starts[1:])]
     assert len(starts) == 5
-    assert min(gaps) >= 0.09
+    assert min(gaps) >= 0.06  # LYRICS_MIN_INTERVAL 0.1, less Windows' ~16 ms clock tick on each end
     assert in_flight["max"] <= scan_service.LYRICS_MAX_WORKERS

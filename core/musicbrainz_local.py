@@ -294,9 +294,11 @@ def search_releases_local(db: MusicBrainzLocalDatabase, query: AlbumQuery, limit
     if not (query.album or "").strip():
         raise MusicBrainzLocalError("needs an album name (Album tag or an 'Artist - Album' folder name)")
     album = _match_tokens(query.album, drop=())
+    if not album:  # a name of symbols only ("+", "!!!") has no words to search for (review card 22)
+        return []
     attempts = []
-    if (query.artist or "").strip() and not is_various(query.artist):
-        artist = _match_tokens(query.artist, drop=("and", "the"))
+    artist = _match_tokens(query.artist or "", drop=("and", "the")) if (query.artist or "").strip() else ""
+    if artist and not is_various(query.artist):
         attempts.append(f"title : ({album}) AND artist_credit_text : ({artist})")
         if not normalize_words(query.album).startswith(normalize_words(query.artist)):
             attempts.append(f"title : ({_match_tokens(f'{query.artist} {query.album}', drop=())})")
@@ -428,9 +430,15 @@ def find_album_local(
     if not placed() and (any(f.recordings for f in files) or any(recording_ids or [])):
         for release, via in _recording_candidates(db, files, list(recording_ids or [])):
             add(release, via)
-    text_query = query if not _BARCODE_TEXT.match(query.album or "") else LocalQuery(query.artist, "", query.year)
-    if not placed() and (text_query.album or "").strip():
-        pool = _preranked(search_releases_local(db, text_query), text_query, len(files))
+    # The title search runs even for an album that looks like a barcode ("1980 - 1990"): it only matters when
+    # the barcode stage placed nothing (review card 32). Its failure keeps what earlier stages found (card 22).
+    if not placed() and (query.album or "").strip():
+        try:
+            pool = _preranked(search_releases_local(db, query), query, len(files))
+        except MusicBrainzDatabaseError:
+            if not matches:
+                raise
+            pool = []
         for release in pool[:candidates]:
             add(release, "text")
     return _rank(list(matches.values()), len(files))
@@ -445,9 +453,12 @@ def find_track_local(
     if not db.has_track_search or not (fact.title or "").strip():
         return []
     title = _match_tokens(fact.title, drop=())
+    if not title:  # symbols only: nothing to search for
+        return []
     attempts = []
-    if (artist or "").strip() and not is_various(artist):
-        attempts.append(f"title : ({title}) AND artist_credit_text : ({_match_tokens(artist, drop=('and', 'the'))})")
+    artist_tokens = _match_tokens(artist, drop=("and", "the")) if (artist or "").strip() else ""
+    if artist_tokens and not is_various(artist):
+        attempts.append(f"title : ({title}) AND artist_credit_text : ({artist_tokens})")
     attempts.append(f"title : ({title})")
     query = LocalQuery(artist=artist, album="", year=year)
     for match in attempts:

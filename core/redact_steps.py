@@ -383,6 +383,7 @@ class IntegrityStep(Mp3Step):
         work, settings = ctx.work, ctx.env.settings
         mp3val = settings.mp3val_path or None
         status, message = check_integrity(ctx.temp, override_path=mp3val)
+        message = _song_not_scratch(ctx, message)
         if status == STATUS_OK and work.integrity_status == STATUS_OK and work.integrity_stamp:
             # Still OK and the file already carries an OK stamp: re-stamping would rewrite the whole file
             # on every run for nothing.
@@ -406,6 +407,7 @@ class IntegrityStep(Mp3Step):
             ctx.restore_temp()  # a crashed fix may have half-rewritten the copy
             return StepResult.failed(f"mp3val couldn't fix it ({fix_message}); the file was left as it was")
         status, message = check_integrity(ctx.temp, override_path=mp3val)
+        message = _song_not_scratch(ctx, message)
         if status in (STATUS_TOOL_MISSING, STATUS_TOOL_ERROR):
             ctx.restore_temp()
             return StepResult.failed(f"couldn't re-check the file after fixing ({message}); left as it was")
@@ -417,6 +419,14 @@ class IntegrityStep(Mp3Step):
             f"fixed {max(problems - remaining, 0)} of {problems} problem(s) with mp3val; "
             f"{status}: {remaining} remain ({_first_line(message)})"
         )
+
+
+def _song_not_scratch(ctx: "Mp3Ctx", text: str) -> str:
+    """mp3val names the file it was given, the hidden scratch copy: show the song's own path instead
+    (review card 30, 2026-11-27)."""
+    if ctx.temp and text:
+        return text.replace(ctx.temp, str(ctx.mp3.path))
+    return text
 
 
 class BpmStep(Mp3Step):
@@ -434,7 +444,7 @@ class BpmStep(Mp3Step):
     def process(self, ctx: Mp3Ctx) -> StepResult:
         if not self.options_for(ctx)["replace"] and _existing_frame_text(ctx.temp, "TBPM"):
             return StepResult.nothing()
-        bpm, status, message = detect_bpm(Path(ctx.temp))
+        bpm, status, message = detect_bpm(Path(ctx.temp), ffmpeg_path=ctx.env.settings.ffmpeg_path or None)
         if status == STATUS_TOOL_MISSING:
             return StepResult.nothing(note=message)
         if status == STATUS_TOOL_ERROR:
@@ -464,7 +474,8 @@ class KeyStep(Mp3Step):
         if not self.options_for(ctx)["replace"] and _existing_frame_text(ctx.temp, "TKEY"):
             return StepResult.nothing()
         key, status, message = detect_key(
-            Path(ctx.temp), override_path=ctx.env.settings.keyfinder_cli_path or None
+            Path(ctx.temp), override_path=ctx.env.settings.keyfinder_cli_path or None,
+            ffmpeg_path=ctx.env.settings.ffmpeg_path or None,
         )
         if status == STATUS_TOOL_MISSING:
             return StepResult.nothing(note=message)

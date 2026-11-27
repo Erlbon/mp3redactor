@@ -58,11 +58,13 @@ def result_matches(result_title: str, artist: str, title: str) -> bool:
     (normalized; a multi-artist tag matches if any one artist does).
     With neither given there's nothing to check against."""
     haystack = f" {_normalize(result_title)} "
-    if title and f" {_title_core(title)} " not in haystack:
+    core = _title_core(title) if title else ""
+    if core and f" {core} " not in haystack:  # a title of symbols only ("!!!") normalises to nothing: no check
         return False
     if artist:
         names = [_normalize(n) for n in re.split(r"[;,/&]| feat\.? | ft\.? ", artist, flags=re.IGNORECASE)]
-        if not any(n and f" {n} " in haystack for n in names):
+        names = [n for n in names if n]
+        if names and not any(f" {n} " in haystack for n in names):
             return False
     return True
 

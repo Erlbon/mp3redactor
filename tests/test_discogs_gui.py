@@ -276,11 +276,11 @@ def test_preferences_dialog_maps_shared_keys_onto_existing_settings_fields():
     assert dlg.page_titles() == ["Filenames", "Library", "Table colours", "Fixing", "History", "Create Notes", "Updates", "Conversion", "Tools"]
     dlg.set_value("ascii_filenames", True)
     dlg.set_value("zero_pad_numbers", True)
-    dlg.set_value("zero_pad_width", 12)  # mp3 allows up to 99 digits
+    dlg.set_value("zero_pad_width", 8)  # up to 10 digits, what the dialogs can show
     dlg.set_value("auto_number_padding", 0)
     dlg.accept()
     assert (settings.ascii_filenames, settings.rename_zero_pad, settings.rename_zero_pad_width, settings.auto_number_padding) == (
-        True, True, 12, 0)
+        True, True, 8, 0)
     assert len(saved) == 1  # one save for the whole write
 
 

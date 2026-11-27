@@ -170,6 +170,8 @@ def _artist_hit(a: dict) -> "ArtistHit":
 
 def artist_by_id(mbid: str, fetch: Optional[Callable] = None) -> "ArtistHit":
     """One artist looked up DIRECTLY by its MusicBrainz id (with its aliases), as an ArtistHit with score 100."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", mbid or ""):  # never let an id change the URL path (card 35)
+        raise MusicBrainzError("that is not a MusicBrainz artist id")
     data = _get(f"artist/{mbid}", fetch or _fetch(), inc="aliases")
     if not data.get("id"):
         raise MusicBrainzError("MusicBrainz has no artist with that id")

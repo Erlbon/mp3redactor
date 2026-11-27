@@ -62,14 +62,15 @@ a = Analysis(
     runtime_hooks=[],
     # aubio (BPM detection) pulls in numpy, whose own __init__.py
     # unconditionally imports numpy.linalg (confirmed by blocking it
-    # in sys.modules -- `import numpy` itself then fails), which is
+    # in sys.modules -- `import numpy` itself then fails; numpy.fft is
+    # NOT excluded: core/key_detector.py uses it, card 18 of 2026-11-27), which is
     # what actually requires numpy's ~20MB vendored OpenBLAS DLL --
     # not anything this app's own code calls. These five submodules
     # are NOT required by numpy.__init__ (confirmed the same way) and
     # this app never touches them either, so excluding them is a safe,
     # if modest (~2MB), trim. UPX used to compress that OpenBLAS DLL;
     # it is off since 2026-10-30 (see upx=False below).
-    excludes=["numpy.fft", "numpy.polynomial", "numpy.random", "numpy.ma", "numpy.testing"],
+    excludes=["numpy.polynomial", "numpy.random", "numpy.ma", "numpy.testing"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

@@ -444,13 +444,11 @@ def detect_key_native(path: Path, ffmpeg_path: str | None = None) -> tuple[str, 
     except Exception as e:  # noqa: BLE001 -- any aubio/decoder failure: try ffmpeg next
         errors.append(f"aubio: {e}")
 
-    exe = ffmpeg_path
-    if exe is None:
-        from core.ffmpeg_probe import FFMPEG_EXE_NAME
-        from core.tool_locator import find_tool
+    from core.ffmpeg_probe import FFMPEG_EXE_NAME
+    from core.tool_locator import find_tool
 
-        found = find_tool(FFMPEG_EXE_NAME)
-        exe = str(found) if found else None
+    found = find_tool(FFMPEG_EXE_NAME, override=ffmpeg_path or None)
+    exe = str(found) if found else None
     if exe is None:
         return "", STATUS_TOOL_ERROR, f"cannot decode this file ({'; '.join(errors)}; ffmpeg not found)"
     try:

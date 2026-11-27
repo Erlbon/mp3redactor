@@ -131,7 +131,7 @@ def test_redact_move_step_takes_the_entry_into_the_library(tmp_path, journal, mo
     from tests.test_redact_steps import run
 
     history.set_history_enabled(True)
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_ERROR, "not enough detected beats"))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (None, STATUS_ERROR, "not enough detected beats"))
     root = tmp_path / "library"
     root.mkdir()
     mp3 = _song(tmp_path, title="Song", artist="Band", album="Album", albumartist="Band")

@@ -237,8 +237,8 @@ def test_scan_verdict_error_behaviour_is_unchanged():
 def test_redact_bpm_key_loudness_tool_errors_fail_the_step_and_write_nothing(tmp_path, monkeypatch, recycle_bin):
     mp3 = make_file(tmp_path)
     before = mp3.path.read_bytes()
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_TOOL_ERROR, "aubio failed"))
-    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None: ("", STATUS_TOOL_ERROR, "keyfinder timed out"))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (None, STATUS_TOOL_ERROR, "aubio failed"))
+    monkeypatch.setattr(rs, "detect_key", lambda p, override_path=None, **k: ("", STATUS_TOOL_ERROR, "keyfinder timed out"))
     monkeypatch.setattr(
         rs, "measure_loudness", lambda p, override_path=None: (None, None, STATUS_TOOL_ERROR, "ffmpeg timed out"),
     )
@@ -250,7 +250,7 @@ def test_redact_bpm_key_loudness_tool_errors_fail_the_step_and_write_nothing(tmp
 
 def test_redact_bpm_genuine_miss_is_still_only_a_note(tmp_path, monkeypatch, recycle_bin):
     mp3 = make_file(tmp_path)
-    monkeypatch.setattr(rs, "detect_bpm", lambda p: (None, STATUS_ERROR, "not enough detected beats"))
+    monkeypatch.setattr(rs, "detect_bpm", lambda p, **k: (None, STATUS_ERROR, "not enough detected beats"))
     entry, _env = run(mp3, {"bpm"})
     assert entry.status is not FileStatus.FAILED
     assert any("BPM not detected" in n for n in entry.notes)

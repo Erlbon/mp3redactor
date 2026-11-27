@@ -144,7 +144,7 @@ from core.notes_cache import default_cache
 from core.notes_local import ALL_KINDS
 from core.notes_kinds import parse_kinds
 from core.notes_scope import scope_choices
-from gui.preferences import build_preferences_dialog
+from gui.preferences import PAD_WIDTH_MAX, build_preferences_dialog
 from core.audio_quality import BITRATE_LEGEND, bitrate_result, display_bitrate, sample_rate_result
 from redactor_common.gui.quality_colour import apply_band_colour
 from gui.tag_panel import TagPanel
@@ -1050,7 +1050,7 @@ class MainWindow(QMainWindow):
         errors: list[tuple[str, str]] = []
 
         def _trash(mp3: MP3File, _i: int) -> None:
-            if mp3.dirty:
+            if mp3.dirty and not mp3.stamp_only_dirty:  # a check's stamp alone is not an edit
                 errors.append((str(mp3.path), "it has unsaved changes -- save or discard them first"))
                 return
             try:
@@ -1245,7 +1245,7 @@ class MainWindow(QMainWindow):
         edits are not saved yet is refused (the dialog lists it with this
         message): moving it would throw the edits away."""
         for mp3 in self.files:
-            if str(mp3.path) == path and mp3.dirty:
+            if str(mp3.path) == path and mp3.dirty and not mp3.stamp_only_dirty:
                 raise TrashError("it has unsaved changes in the list -- save or discard them first")
         move_to_trash(path)
 
@@ -1435,7 +1435,7 @@ class MainWindow(QMainWindow):
         one book (dialog with the chapter list); files from several folders make one book per folder
         (batch dialog). See gui/m4b_dialog.py, gui/m4b_batch_dialog.py and core/m4b_builder.py.
         Nothing in the list changes: the .m4b files are new, not loaded here."""
-        files = [mp3 for mp3 in (self._selected_files() or self.files) if not mp3.load_error]
+        files = [mp3 for mp3 in (self._selected_files() or self._shown_files()) if not mp3.load_error]
         if not files:
             QMessageBox.information(self, "Create M4B Audiobook", "Open some MP3 files first.")
             return
@@ -1546,6 +1546,12 @@ class MainWindow(QMainWindow):
         self.settings.rename_zero_pad_width = width
         save_settings(self.settings)
 
+    def _rename_pad_widths(self) -> tuple[int, ...]:
+        """The Rename dialog's zero-pad choices: 2, 3, 4 plus the saved width, so a width set in Preferences
+        (0-10) is shown and kept instead of silently becoming 2 (review card 27)."""
+        saved = max(0, min(PAD_WIDTH_MAX, int(self.settings.rename_zero_pad_width)))
+        return tuple(sorted({2, 3, 4, saved}))
+
     def _remember_auto_number_padding(self, width: int) -> None:
         self.settings.auto_number_padding = width
         save_settings(self.settings)
@@ -1618,6 +1624,7 @@ class MainWindow(QMainWindow):
             title="Rename / Export by Metadata Pattern",
             item_noun="file",
             zero_pad_field="track",
+            zero_pad_widths=self._rename_pad_widths(),
             ascii_only=self.settings.ascii_filenames,
             on_ascii_only_changed=self._remember_ascii_filenames,
             zero_pad_initial=(self.settings.rename_zero_pad, self.settings.rename_zero_pad_width),
@@ -1870,6 +1877,14 @@ class MainWindow(QMainWindow):
         targets = self._require_targets("number")
         if not targets:
             return
+        unreadable = [mp3 for mp3 in targets if mp3.load_error]
+        if unreadable:  # they cannot be written, so they must not take a number either (review card 28)
+            targets = [mp3 for mp3 in targets if not mp3.load_error]
+            self.statusBar().showMessage(
+                f"{len(unreadable)} file(s) that could not be read were left out of the numbering.", 8000
+            )
+            if not targets:
+                return
 
         # Only "track" gets numeric (direct-write) treatment -- the
         # rest are prefixed onto their existing value, same
@@ -2009,7 +2024,7 @@ class MainWindow(QMainWindow):
         nothing selected, every loaded file's) tag values with stray
         whitespace (core/whitespace.py) and tidies the ticked ones in
         memory, like Search and Replace: Save writes them, Undo reverts."""
-        targets = self._selected_files() or list(self.files)
+        targets = self._selected_files() or self._shown_files()
         if not targets:
             QMessageBox.information(self, "No Files Loaded", "Open some files first.")
             return
@@ -2723,14 +2738,33 @@ class MainWindow(QMainWindow):
         if not self.files:
             QMessageBox.information(self, "No Files Loaded", "Open some files first.")
             return []
+        shown = self._shown_files()  # a list filter's hidden rows are never swept in (review card 29)
+        if not shown:
+            QMessageBox.information(self, "No Files Shown", "No file is shown in the list. Clear the filter or open some files.")
+            return []
+        which = f"all {len(shown)} loaded file(s)" if len(shown) == len(self.files) else (
+            f"the {len(shown)} file(s) shown by the filter (of {len(self.files)} loaded)"
+        )
         reply = QMessageBox.question(
             self,
             "Redact all files?",
-            f"Nothing is selected. Redact all {len(self.files)} loaded file(s)?\n\n"
+            f"Nothing is selected. Redact {which}?\n\n"
             "Each file is fixed and saved in place; the original goes to the Recycle Bin.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
-        return list(self.files) if reply == QMessageBox.StandardButton.Yes else []
+        return shown if reply == QMessageBox.StandardButton.Yes else []
+
+    def _shown_files(self) -> list[MP3File]:
+        """Every loaded file whose row the list filter shows, in table order."""
+        files: list[MP3File] = []
+        for row in range(self.table.rowCount()):
+            if self.table.isRowHidden(row):
+                continue
+            item = self.table.item(row, self._col_index["filename"])
+            mp3 = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+            if mp3 is not None:
+                files.append(mp3)
+        return files
 
     def redact_files(self) -> None:
         """Edit > Redact (Ctrl+Shift+E): runs the saved recipe on the
@@ -2822,13 +2856,16 @@ class MainWindow(QMainWindow):
         )
 
     def run_bpm_check(self) -> None:
-        self._run_concurrent_check_with_progress("Detecting BPM...", run_bpm_check)
+        self._run_concurrent_check_with_progress(
+            "Detecting BPM...", run_bpm_check, ffmpeg_path=self.settings.ffmpeg_path or None
+        )
 
     def run_key_detection(self) -> None:
         self._run_concurrent_check_with_progress(
             "Detecting key...",
             run_key_detection,
             keyfinder_cli_path=self.settings.keyfinder_cli_path or None,
+            ffmpeg_path=self.settings.ffmpeg_path or None,
         )
 
     def run_deep_check(self) -> None:
@@ -2924,14 +2961,15 @@ class MainWindow(QMainWindow):
     def _selected_files(self) -> list[MP3File]:
         """The selected files the user can see: a row hidden by Edit > Filter
         List is never a target, even if Select All reached it."""
-        seen: dict[int, MP3File] = {}
+        seen: dict[int, tuple[int, MP3File]] = {}
         for item in self.table.selectedItems():
             if self.table.isRowHidden(item.row()):
                 continue
             mp3 = item.data(Qt.ItemDataRole.UserRole)
             if mp3 is not None:
-                seen[id(mp3)] = mp3
-        return list(seen.values())
+                seen[id(mp3)] = (item.row(), mp3)
+        # Table order, not click order: selectedItems() follows the order of selection (review card 20).
+        return [mp3 for _row, mp3 in sorted(seen.values(), key=lambda pair: pair[0])]
 
     def _run_check_with_progress(
         self, label: str, check_fn, targets: list[MP3File], **extra_kwargs

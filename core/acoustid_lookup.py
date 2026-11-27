@@ -26,6 +26,7 @@ and redactor_common core/lookups/musicbrainz.py then matches file to track.
 
 from __future__ import annotations
 
+import http.client
 import json
 import subprocess
 import urllib.parse
@@ -105,16 +106,24 @@ def lookup(fp: Fingerprint, post: Optional[Callable[[str, bytes], bytes]] = None
     }).encode()
     try:
         raw = (post or _default_post)(API_URL, data)
-    except OSError as exc:  # includes urllib's URLError/HTTPError
+    except (OSError, http.client.HTTPException) as exc:  # URLError/HTTPError are OSErrors; IncompleteRead is not
         body = getattr(exc, "read", lambda: b"")()
         raise AcoustIdError(f"AcoustID couldn't be reached: {_error_message(body) or exc}") from exc
     try:
         payload = json.loads(raw)
     except ValueError as exc:
         raise AcoustIdError("AcoustID sent an unreadable answer") from exc
+    if not isinstance(payload, dict):
+        raise AcoustIdError("AcoustID sent an answer of an unexpected shape")
     if payload.get("status") != "ok":
         raise AcoustIdError(f"AcoustID: {_error_message(raw) or 'request refused'}")
+    try:
+        return _parse_hits(payload)
+    except (AttributeError, TypeError, ValueError, KeyError) as exc:  # a list where an object belongs, a bad score
+        raise AcoustIdError(f"AcoustID sent an answer of an unexpected shape ({exc})") from exc
 
+
+def _parse_hits(payload: dict) -> list[RecordingHit]:
     best: dict[str, RecordingHit] = {}
     for result in payload.get("results") or []:
         score = float(result.get("score") or 0)

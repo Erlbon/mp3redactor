@@ -138,7 +138,8 @@ class LocalEvidenceView(QWidget):
 
         def work() -> None:
             evidence = load_evidence(Path(folder), kind, loader)
-            _cache_put(key, evidence)
+            if not evidence.error:  # a read error (a share that dropped a second) is not kept: a new selection retries
+                _cache_put(key, evidence)
             try:
                 self._ready.emit(evidence, token)
             except RuntimeError:  # the dialog was closed meanwhile
