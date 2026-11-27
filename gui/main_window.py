@@ -1167,7 +1167,8 @@ class MainWindow(QMainWindow):
         folder...). The selected files are never used silently: their artist folder is only the pre-ticked choice
         until Continue. Include subfolders in the dialog is File > Include Subfolders (one saved setting). The
         review page is gui/notes_dialog.py."""
-        choices = scope_choices(
+        choices = run_busy(
+            self, "Finding the folders...", scope_choices,
             [mp3.path for mp3 in self.files], [mp3.path for mp3 in self._selected_files()],
             self.settings.last_directory, self.settings.notes_last_folder, self.settings.library_root)
         folder, kinds, outdated = ask_notes_scope(
@@ -1189,7 +1190,9 @@ class MainWindow(QMainWindow):
         if not files:
             self.statusBar().showMessage("Select a file first, or use Tools > Create Notes.", 6000)
             return
-        folders = [str(f) for f in selection_scope(mp3.path for mp3 in files)]
+        paths = [mp3.path for mp3 in files]
+        # A folder walk and tag reads: off the GUI thread (family rule 3, review card 38).
+        folders = [str(f) for f in run_busy(self, "Finding the folders...", selection_scope, paths)]
         self._run_create_notes(folders, False)
 
     def _run_create_notes(self, paths: list, include_subfolders: bool, kinds: tuple = ALL_KINDS,
@@ -2284,7 +2287,7 @@ class MainWindow(QMainWindow):
             crash_dialog.report_exception(exc, "Save All hit an unexpected error")
 
         done = run_with_progress(
-            self, dirty_files, step, "Saving tags...", threshold=3,
+            self, dirty_files, step, "Saving tags...", threshold=1,  # one big file on a share still needs a dialog (card 40)
             label_for=lambda mp3: f"Saving: {mp3.filename}", on_error=on_error,
         )
         self._rebuild_table()
@@ -2788,7 +2791,9 @@ class MainWindow(QMainWindow):
             return
 
         env = RedactEnv(self.settings, rename_log=_rename_log())
-        env.begin(targets)
+        # The start-up cleanup walks every target folder (a listing per folder, a realpath per file): off the GUI
+        # thread, under a busy dialog (review card 41).
+        run_busy(self, "Preparing Redact...", env.begin, targets)
         recipe = self._redact_recipe()
         report = run_redact_dialog(
             self, targets, recipe, build_catalogue(self.settings),
@@ -2797,6 +2802,7 @@ class MainWindow(QMainWindow):
             show_results=False,
             finalize=save_stage,
             finalize_label=FINALIZE_LABEL,
+            on_cancel=env.cancel_event.set,  # a lookup's fingerprint pass stops at the next file (review card 37)
         )
         self.undo_manager.clear()
         self._update_undo_action()

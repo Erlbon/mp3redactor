@@ -101,6 +101,22 @@ def _field(section: str, name: str) -> str:
 # Keys whose value is a file on this computer: an import skips one that doesn't exist here.
 _EXISTING_FILE_KEYS = frozenset({"musicbrainz_database", "musicbrainz_dump"})
 
+# The tool path keys and the program each one may point at (review card 42): the app later RUNS these, so an
+# imported path counts only if the file is here and is called like the tool (with or without .exe, any case).
+_TOOL_NAMES = {
+    "ffmpeg_path": "ffmpeg", "ffprobe_path": "ffprobe", "mp3val_path": "mp3val",
+    "keyfinder_cli_path": "keyfinder-cli", "fpcalc_path": "fpcalc",
+}
+
+
+def _is_tool_path(name: str, path: str) -> bool:
+    """True if `path` is an existing file whose name is the tool `name` is for (ffmpeg, ffmpeg.exe...)."""
+    if not os.path.isfile(path):
+        return False
+    base = os.path.basename(path).casefold()
+    stem = base[:-4] if base.endswith(".exe") else base
+    return stem == _TOOL_NAMES[name]
+
 _LABEL_PORTABLE = [
     ("recipe", "Redact recipe"),
     ("patterns", "Rename, move and path patterns (history and saved)"),
@@ -195,6 +211,8 @@ class Mp3SettingsAdapter(sb.SettingsAdapter):
                 continue  # wrong type: keep the current value
             if name in _EXISTING_FILE_KEYS and not (coerced[name] and os.path.isfile(coerced[name])):
                 del coerced[name]  # empty or not on this computer: keep the current value
+            elif key == "tools" and name in _TOOL_NAMES and coerced[name] and not _is_tool_path(name, coerced[name]):
+                del coerced[name]  # not here, or not that program: keep the current value (an empty one clears it)
         for name, value in coerced.items():
             setattr(settings, _field(key, name), value)
         if key == "table_colours":  # one bad pair must not leave poor >= good

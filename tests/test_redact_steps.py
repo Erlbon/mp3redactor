@@ -292,7 +292,7 @@ def test_fingerprint_match_uses_the_acoustid_score(tmp_path, monkeypatch):
     mp3 = make_file(tmp_path, title="junk", album="junk")
     monkeypatch.setattr(rs, "find_tool", lambda *a, **k: Path("fpcalc"))
     monkeypatch.setattr(
-        rs, "identify_files", lambda paths, fpcalc: ([[RecordingHit("rec1", 0.97, {"rel1"})]], [])
+        rs, "identify_files", lambda paths, fpcalc, **_kw: ([[RecordingHit("rec1", 0.97, {"rel1"})]], [])
     )
     monkeypatch.setattr(rs, "find_album", lambda facts, query: [])
     monkeypatch.setattr(rs, "candidate_releases", lambda hits, limit=5: ["rel1"])

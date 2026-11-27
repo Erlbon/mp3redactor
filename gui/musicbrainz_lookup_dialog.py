@@ -24,6 +24,7 @@ the folder are tried too.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -93,6 +94,7 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
         self._fetch = fetch
         self._fpcalc = fpcalc  # None: identify by tags/names only
         self._post = post  # AcoustID transport (tests)
+        self._cancel_event = threading.Event()  # the running search's Cancel (a fresh one per search): the fingerprint pass stops on it
         self._matches: dict[int, ReleaseMatch] = {}  # id(album) -> the chosen match
         self._fingerprint_problem: dict[int, str] = {}  # id(album) -> the first AcoustID problem of the last pass
         self._fingerprints: dict[int, list] = {}  # id(album) -> AcoustID hits per file (computed once)
@@ -128,6 +130,16 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             "written on Save. MusicBrainz is queried at most once per second, so this takes a few "
             "seconds per album." + by_sound + LINK_TIP
         )
+
+    def _cancel_signal(self, reporter):
+        """The base class hands the progress dialog's `canceled` signal to the background call, which only stops
+        WAITING for the worker. Also set this search's own event, which the fingerprint pass checks per file
+        (review card 37), so a Cancel stops the pass and a second Search does not run beside it."""
+        signal = super()._cancel_signal(reporter)
+        self._cancel_event = event = threading.Event()
+        if signal is not None:
+            signal.connect(event.set)
+        return signal
 
     def _cover(self, release):
         return fetch_front_cover(release.id, size=EMBED_COVER_SIZE)  # the image that gets embedded, not the 250 px preview
@@ -225,9 +237,11 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
             return [[] for _ in album.files]
         key = id(album)
         if key not in self._fingerprints:
-            hits, problems = identify_files([m.path for m in album.files], self._fpcalc, self._post)
+            cancelled = self._cancel_event  # this search's own event: a later search makes a new one
+            hits, problems = identify_files(
+                [m.path for m in album.files], self._fpcalc, self._post, should_cancel=cancelled.is_set)
             self._fingerprint_problem[key] = problems[0] if problems else ""
-            if problems:  # a dropped connection is not an answer: do not keep it, the next search asks again
+            if problems or cancelled.is_set():  # a dropped connection or a Cancel is not an answer: do not keep it
                 return hits
             self._fingerprints[key] = hits
         return self._fingerprints[key]

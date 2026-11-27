@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-27#05 -- Cancel and slow work off the GUI thread; safer Import Settings (code review batch 3)
+
+- **Cancel stops the AcoustID fingerprint pass**, in Redact and in Look Up via MusicBrainz, at the next file. A second
+  Search no longer runs beside the first. After the first AcoustID timeout the rest of the folder is not asked.
+- **Create Notes for a selection** decides once per album and artist folder, from a sample of the tags, and shows a
+  progress dialog instead of freezing the window.
+- **Create Notes: Cancel also ends a wait for a busy MusicBrainz** within a fraction of a second.
+- **Saving one or two files shows the progress dialog** too, not only three or more.
+- **Redact's start-up cleanup** (looking for leftover scratch files) runs under a progress dialog instead of freezing
+  the window on a big or slow folder.
+- **Import Settings takes a tool path only if the file is on this computer and is named like the tool** (ffmpeg,
+  ffprobe, mp3val, keyfinder-cli, fpcalc, with or without .exe). The import preview already lists the paths.
+
 ## 2026-11-27#04 -- Crashes and wrong results (code review batch 2)
 
 - **Key detection works in the released exe again.** The build no longer leaves out `numpy.fft`, which the built-in

@@ -221,7 +221,7 @@ def test_acoustid_hit_resolved_locally_keeps_the_fingerprint_score(tmp_path, set
     mp3 = make_file(folder, "junk.mp3", title="junk", album="junk")
     monkeypatch.setattr(rs, "find_tool", lambda *a, **k: Path("fpcalc"))
     monkeypatch.setattr(rs, "identify_files",
-                        lambda paths, fpcalc: ([[RecordingHit(GID["rec_jet"], 0.96, set())]], []))
+                        lambda paths, fpcalc, **_kw: ([[RecordingHit(GID["rec_jet"], 0.96, set())]], []))
     entries, _ = run_all([mp3], settings, threshold=0.9)
     assert entries[0].status is FileStatus.CHANGED
     fresh = reload(mp3)
@@ -236,7 +236,7 @@ def test_offline_acoustid_is_skipped_with_a_note_and_the_tags_still_work(tmp_pat
     files = abbey_folder(tmp_path, album="Abbey Road", artist="The Beatles")
     monkeypatch.setattr(rs, "find_tool", lambda *a, **k: Path("fpcalc"))
 
-    def offline(paths, fpcalc):
+    def offline(paths, fpcalc, **_kw):
         raise AcoustIdError("AcoustID couldn't be reached")
 
     monkeypatch.setattr(rs, "identify_files", offline)

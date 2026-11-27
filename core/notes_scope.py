@@ -163,8 +163,9 @@ def scope_choices(
 
     artists: list[str] = []
     albums: list[str] = []
+    memo: dict = {}  # one artist test per folder, not per selected file (review card 38)
     for file in selected:
-        for target, bucket in ((str(artist_folder_of_file(file)), artists), (str(album_folder_of(file)), albums)):
+        for target, bucket in ((str(artist_folder_of_file(file, memo=memo)), artists), (str(album_folder_of(file)), albums)):
             if _key(target) not in {_key(b) for b in bucket}:
                 bucket.append(target)
     for i, a in enumerate(artists[:2]):

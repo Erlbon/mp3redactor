@@ -53,6 +53,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -168,11 +169,13 @@ class RedactEnv:
     _path_counts: dict = field(default_factory=dict)  # (pattern, root) -> folder_value_counts of the run
     _discogs: dict = field(default_factory=dict)  # "client" -> the run's client (None: no token); (folder, query) -> lookup
     _discogs_releases: dict = field(default_factory=dict)  # Discogs release id -> release, fetched once per run
+    cancel_event: threading.Event = field(default_factory=threading.Event)  # set by the run's Cancel (review card 37): lookups stop asking
     _local: dict = field(default_factory=dict)  # "db" -> (local MusicBrainz database or None, note); (folder, fingerprint) -> lookup
 
     def begin(self, items) -> None:
         """Call before each run."""
         self.items = list(items)
+        self.cancel_event.clear()
         self._albums.clear()
         self._path_counts.clear()
         self._discogs.clear()
@@ -609,7 +612,7 @@ def _lookup_folder(env: RedactEnv, folder: str, use_fingerprint: bool) -> Folder
         fpcalc = find_tool(FPCALC_EXE_NAME, override=env.settings.fpcalc_path or None) if use_fingerprint else None
         hits = [[] for _ in files]
         if fpcalc:
-            hits, _problems = identify_files([m.path for m in files], fpcalc)
+            hits, _problems = identify_files([m.path for m in files], fpcalc, should_cancel=env.cancel_event.is_set)
         facts = [facts_from_tags(m.title, m.track, m.discnumber, m.duration_seconds) for m in files]
         for fact, file_hits in zip(facts, hits):
             fact.recordings = {h.recording_id: h.score for h in file_hits}
@@ -786,7 +789,7 @@ def _local_lookup_folder(env: RedactEnv, folder: str, use_fingerprint: bool, db)
         fpcalc = find_tool(FPCALC_EXE_NAME, override=env.settings.fpcalc_path or None) if use_fingerprint else None
         if fpcalc:
             try:
-                hits, _problems = identify_files([m.path for m in files], fpcalc)
+                hits, _problems = identify_files([m.path for m in files], fpcalc, should_cancel=env.cancel_event.is_set)
             except (AcoustIdError, OSError) as exc:
                 hits = [[] for _ in files]
                 result.note = f"AcoustID unavailable ({exc}): fingerprints skipped"

@@ -54,8 +54,25 @@ def _get(path: str, fetch: Callable, **params) -> dict:
             hook = getattr(fetch, "on_busy", None)
             if hook is not None:  # the caller says 'MusicBrainz is busy, waiting 4 s' and counts the wait
                 hook(delay)
-            _sleep(delay)
+            _wait(delay, getattr(fetch, "should_cancel", None))
     return {}
+
+
+def _wait(delay: float, should_cancel: Optional[Callable[[], bool]]) -> None:
+    """The pause between busy retries, in short slices that watch the fetch's `should_cancel()` (review card 39;
+    redactor_common does the same in its own retry loop but keeps its helper private, and tests here replace this
+    module's `_sleep`). A cancelled run stops asking a busy service at once instead of after up to 15 s."""
+    if should_cancel is None:
+        _sleep(delay)
+        return
+    end = time.monotonic() + delay
+    while True:
+        if should_cancel():
+            raise MusicBrainzError("Cancelled.")
+        left = end - time.monotonic()
+        if left <= 0:
+            return
+        _sleep(min(0.25, left))
 
 
 @dataclass

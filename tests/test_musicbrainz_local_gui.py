@@ -104,7 +104,7 @@ def test_unticked_row_applies_nothing(tmp_path, db, monkeypatch):
 def test_offline_acoustid_does_not_stop_the_local_lookup(tmp_path, db, monkeypatch):
     from pathlib import Path
 
-    def offline(paths, fpcalc, post=None):
+    def offline(paths, fpcalc, post=None, should_cancel=None):
         raise AcoustIdError("AcoustID couldn't be reached")
 
     monkeypatch.setattr(dlg_module, "AcoustIdError", AcoustIdError)

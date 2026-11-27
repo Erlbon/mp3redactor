@@ -317,6 +317,10 @@ class NotesEngine:
             self._pool.shutdown(wait=True)
             self._pool = None
 
+    def set_cancel(self, cancel: Optional[Callable[[], bool]]) -> None:
+        """The run's cancel test: a MusicBrainz busy-wait then stops on it within a quarter second (review card 39)."""
+        self._mb.should_cancel = cancel
+
     def _busy(self, delay: float) -> None:
         if self.on_status is not None:
             try:
@@ -1737,33 +1741,60 @@ def selection_scope(files: Iterable[str | os.PathLike], loader: Optional[Loader]
             seen.add(key)
             out.append(folder)
 
+    memo: dict = {}  # decided once per album folder (review card 38): 150 selected files are a few folders
     for file in files:
         album = album_folder_of(file)
         add(album)
-        parent = artist_folder_above(album, loader)
+        parent = artist_folder_above(album, loader, memo)
         if parent is not None:
             add(parent)
     return out
 
 
-def artist_folder_above(album_folder: Path, loader: Optional[Loader] = None) -> Optional[Path]:
-    """The artist folder directly above `album_folder`, or None when the folder above is not an artist level."""
+def artist_folder_above(album_folder: Path, loader: Optional[Loader] = None, memo: Optional[dict] = None) -> Optional[Path]:
+    """The artist folder directly above `album_folder`, or None when the folder above is not an artist level.
+    The artist test reads a SAMPLE of the tags, as the notes engine does (all of them only when the sample does not
+    say 'artist'); `memo` (a dict the caller keeps) holds the answer per folder so a selection asks once per folder."""
     parent = album_folder.parent
     if not parent.name or parent == album_folder or is_collection_name(parent.name) or is_generic_name(parent.name):
         return None
-    if classify(parent) != KIND_ARTIST:
-        return None
-    local = read_artist(parent, loader)
-    return parent if artist_level(local.name, local.albums).level == LEVEL_ARTIST else None
+    key = ("above", os.path.normcase(str(album_folder)))
+    if memo is not None and key in memo:
+        return memo[key]
+    result = _artist_above(parent, loader, memo)
+    if memo is not None:
+        memo[key] = result
+    return result
 
 
-def artist_folder_of_file(file: str | os.PathLike, loader: Optional[Loader] = None) -> Path:
+def _artist_above(parent: Path, loader: Optional[Loader], memo: Optional[dict]) -> Optional[Path]:
+    key = ("artist", os.path.normcase(str(parent)))
+    if memo is not None and key in memo:
+        return memo[key]
+    result: Optional[Path] = None
+    if classify(parent) == KIND_ARTIST:
+        local = read_artist(parent, loader, max_albums=NotesEngine.SAMPLE_ALBUMS, files_per_album=NotesEngine.SAMPLE_FILES)
+        level = artist_level(local.name, local.albums).level
+        if local.sampled and level != LEVEL_ARTIST:  # an odd level needs ALL the evidence (as _artist_proposal does)
+            local = read_artist(parent, loader)
+            level = artist_level(local.name, local.albums).level
+        result = parent if level == LEVEL_ARTIST else None
+    if memo is not None:
+        memo[key] = result
+    return result
+
+
+def artist_folder_of_file(file: str | os.PathLike, loader: Optional[Loader] = None, memo: Optional[dict] = None) -> Path:
     """The folder to offer as 'the artist folder of this file': the artist level above its album folder, an
     artist folder the file sits in directly, else the album folder itself."""
     album = album_folder_of(file)
-    if classify(album) == KIND_ARTIST:
-        return album
-    return artist_folder_above(album, loader) or album
+    key = ("of", os.path.normcase(str(album)))
+    if memo is not None and key in memo:
+        return memo[key]
+    result = album if classify(album) == KIND_ARTIST else (artist_folder_above(album, loader, memo) or album)
+    if memo is not None:
+        memo[key] = result
+    return result
 
 
 def build_proposals(
@@ -1778,6 +1809,8 @@ def build_proposals(
     Network only; this function writes no file."""
     engine = engine or NotesEngine(fetchers, loader, cache)  # a caller that keeps the engine can rebuild with its caches
     proposals: list[Proposal] = []
+    if cancel is not None:
+        engine.set_cancel(cancel)
     for index, target in enumerate(targets):
         if cancel is not None and cancel():
             break

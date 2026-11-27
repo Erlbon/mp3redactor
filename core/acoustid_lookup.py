@@ -152,12 +152,20 @@ def _error_message(raw: bytes) -> str:
 
 def identify_files(
     paths: list[Path], fpcalc: Path, post: Optional[Callable] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> tuple[list[list[RecordingHit]], list[str]]:
     """Fingerprints and looks up every file: (hits per file, problems).
     A file that can't be fingerprinted or looked up gets no hits (the
-    others still count); an unusable key stops at once."""
+    others still count); an unusable key stops at once.
+    `should_cancel` is asked before each file; once true the rest get no hits (no problem is added for them).
+    After the first AcoustID that "couldn't be reached" (a timeout, a dropped connection) the rest are not
+    asked either: a dead service would otherwise cost 30 s per file (review card 37)."""
     hits, problems = [], []
+    unreachable = False
     for path in paths:
+        if unreachable or (should_cancel is not None and should_cancel()):
+            hits.append([])
+            continue
         try:
             hits.append(lookup(fingerprint_file(path, fpcalc), post))
         except AcoustIdError as exc:
@@ -165,6 +173,8 @@ def identify_files(
                 raise
             hits.append([])
             problems.append(f"{path.name}: {exc}")
+            if "couldn't be reached" in str(exc):
+                unreachable = True
     return hits, problems
 
 

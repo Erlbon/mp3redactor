@@ -468,12 +468,13 @@ def test_card33_a_failed_fingerprint_pass_is_not_kept_and_is_said(tmp_path, monk
 
     passes = []
 
-    def identify(paths, fpcalc, post=None):
+    def identify(paths, fpcalc, post=None, should_cancel=None):
         passes.append(1)
         return [[] for _ in paths], (["a.mp3: AcoustID couldn't be reached"] if len(passes) == 1 else [])
 
     monkeypatch.setattr(base, "identify_files", identify)
-    fake = types.SimpleNamespace(_fpcalc=Path("fpcalc"), _post=None, _fingerprints={}, _fingerprint_problem={})
+    fake = types.SimpleNamespace(_fpcalc=Path("fpcalc"), _post=None, _fingerprints={}, _fingerprint_problem={},
+                                 _cancel_event=base.threading.Event())
     album = types.SimpleNamespace(files=[types.SimpleNamespace(path=tmp_path / "a.mp3")])
     base.MusicBrainzLookupDialog._fingerprint(fake, album)
     assert fake._fingerprint_problem[id(album)].endswith("couldn't be reached")
