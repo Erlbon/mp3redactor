@@ -433,8 +433,9 @@ def probe_audio_length(path: Path, ffprobe: Path, sample_rate: int) -> float | N
 
 
 def _sweep_stale_builds(folder: Path) -> None:
-    """Removes .m4b-build-* folders (and *.building.m4b / *.replaced.m4b / *.tagging.m4b leftovers) an earlier,
-    crashed or killed run left behind -- only old ones, so a build running at the same time is not touched."""
+    """Removes .m4b-build-* folders (and *.building.m4b / *.tagging.m4b leftovers) an earlier, crashed or killed
+    run left behind -- only old ones, so a build running at the same time is not touched. A *.replaced.m4b is NOT
+    swept: it is the user's older audiobook (see _install, which keeps and reports it)."""
     try:
         entries = list(folder.iterdir())
     except OSError:
@@ -482,11 +483,18 @@ def _remove_empty(folders: list[Path]) -> None:
 def _install(final_tmp: Path, output: Path, spec: BookSpec) -> str:
     """Puts the finished file at `output`. An older audiobook there is first renamed aside, and goes to the
     Recycle Bin / --trash-dir only after the new one is in place; if the new one cannot be, the old one is
-    put back. Returns "" or a message (what went wrong)."""
+    put back. Returns "" or a message (what went wrong, or what an earlier killed run left)."""
+    aside = output.with_name(f".{output.stem}.replaced.m4b")
+    stale_note = ""
+    if aside.exists():
+        # A run that was killed after the rename-aside left the OLD audiobook here (maybe the only copy of it).
+        # It is never overwritten and never swept: it is given a visible name and reported.
+        stale = _unused_name(output, "earlier build")
+        os.replace(aside, stale)
+        stale_note = f"an interrupted build had left the older audiobook as {aside.name}; it is kept as {stale.name}. "
     if spec.trash is None or not output.exists():
         retry_on_lock(lambda: os.replace(final_tmp, output))
-        return ""
-    aside = output.with_name(f".{output.stem}.replaced.m4b")
+        return stale_note.strip()
     retry_on_lock(lambda: os.replace(output, aside))
     try:
         retry_on_lock(lambda: os.replace(final_tmp, output))
@@ -496,17 +504,23 @@ def _install(final_tmp: Path, output: Path, spec: BookSpec) -> str:
     try:
         spec.trash(str(aside))
     except Exception as exc:  # noqa: BLE001 -- TrashError or OSError
-        kept = output.with_name(f"{output.stem} (previous).m4b")
-        n = 2
-        while kept.exists():
-            kept = output.with_name(f"{output.stem} (previous {n}).m4b")
-            n += 1
+        kept = _unused_name(output, "previous")
         try:
             os.replace(aside, kept)
         except OSError:
             kept = aside
-        return f"the old audiobook could not be sent to the Recycle Bin ({exc}); it is kept as {kept.name}"
-    return ""
+        return f"{stale_note}the old audiobook could not be sent to the Recycle Bin ({exc}); it is kept as {kept.name}"
+    return stale_note.strip()
+
+
+def _unused_name(output: Path, word: str) -> Path:
+    """"<stem> (word).m4b" beside the output, numbered when taken."""
+    kept = output.with_name(f"{output.stem} ({word}).m4b")
+    n = 2
+    while kept.exists():
+        kept = output.with_name(f"{output.stem} ({word} {n}).m4b")
+        n += 1
+    return kept
 
 
 def build_m4b(

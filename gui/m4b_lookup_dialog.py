@@ -118,6 +118,10 @@ class M4bLookupDialog(OwnedDialog):
         self._matches = []
         self.description_view.clear()
         self._show_cover(None)
+        # The wait runs a nested event loop: with Search (and Enter in a field) and the table live, a second
+        # search could start inside it and the first one's answer would overwrite the second's.
+        self.search_btn.setEnabled(False)
+        self.table.setEnabled(False)
         try:
             outcome = call_in_background(
                 search, self.title_edit.text(), self.author_edit.text(), self._runtime, self._fetch, self.region()
@@ -125,6 +129,9 @@ class M4bLookupDialog(OwnedDialog):
         except AudiobookLookupError as exc:
             self.status_label.setText(str(exc))
             return
+        finally:
+            self.search_btn.setEnabled(True)
+            self.table.setEnabled(True)
         self._matches = outcome.matches
         self.table.setRowCount(len(outcome.matches))
         for row, match in enumerate(outcome.matches):

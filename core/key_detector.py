@@ -101,6 +101,9 @@ STANDARD_NOTATION = (
 SILENCE = 24
 
 
+FFMPEG_TIMEOUT_SECONDS = 1800  # one file's decode through ffmpeg; the longest audiobook decodes in well under this
+
+
 class KeyDetectionError(Exception):
     """The audio cannot be analysed (for example a sample rate too low)."""
 
@@ -363,8 +366,14 @@ def _ffmpeg_blocks(exe: str, path: str):
 
     drainer = threading.Thread(target=drain, daemon=True)
     drainer.start()
+    # A stuck decode (a dead network share, a hung codec) must not hold the batch for ever: killing ffmpeg
+    # ends the pipe, and the reads below then fail with "no audio".
+    watchdog = threading.Timer(FFMPEG_TIMEOUT_SECONDS, proc.kill)
+    watchdog.daemon = True
+    watchdog.start()
 
     def fail(message: str):
+        watchdog.cancel()
         proc.kill()
         proc.wait()
         drainer.join(timeout=5)
@@ -399,7 +408,12 @@ def _ffmpeg_blocks(exe: str, path: str):
             leftover = data[usable:]
             yield np.frombuffer(data[:usable], dtype="<i2").astype(np.float64)
 
-    def finish() -> str:
+    def finish(kill: bool = False) -> str:
+        """Closes the pipe and waits for ffmpeg; kill=True (the analysis failed) stops it first, so no
+        ffmpeg is left running with the file open."""
+        watchdog.cancel()
+        if kill:
+            proc.kill()
         proc.stdout.close()
         code = proc.wait()
         drainer.join(timeout=5)
@@ -451,14 +465,22 @@ def detect_key_native(path: Path, ffmpeg_path: str | None = None) -> tuple[str, 
     exe = str(found) if found else None
     if exe is None:
         return "", STATUS_TOOL_ERROR, f"cannot decode this file ({'; '.join(errors)}; ffmpeg not found)"
+    finish = None
     try:
         rate, blocks, finish = _ffmpeg_blocks(exe, str(path))
         key = _analyse_blocks(rate, blocks)
         problem = finish()
+        finish = None
     except KeyDetectionError as e:
         return "", STATUS_TOOL_ERROR, f"key detection failed: {e}"
     except OSError as e:
         return "", STATUS_TOOL_ERROR, f"failed to run ffmpeg: {e}"
+    finally:
+        if finish is not None:  # the analysis raised: ffmpeg is still running, kill and reap it
+            try:
+                finish(kill=True)
+            except Exception:  # noqa: BLE001 -- cleanup must not hide the real error
+                pass
     if problem:
         return "", STATUS_TOOL_ERROR, f"ffmpeg could not decode this file: {problem}"
     return key_name(key), STATUS_OK, "" if key != SILENCE else "no key detected (silent audio)"

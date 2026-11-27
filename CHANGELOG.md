@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-27#06 -- Checks that turned out real (code review batch 4)
+
+- **Redact no longer replaces a song that another program saved while Redact was running.** It compares the file's
+  size and time with the moment the working copy was made, and leaves the file alone (reported as not saved) if it
+  changed.
+- **Redact's Discogs lookup keeps the whole folder in view after the Move step** has carried the first files off, so
+  the later files are no longer searched with fewer tracks and sent to Needs review.
+- **Key detection through ffmpeg stops ffmpeg when the analysis fails** (for example a very low sample rate) and gives
+  up on a decode that hangs for half an hour.
+- **Look Up Audiobook: Search and the result list are switched off while a search runs**, so a second search cannot
+  end with the first one's results.
+- **Create Notes: "Write all remaining" and "Write ticked" show a progress dialog** with Cancel between two notes.
+- **Create Notes: one odd answer from a service fails that folder only** (listed with its problem), not the run.
+- **Create M4B keeps a hidden `.replaced.m4b` left by a killed build** under a visible name and tells you, instead of
+  overwriting your older audiobook.
+- **The mouse wheel over a field in the side panel changes its value only after you click into the field.**
+
 ## 2026-11-27#05 -- Cancel and slow work off the GUI thread; safer Import Settings (code review batch 3)
 
 - **Cancel stops the AcoustID fingerprint pass**, in Redact and in Look Up via MusicBrainz, at the next file. A second

@@ -85,6 +85,9 @@ class MultiValueLineEdit(QLineEdit):
         super().__init__(parent)
         self._alternatives: list[str] = []
         self._alt_index = -1
+        # The wheel only cycles values once the field has been clicked into: scrolling the side panel past a
+        # field must not change it for every selected file (review card 63).
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def set_alternatives(self, values: list[str]) -> None:
         self._alternatives = values
@@ -93,6 +96,9 @@ class MultiValueLineEdit(QLineEdit):
     def wheelEvent(self, event) -> None:  # noqa: N802 - Qt override signature
         if not self._alternatives:
             super().wheelEvent(event)
+            return
+        if not self.hasFocus():
+            event.ignore()  # not focused: the wheel scrolls the panel instead and changes nothing
             return
         delta = event.angleDelta().y()
         if delta == 0:

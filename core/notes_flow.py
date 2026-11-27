@@ -585,6 +585,11 @@ class NotesEngine:
             proposal = Proposal(target, Confidence.NONE, reasons=["MusicBrainz failed"], problems=[str(exc)])
         except (wp.WikipediaError, DiscogsError) as exc:  # only reached when nothing was caught closer
             proposal = Proposal(target, Confidence.NONE, reasons=["a lookup failed"], problems=[str(exc)])
+        except LinkError:
+            raise  # a pasted link that cannot be used is the caller's message, not a failed lookup
+        except Exception as exc:  # noqa: BLE001 -- an answer of an unexpected shape must fail this folder, not the run
+            proposal = Proposal(target, Confidence.NONE, reasons=["a lookup failed unexpectedly"],
+                                problems=[f"{type(exc).__name__}: {exc}"])
         # the older note to refresh is the one of the TARGET's kind: a folder that turned out to be a collection (about.md)
         # has no about.md to replace, whatever artist.md it had
         proposal.old_state = target.update if proposal.note_kind == target.note_kind else None

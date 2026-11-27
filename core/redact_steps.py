@@ -165,6 +165,7 @@ class RedactEnv:
     # network and the process-wide pace; tests inject a mocked fetch/throttle.
     discogs_fetch: Callable | None = None
     discogs_throttle: object | None = None
+    start_folders: dict = field(default_factory=dict)  # id(item) -> its folder when begin() ran
     _albums: dict = field(default_factory=dict)
     _path_counts: dict = field(default_factory=dict)  # (pattern, root) -> folder_value_counts of the run
     _discogs: dict = field(default_factory=dict)  # "client" -> the run's client (None: no token); (folder, query) -> lookup
@@ -175,6 +176,7 @@ class RedactEnv:
     def begin(self, items) -> None:
         """Call before each run."""
         self.items = list(items)
+        self.start_folders = {id(m): _folder_of(m) for m in self.items}
         self.cancel_event.clear()
         self._albums.clear()
         self._path_counts.clear()
@@ -182,6 +184,10 @@ class RedactEnv:
         self._discogs_releases.clear()
         self._local.clear()
         self.cleaned = 0 if self.dry_run else remove_stale_scratch_files(self.items)
+
+
+def _folder_of(mp3: MP3File) -> str:
+    return os.path.dirname(os.path.realpath(mp3.path))
 
 
 def remove_stale_scratch_files(items) -> int:
@@ -212,6 +218,15 @@ def remove_stale_scratch_files(items) -> int:
 # --- per-file context ------------------------------------------------------
 
 
+def _file_stamp(path: str) -> tuple[int, int] | None:
+    """(size, mtime_ns), or None when the file can't be read."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return st.st_size, st.st_mtime_ns
+
+
 class Mp3Ctx:
     """make_context() result for one file (see the module docstring).
     A file that must not be touched -- it failed to load, has unsaved edits
@@ -231,6 +246,7 @@ class Mp3Ctx:
         self._save_done = False
         self._save_result: StepResult | None = None
         self.temp = ""
+        self.original_stamp: tuple[int, int] | None = None  # (size, mtime_ns) of the original when copied
         self.skip_reason = ""
         if mp3.load_error:
             self.skip_reason = f"the file could not be read ({mp3.load_error})"
@@ -247,6 +263,7 @@ class Mp3Ctx:
                 prefix=REDACT_SCRATCH_PREFIX, suffix=".mp3", dir=None if env.dry_run else os.path.dirname(self.original)
             )
             os.close(fd)
+            self.original_stamp = _file_stamp(self.original)  # before the copy: a later change is then seen
             retry_on_lock(lambda: shutil.copy2(self.original, self.temp))  # keeps the permissions...
             make_scratch_writable(self.temp)  # ...but not a read-only attribute
         except OSError as exc:
@@ -1027,8 +1044,10 @@ def _discogs_lookup_folder(ctx: "Mp3Ctx", client, folder: str) -> tuple[DiscogsF
     standing in for itself. Results are kept per (folder, query), and a
     failure is kept too, so the run doesn't retry it for every file."""
     env, me = ctx.env, ctx.mp3
+    # The folder as it was when the run began: files the Move step has already carried off still belong to
+    # it (a search with only the files left has a different key, a lower track count and so less confidence).
     files = sorted(
-        (m for m in env.items if not m.load_error and os.path.dirname(os.path.realpath(m.path)) == folder),
+        (m for m in env.items if not m.load_error and env.start_folders.get(id(m), _folder_of(m)) == folder),
         key=lambda m: m.filename.casefold(),
     )
     tags = [ctx.work if m is me else m for m in files]
@@ -1276,6 +1295,14 @@ def _save_working_copy(ctx: Mp3Ctx) -> StepResult | None:
     if not work.dirty:
         return None  # nothing to write (every step found nothing / was off)
     expected = ctx.mp3.duration_seconds
+    if ctx.original_stamp is not None and _file_stamp(ctx.original) != ctx.original_stamp:
+        # Another program saved the song while the slow steps ran: the scratch copy is older than the file,
+        # and committing it would send the newer file to the bin. The original stays.
+        ctx.save_failed = True
+        return StepResult.failed(
+            "NOT SAVED, the original is untouched: the file was changed by something else while Redact ran "
+            "(run Redact on it again)"
+        )
     # One journal entry per file (core/history.py): the fields this run
     # changed, old values from the row's on-disk baseline.
     entry = begin_save(work, KIND_REDACT, path=ctx.mp3.path)

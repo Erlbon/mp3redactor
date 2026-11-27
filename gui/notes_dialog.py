@@ -55,7 +55,7 @@ from core.notes_review import (
 )
 from redactor_common.core.notes import parse_front_matter
 from gui.columns import columns_resizable
-from redactor_common.gui.progress import run_busy
+from redactor_common.gui.progress import run_busy, run_with_progress
 from redactor_common.gui.work_progress import run_work_with_progress
 from redactor_common.gui.owned_dialog import OwnedDialog
 
@@ -892,13 +892,24 @@ class NotesReviewDialog(OwnedDialog):
                   if item.tickable and (not item.proposal.is_update or item.ticked)]
         if not self._confirm_updates(wanted):
             return
-        results = self.session.write_remaining_confident()
+        results = self._write_many(wanted)
         self._report_problems(results)
         if self.view == VIEW_ONE and self.session.next_pending(-1) is None:
             self._finish()  # nothing left to decide: the summary, then the page closes
             return
         self._summary_box()
         self._refresh_all()
+
+    def _write_many(self, indices: list[int]) -> list:
+        """Writes the notes of these items one by one under a progress dialog (hundreds of writes, each maybe
+        with a Recycle Bin move). Cancel stops between two writes: what is written stays written, the rest stays
+        pending."""
+        results: list = []
+        run_with_progress(
+            self, list(indices), lambda i, _n: results.append(self.session.write(i)), "Writing notes...",
+            label_for=lambda i: f"Writing {self.session.items[i].proposal.folder.name}",
+        )
+        return results
 
     def _write_index(self, index: int) -> None:
         result = self.session.write(index)
@@ -1141,7 +1152,7 @@ class NotesReviewDialog(OwnedDialog):
     def write_ticked(self) -> None:
         if not self._confirm_updates(self.session.ticked_pending()):
             return
-        results = self.session.write_ticked()
+        results = self._write_many(self.session.ticked_pending())
         self._report_problems(results)
         self._summary_box()
         self._fill_tree()
