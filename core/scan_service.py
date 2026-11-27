@@ -17,6 +17,8 @@ file at a time on purpose (it rewrites files and keeps backups).
 """
 
 import os
+import threading
+import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -378,6 +380,27 @@ def run_key_detection(
                 break
 
 
+LYRICS_MAX_WORKERS = 2
+LYRICS_MIN_INTERVAL = 0.5  # seconds between the starts of two lyrics lookups
+
+
+class _StartThrottle:
+    """Spaces calls to wait() at least `interval` seconds apart, across threads."""
+
+    def __init__(self, interval: float) -> None:
+        self.interval = interval
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next)
+            self._next = start + self.interval
+        if start > now:
+            time.sleep(start - now)
+
+
 def run_lyrics_fetch(
     files: list[MP3File],
     progress: ProgressCallback | None = None,
@@ -400,12 +423,21 @@ def run_lyrics_fetch(
     if not files:
         return
     total = len(files)
-    workers = max_workers or min(total, os.cpu_count() or 4)
+    # LRCLIB is a free service: at most LYRICS_MAX_WORKERS lookups at once, and
+    # their starts at least LYRICS_MIN_INTERVAL apart (redactor_common card 82
+    # left the pacing of lyricy's own requests to this app; lyricy itself
+    # already gives every request a 10-15 s timeout).
+    workers = max_workers or min(total, LYRICS_MAX_WORKERS)
     completed = 0
+    throttle = _StartThrottle(LYRICS_MIN_INTERVAL)
+
+    def paced_fetch(mp3: MP3File):
+        throttle.wait()
+        return fetch_lyrics(build_query(mp3), mp3.artist, mp3.title)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_mp3 = {
-            executor.submit(fetch_lyrics, build_query(mp3), mp3.artist, mp3.title): mp3
+            executor.submit(paced_fetch, mp3): mp3
             for mp3 in files
         }
         for future in as_completed(future_to_mp3):

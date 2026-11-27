@@ -55,7 +55,8 @@ a = Analysis(
     # Recycle Bin), so name it here rather than rely on static analysis
     # following a function-level import into an installed package. keyring
     # (redactor_common.core.secret_store) is not used by this app.
-    hiddenimports=["send2trash"],
+    # On Windows send2trash needs its pywin32 back-end (redactor_common card 64).
+    hiddenimports=["send2trash"] + (["send2trash.win.modern", "win32com.shell.shell", "win32com.shell.shellcon", "pythoncom", "pywintypes"] if sys.platform == "win32" else []),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

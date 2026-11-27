@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-27#02 -- redactor_common 2026-11-27-05, paced lyrics fetch
+
+- **redactor_common 2026-11-27-05** (was 2026-11-26-02). It brings this morning's library review fixes: among them a
+  checked cross-volume move before an original is trashed, Cancel during Redact that waits for the file being
+  written, the creation date and read-only flag kept on Redact's saves, and a guard against broken MusicBrainz
+  answers.
+- **pywin32 is listed for Windows.** The library now refuses the Recycle Bin when send2trash's modern Windows
+  back-end cannot load, because the old one deletes a file too big for the bin outright. The build names its
+  modules too.
+- **The Play window lets go of a file before it is saved, renamed or moved.** An open player held the file, and
+  Windows refused the rename or the save. The window stays open.
+- **Fetch Lyrics is paced.** At most two lookups run at once, and they start at least half a second apart (it ran
+  one per processor core). LRCLIB is a free service. lyricy already gives every request a 10-15 s timeout (review
+  card 53, checked in its source).
+- **A history that cannot be written is still reported.** The library's journal no longer raises when a line
+  cannot be written; mp3redactor now notices and shows "The change history could not be written" once, as before.
+
 ## 2026-11-27#01 -- Auto-Number opens on Track
 
 - **Edit > Auto-Number...** now opens with **Track** chosen as the field, instead of Title. The other fields are still in the list.

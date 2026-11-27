@@ -21,7 +21,7 @@ lyricy
 # see that repo's README ("Releasing a new version") for how to bump
 # this pin deliberately when it changes, rather than floating and
 # having one bad push there break this project's next install.
-redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-11-26-02
+redactor_common @ git+https://github.com/Erlbon/redactor_common.git@2026-11-27-05
 
 # Secure storage of API keys/tokens (the Discogs token): redactor_common's
 # core/secret_store.py uses it (Windows Credential Manager, macOS Keychain,
@@ -32,6 +32,9 @@ keyring
 # Recycle Bin for Redact's replaced originals (redactor_common's core/trash.py
 # imports it lazily and deliberately doesn't depend on it).
 send2trash
+# send2trash's modern Windows back-end; without it redactor_common refuses the
+# Recycle Bin (the legacy back-end deletes a file too big for the bin outright).
+pywin32>=306; sys_platform == "win32"
 
 # aubio-ledfx, not plain "aubio" -- the original aubio PyPI package is
 # source-only (no Windows wheels, ever), so pip always tries to compile

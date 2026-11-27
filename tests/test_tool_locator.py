@@ -25,7 +25,7 @@ def test_find_tool_no_override_falls_back_to_bundled_dir():
     with patch("core.tool_locator.bundled_tool_path") as mock_bundled:
         fake_path = Path("/fake/tools/mp3val.exe")
         mock_bundled.return_value = fake_path
-        with patch.object(Path, "exists", return_value=True):
+        with patch.object(Path, "is_file", return_value=True):  # the library asks is_file() since 2026-11-27
             result = find_tool("mp3val.exe")
     assert result == fake_path
 

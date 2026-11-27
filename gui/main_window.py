@@ -1078,6 +1078,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Sent {len(deleted)} file(s) to the Recycle Bin.", 8000)
 
     @staticmethod
+    def _release_previews(paths: list[str]) -> None:
+        """Lets the Play window (Ctrl+P) let go of any of `paths` before they are renamed, moved or saved: an
+        open player holds its file, and Windows refuses the rename or the save's replace (redactor_common
+        card 65). The window stays open."""
+        from redactor_common.gui import media_preview
+
+        media_preview.release_previews_of(paths)
+
+    @staticmethod
     def _close_players_for(paths: list[str]) -> None:
         """Closes the read-only player window (Play, Ctrl+P) when it has one of `paths` open."""
         from redactor_common.gui import media_preview
@@ -1566,6 +1575,8 @@ class MainWindow(QMainWindow):
         the batch -- with the folders it created -- in the rename log, so
         File > Undo Last Rename puts them back. Like a rename it isn't on
         the Undo stack; the rows just take on their new paths."""
+        planned = list(planned)
+        self._release_previews([str(move.old_path) for move in planned])
         summary = run_planned_moves(self, planned, False, _rename_log(), "Move into Folders")
         for mp3, _old_path, new_path in summary.done:
             mp3.path = Path(new_path)
@@ -1630,6 +1641,8 @@ class MainWindow(QMainWindow):
         # this project already draws for Save/Fix Integrity (see the
         # Undo section's own docstring above).
         renamed: list[tuple[str, str]] = []
+        if not export_mode:
+            self._release_previews([old for _mp3, old, _new in dialog.planned_renames()])
 
         def do_one(planned, _index: int) -> None:
             mp3, old_path, new_path = planned
@@ -1939,6 +1952,7 @@ class MainWindow(QMainWindow):
         taken: set[str] = set()
         errors: list[str] = []
         renamed: list[tuple[str, str]] = []
+        self._release_previews([str(targets[index].path) for index in changes])
 
         def do_one(item: tuple[int, str], _index: int) -> None:
             index, new_stem = item
@@ -2232,6 +2246,7 @@ class MainWindow(QMainWindow):
         file is left marked unsaved without an error."""
         report = SaveReport(skipped_load_errors=list(skipped_load_errors or []))
         unexpected: dict[int, str] = {}
+        self._release_previews([str(mp3.path) for mp3 in dirty_files])
 
         def step(mp3: MP3File, _index: int) -> None:
             save_dirty_tags([mp3])

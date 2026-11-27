@@ -38,6 +38,7 @@ def drive(monkeypatch):
                 self.case_sensitive_cb.setChecked(case)
                 self.replace_edit.setText(replace)
                 self.search_edit.setText(find)
+                self._flush_preview()  # the preview waits 250 ms after the last change (redactor_common 2026-11-27)
                 table = self.preview_table
                 seen.clear()
                 for r in range(table.rowCount()):  # the tick-box cell (an item or a widget, by version) is not text

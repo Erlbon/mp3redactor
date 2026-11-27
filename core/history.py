@@ -259,10 +259,16 @@ def begin_save(mp3: MP3File, kind: str = KIND_SAVE, path: str | os.PathLike | No
         cover = mp3.cover_change_pending
         if not changes and not cover:
             return None
-        return get_journal().begin(os.fspath(path if path is not None else mp3.path), kind, changes, cover_changed=cover)
+        journal = get_journal()
+        entry_id = journal.begin(os.fspath(path if path is not None else mp3.path), kind, changes, cover_changed=cover)
     except Exception as exc:  # noqa: BLE001 -- the journal must never block a save
         _report(exc)
         return None
+    if entry_id is None:
+        # Since redactor_common 2026-11-27-01 (its card 40) a failed append returns None instead of raising; there
+        # were changes, so None here means the line could not be written.
+        _report(OSError(f"cannot write {getattr(journal, 'path', 'the journal file')}"))
+    return entry_id
 
 
 def end_save(entry_id: str | None, ok: bool, error: str = "") -> None:
