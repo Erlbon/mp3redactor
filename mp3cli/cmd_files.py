@@ -16,6 +16,7 @@ import argparse
 import os
 from pathlib import Path
 
+from core.conversion_safety import verify_result
 from core.fields import FIELDS, filename_values
 from core.history import record_file_moves
 from core.mp3_converter import (
@@ -162,7 +163,11 @@ def run_convert(args: argparse.Namespace, out: Output) -> int:
             failed += 1
             continue
         row["status"] = "converted"
-        if args.trash_original:
+        problem = verify_result(source, dest) if args.trash_original else ""
+        if problem:  # as the GUI does: the original is touched only after the new MP3 is checked
+            row["message"] = f"converted, but the original was kept: {problem}"
+            out.warn(f"{source.name}: the original was kept ({problem})")
+        elif args.trash_original:
             try:
                 commands.trash_with_retries(move_to_trash)(str(source))
             except TrashError as exc:

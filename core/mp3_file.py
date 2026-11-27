@@ -252,9 +252,25 @@ class MP3File:
     # mutated in place, so undo snapshots sharing it stay valid.
     tag_baseline: dict = field(default_factory=dict)
 
+    # What the file held for the detection results (BPM, key, ReplayGain) at the last load/save, so a save writes
+    # them only when a detection in this session produced a different value (review 2026-11-27, card 7).
+    detect_baseline: dict = field(default_factory=dict)
+    # Text fields whose frame on disk holds more than one value (a v2.4 multi-value frame): only the first is
+    # shown, so Tidy leaves them alone rather than cut the rest (review 2026-11-27, card 6).
+    multi_value_keys: frozenset = field(default_factory=frozenset)
+
     def snapshot_tag_baseline(self) -> None:
         """Records the current text fields as "what's on disk"."""
         self.tag_baseline = {key: getattr(self, key, "") or "" for key in BASELINE_KEYS}
+        self.detect_baseline = {
+            "bpm": self.bpm if self.bpm_status == STATUS_OK else None,
+            "key": self.key_value if self.key_status == STATUS_OK else None,
+            "gain": self.loudness_gain_db if self.loudness_status == STATUS_OK else None,
+        }
+
+    def detection_changed(self, name: str, value) -> bool:
+        """True if the detection result `name` ("bpm", "key", "gain") differs from what the file held."""
+        return value != self.detect_baseline.get(name)
 
     @property
     def baseline(self) -> dict[str, str]:

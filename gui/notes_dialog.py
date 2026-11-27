@@ -1007,8 +1007,13 @@ class NotesReviewDialog(OwnedDialog):
         current = tree.currentItem()
         if current is None and tree.topLevelItemCount():
             tree.setCurrentItem(tree.topLevelItem(0))
-        elif current is not None:
-            self.list_panel.show_item(self.session.items[current.data(0, Qt.ItemDataRole.UserRole)])
+        if current is None and tree.topLevelItemCount():
+            current = tree.currentItem()
+        if current is not None:
+            # The panel shows this row, so every later action (pick, Skip, Build as level...) must apply to it too:
+            # with the removed row's index left in self.index they were applied to a hidden row (card 4).
+            self.index = current.data(0, Qt.ItemDataRole.UserRole)
+            self.list_panel.show_item(self.session.items[self.index])
         else:
             self.list_panel.show_item(None)
         self._refresh_list_header()

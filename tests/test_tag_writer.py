@@ -147,7 +147,7 @@ def test_save_tags_consolidates_multiple_pre_existing_comm_frames_into_one(tmp_p
 
     reloaded_tags = ID3(path)
     comm_keys = [k for k in reloaded_tags.keys() if k.startswith("COMM")]
-    assert comm_keys == ["COMM::eng"]
+    assert sorted(comm_keys) == ["COMM::eng", "COMM:Notiz:deu"]  # the described frame is another tagger's: kept
     assert str(reloaded_tags["COMM::eng"].text[0]) == "Replacement comment"
 
 
@@ -166,7 +166,7 @@ def test_save_tags_blanking_comment_removes_every_comm_frame(tmp_path):
     assert save_tags(mp3) is True
 
     reloaded_tags = ID3(path)
-    assert not any(k.startswith("COMM") for k in reloaded_tags.keys())
+    assert [k for k in reloaded_tags.keys() if k.startswith("COMM")] == ["COMM:Notiz:deu"]  # only the comment goes
 
 
 def test_save_tags_writes_lyrics_to_a_uslt_frame_with_english_language(tmp_path):
@@ -204,7 +204,7 @@ def test_save_tags_consolidates_multiple_pre_existing_uslt_frames_into_one(tmp_p
 
     reloaded_tags = ID3(path)
     uslt_keys = [k for k in reloaded_tags.keys() if k.startswith("USLT")]
-    assert uslt_keys == ["USLT::eng"]
+    assert sorted(uslt_keys) == ["USLT::eng", "USLT:Text:deu"]  # a described frame is never touched
     assert str(reloaded_tags["USLT::eng"].text) == "Replacement lyrics"
 
 
@@ -536,8 +536,9 @@ def test_editing_comment_keeps_its_language(tmp_path):
     mp3.apply_tags({"comment": "Neu"})
     assert save_tags(mp3) is True
 
-    comms = [f for f in ID3(path).values() if f.FrameID == "COMM"]
-    assert len(comms) == 1 and comms[0].lang == "deu" and comms[0].text == ["Neu"]
+    comms = {f.desc: f for f in ID3(path).values() if f.FrameID == "COMM"}
+    assert comms[""].lang == "deu" and comms[""].text == ["Neu"]
+    assert comms["Notiz"].text == ["second"]  # a described frame is never touched (review 2026-11-27, card 2)
 
 
 def test_second_save_after_edit_uses_the_new_baseline(tmp_path):

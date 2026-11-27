@@ -33,6 +33,7 @@ from gui.lookup_covers import CoverSaveMixin
 from core.acoustid_lookup import AcoustIdError, candidate_releases, identify_files
 from core.cover_art import read_cover
 from core.mp3_file import MP3File
+from core.redact_steps import COVER_ART_SIZE as EMBED_COVER_SIZE  # what Redact embeds (500 px)
 from redactor_common.core.lookups.musicbrainz import (
     AlbumQuery,
     MusicBrainzError,
@@ -128,7 +129,7 @@ class MusicBrainzLookupDialog(CoverSaveMixin, LookupDialogBase):
         )
 
     def _cover(self, release):
-        return fetch_front_cover(release.id)
+        return fetch_front_cover(release.id, size=EMBED_COVER_SIZE)  # the image that gets embedded, not the 250 px preview
 
     def _fields_for(self, release, track) -> dict[str, str]:
         return fields_for(release, track)

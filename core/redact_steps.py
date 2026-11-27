@@ -130,6 +130,10 @@ from core.whitespace import fixes_for
 # sitting next to the audio is what "Set Cover from Folder Image" uses
 # today; the Cover Art Archive is asked with the file's own release id.
 FOLDER_COVER_CONFIDENCE = 0.92
+# A folder image above this size is not embedded on its own: copied into every track it would multiply (a 25 MB
+# scan in 20 tracks is 500 MB), so it goes to Needs review at a low confidence (review 2026-11-27, card 17).
+MAX_FOLDER_COVER_BYTES = 8 * 1024 * 1024
+OVERSIZE_COVER_CONFIDENCE = 0.5
 ONLINE_COVER_CONFIDENCE = 0.95
 COVER_ART_SIZE = 500  # px, Cover Art Archive "front-500"
 
@@ -190,7 +194,10 @@ def remove_stale_scratch_files(items) -> int:
         except OSError:
             continue
         for name in names:
-            if name.startswith(REDACT_SCRATCH_PREFIX) and name.endswith((".mp3", ".mp3.bak")):
+            # ...and the ".mp3redactor-*.tmp" copy a killed or failed Save leaves (review 2026-11-27, card 13).
+            if (name.startswith(REDACT_SCRATCH_PREFIX) and name.endswith((".mp3", ".mp3.bak"))) or (
+                name.startswith(".mp3redactor-") and name.endswith(".tmp")
+            ):
                 try:
                     os.remove(os.path.join(folder, name))
                     removed += 1
@@ -488,6 +495,9 @@ class LoudnessStep(Mp3Step):
         if gain is None:
             return StepResult.nothing()  # silent audio
         work = ctx.work
+        held = work.loudness_gain_db
+        if work.loudness_status == STATUS_OK and held is not None and f"{held:+.2f}" == f"{gain:+.2f}":
+            return StepResult.nothing()  # already holds this gain: no change, so no rewrite (review card 8)
         work.loudness_lufs, work.loudness_gain_db = lufs, gain
         work.loudness_status, work.loudness_message = status, message
         work.dirty = True
@@ -1127,6 +1137,13 @@ class CoverStep(Mp3Step):
                 except OSError:
                     data = b""
                 mime = sniff_mime(data)
+                if mime and len(data) > MAX_FOLDER_COVER_BYTES:
+                    return StepResult.suggestion(
+                        CoverSuggestion(data, mime, f"folder image {image.name}"),
+                        OVERSIZE_COVER_CONFIDENCE,
+                        f"the folder image {image.name} is {len(data) / 1048576:.0f} MB: too big to embed in every "
+                        "track without a look",
+                    )
                 if mime:
                     return StepResult.suggestion(
                         CoverSuggestion(data, mime, f"folder image {image.name}"),

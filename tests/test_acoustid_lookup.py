@@ -104,7 +104,7 @@ def test_dialog_identifies_a_junk_tagged_folder_by_sound(tmp_path, monkeypatch):
     from core.mp3_file import MP3File
     from gui import musicbrainz_lookup_dialog as dlg_module
 
-    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id, **_kw: None)
     monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
     monkeypatch.setattr(ac, "fingerprint_file", lambda path, _fpcalc: ac.Fingerprint(151, path.name))
     folder = tmp_path / "New Folder (3)"
@@ -133,7 +133,7 @@ def test_dialog_without_fpcalc_is_stage_one_only(tmp_path, monkeypatch):
     from core.mp3_file import MP3File
     from gui import musicbrainz_lookup_dialog as dlg_module
 
-    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id, **_kw: None)
     monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
 
     def no_fingerprinting(*_a, **_k):
@@ -156,7 +156,7 @@ def test_fpcalc_tip_has_no_plain_web_address_and_external_tools_links_it(tmp_pat
     from gui import external_tools_dialog
     from gui import musicbrainz_lookup_dialog as dlg_module
 
-    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id, **_kw: None)
     monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
     folder = tmp_path / "Album"
     folder.mkdir()

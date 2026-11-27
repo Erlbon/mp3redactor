@@ -170,12 +170,14 @@ def test_delete_backup_leaves_no_bak_and_no_temp_file(tmp_path):
     assert hashlib.sha256(path.read_bytes()).hexdigest() == EXPECTED["truncated"][1]
 
 
-def test_an_old_bak_is_replaced(tmp_path):
+def test_an_old_bak_is_kept_and_the_new_backup_is_numbered(tmp_path):
+    # review 2026-11-27, card 12: an older .bak may be the only good copy, so it is never replaced
     path = tmp_path / "s.mp3"
     path.write_bytes(samples()["truncated"])
     (tmp_path / "s.mp3.bak").write_bytes(b"old backup")
     mv.fix_file(path)
-    assert (tmp_path / "s.mp3.bak").read_bytes() == samples()["truncated"]
+    assert (tmp_path / "s.mp3.bak").read_bytes() == b"old backup"
+    assert (tmp_path / "s.mp3.bak.1").read_bytes() == samples()["truncated"]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows file attributes")

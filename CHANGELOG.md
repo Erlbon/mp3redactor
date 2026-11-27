@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-11-27#03 -- Safer saves, fixes and undo (code review batch 1) -- redactor_common 2026-11-27-06
+
+- **redactor_common 2026-11-27-06** (was 2026-11-27-05): safe Windows device names in file names, and a folder
+  image like `albumartsmall.jpg` no longer counts as a cover.
+- **Fix Integrity Issues never leaves an empty song.** A rebuild that is empty or holds no audio is refused and the
+  file is left alone. If the fixed file does not read back, the original is put back. When the rebuild is identical
+  to the file, nothing is touched. An existing `.bak` is no longer replaced: the new backup is numbered
+  (`song.mp3.bak.1`).
+- **Comment and Lyrics only touch the plain frame.** Frames with a description (iTunes' iTunNORM and iTunSMPB
+  gapless data, other taggers' notes) are no longer shown, tidied, edited or deleted.
+- **A Year that is not a date is refused** (use YYYY, YYYY-MM or YYYY-MM-DD) instead of deleting the old year and
+  saying "saved".
+- **Tidy Whitespace leaves a tag with several values alone** (Artist or Genre written by Picard, for example)
+  instead of cutting it to the first one.
+- **Saving no longer rewrites BPM, Key and ReplayGain** that the file already holds ("127.6" stayed "128" before).
+  They are written only when a detection in this session produced a new value.
+- **Redact's Loudness step leaves a file alone when it already holds that gain**, so a second run no longer
+  rewrites every song and fills the Recycle Bin.
+- **Redact sends a folder image over 8 MB to Needs review** instead of embedding it in every track.
+- **Look Up (MusicBrainz) embeds the 500 px cover**, not the 250 px preview.
+- **Undo** puts back the edited text and a pending cover only. BPM, key, loudness and integrity results survive
+  it, and a cover that is already saved is not shown as missing.
+- **Create Notes:** with "Only uncertain or not found" on, a pick now moves the dialog's current row with the
+  panel, so Skip, Build as level and the next pick apply to the row you see.
+- **Convert to MP3 on the command line (`--trash-original`)** checks the new MP3 (opens, length) before the
+  original is trashed, as the app does.
+- **A conversion's undo log is written before an original is moved**; if it cannot be written the original stays.
+- **The "unsaved changes" question defaults to No**, so Enter keeps your edits.
+- **Rename by Pattern logs its renames even after an error or Cancel**, and a rename log that cannot be written is
+  reported.
+- **Save keeps the file's creation date and read-only flag**, and a failed or killed save no longer leaves a hidden
+  `.mp3redactor-*.tmp` copy (a Redact run also sweeps old ones).
+- Linux CI fix for the tool-locator tests (they now give the fake tool an executable bit).
+
 ## 2026-11-27#02 -- redactor_common 2026-11-27-05, paced lyrics fetch
 
 - **redactor_common 2026-11-27-05** (was 2026-11-26-02). It brings this morning's library review fixes: among them a

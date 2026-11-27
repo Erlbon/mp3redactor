@@ -172,14 +172,22 @@ def handle_original(
     target = _free_name(folder / src.name)
     if not _loggable(target, src, dest):
         return OriginalOutcome(src, LEFT, "original left where it is: a tab or line break in a path cannot be logged")
+    log = undo_log_path(src, policy, day)
     try:
         folder.mkdir(parents=True, exist_ok=True)
+        _log(log, dest, UNDO_CREATED)  # first: if the log cannot be written, the original is not moved at all
         shutil.move(str(src), str(target))
     except OSError as exc:
         return OriginalOutcome(src, LEFT, f"original left where it is: {exc}")
-    log = undo_log_path(src, policy, day)
-    _log(log, dest, UNDO_CREATED)
-    _log(log, target, str(src))
+    try:
+        _log(log, target, str(src))
+    except OSError as exc:  # no undo line for a moved original: put it back rather than leave it unrecorded
+        try:
+            shutil.move(str(target), str(src))
+        except OSError:
+            return OriginalOutcome(
+                src, QUARANTINED, f"moved to {target}, but the undo log could not be written ({exc})", target)
+        return OriginalOutcome(src, LEFT, f"original left where it is: the undo log could not be written ({exc})")
     return OriginalOutcome(src, QUARANTINED, f"moved to {target}", target)
 
 

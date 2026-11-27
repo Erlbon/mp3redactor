@@ -64,6 +64,7 @@ from core.cover_art import extension_for
 from redactor_common.core.lookups.cover_finder import find_folder_image
 from core.fields import FIELDS, filename_values
 from core.mp3_file import (
+    JOURNAL_KEYS,
     MP3File,
     STATUS_ERROR,
     STATUS_OK,
@@ -1659,13 +1660,16 @@ class MainWindow(QMainWindow):
         # Copies can be slow (big files, network shares), so they show
         # progress and can be cancelled between files; renames are
         # near-instant, so they never show a dialog in practice.
-        run_with_progress(
-            self, list(dialog.planned_renames()), do_one,
-            "Copying files..." if export_mode else "Renaming files...",
-            threshold=3, cancellable=export_mode,
-            label_for=lambda planned: f"{'Copying' if export_mode else 'Renaming'}: {Path(planned[1]).name}",
-        )
-        _rename_log().record("Rename by Pattern", renamed)
+        try:
+            run_with_progress(
+                self, list(dialog.planned_renames()), do_one,
+                "Copying files..." if export_mode else "Renaming files...",
+                threshold=3, cancellable=export_mode,
+                label_for=lambda planned: f"{'Copying' if export_mode else 'Renaming'}: {Path(planned[1]).name}",
+            )
+        finally:
+            # Also after an error or a cancel: what was renamed is logged, so it can be undone (card 15).
+            self._record_renames("Rename by Pattern", renamed, errors)
 
         self._rebuild_table()
         if errors:
@@ -1988,7 +1992,7 @@ class MainWindow(QMainWindow):
             )
         finally:
             # Also after a cancel: what was renamed is logged, so it can be undone.
-            _rename_log().record("Search/Replace (filename)", renamed)
+            self._record_renames("Search/Replace (filename)", renamed, errors)
 
         self._rebuild_table()
         unreadable = [mp3.filename for mp3 in targets if mp3.load_error]
@@ -2163,12 +2167,21 @@ class MainWindow(QMainWindow):
     # at a file that no longer exists) and `tag_baseline` (what's on disk
     # now, which a Save since the snapshot has changed).
     _UNDO_KEEPS = frozenset({"path", "tag_baseline"})
+    # What Undo/Redo DOES roll back: the text fields the user edits and the pending cover. Everything else (BPM,
+    # key, loudness, integrity and deep-check results, what is on disk) stays as it is, so undoing a title does
+    # not wipe the results of an analysis run since (review 2026-11-27, card 11).
+    _UNDO_COVER_FIELDS = ("cover_pending", "cover_pending_mime", "cover_remove_pending", "cover_version", "has_cover")
+    _UNDO_RESTORES = frozenset(JOURNAL_KEYS)
 
     @staticmethod
     def _restore_mp3(mp3: MP3File, snapshot: MP3File) -> None:
-        for f in dataclasses.fields(MP3File):
-            if f.name not in MainWindow._UNDO_KEEPS:
-                setattr(mp3, f.name, getattr(snapshot, f.name))
+        for name in MainWindow._UNDO_RESTORES:
+            setattr(mp3, name, getattr(snapshot, name))
+        # A cover that is already saved is what the file holds: only a PENDING cover change (now or in the
+        # snapshot) is rolled back, so the table never claims "no cover" for a file that has one.
+        if mp3.cover_change_pending or snapshot.cover_change_pending:
+            for name in MainWindow._UNDO_COVER_FIELDS:
+                setattr(mp3, name, getattr(snapshot, name))
         # The restored values may differ from disk (e.g. after a Save
         # since the snapshot), so they must be saved again.
         mp3.dirty = True
@@ -2286,6 +2299,16 @@ class MainWindow(QMainWindow):
             )
         append_save_log(os.path.dirname(crash_log_path()), history_enabled(), report)
 
+    def _record_renames(self, label: str, renamed: list[tuple[str, str]], errors: list[str]) -> None:
+        """Writes the undo log for a rename run; a log that cannot be written is said, not ignored (card 15)."""
+        try:
+            saved = _rename_log().record(label, renamed)
+        except Exception as exc:  # noqa: BLE001 -- the renames are done: never let the log abort the rest
+            saved = False
+            errors.append(f"The undo log could not be written ({exc}).")
+        if not saved and renamed:
+            errors.append("The renames were done, but File > Undo Last Rename cannot undo them: the undo log could not be saved.")
+
     def _count_dirty(self) -> int:
         return sum(1 for mp3 in self.files if mp3.dirty)
 
@@ -2302,6 +2325,7 @@ class MainWindow(QMainWindow):
             "Unsaved changes",
             f"You have unsaved tag changes. Are you sure you want to {action_desc}?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,  # Enter keeps the edits; discarding takes a deliberate click (card 14)
         )
         return reply == QMessageBox.StandardButton.Yes
 

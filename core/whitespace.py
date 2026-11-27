@@ -81,7 +81,10 @@ def fixes_for(item) -> list[WhitespaceFix]:
     if getattr(item, "load_error", ""):
         return []
     found = []
+    multi = getattr(item, "multi_value_keys", ())
     for key in TIDY_KEYS:
+        if key in multi:
+            continue  # the frame holds several values and only the first is shown: tidying it would cut the rest
         old = getattr(item, key, "") or ""
         new = tidy_field(key, old)
         if new != old:

@@ -90,6 +90,9 @@ def load_tags(mp3: MP3File) -> None:
         mp3.releasecountry = _first(tags, f"TXXX:{RELEASE_COUNTRY_DESC}")
         mp3.musicbrainz_trackid = _ufid(tags, MUSICBRAINZ_UFID_OWNER)
         mp3.has_cover = any(key.startswith("APIC") for key in tags.keys())
+        mp3.multi_value_keys = frozenset(
+            attr for attr, frame_id in _MULTI_VALUE_FRAMES.items() if _value_count(tags, frame_id) > 1
+        )
 
         # Same "read back what's already on disk" reasoning as
         # TBPM/TKEY/TXXX:REPLAYGAIN_TRACK_GAIN below -- a lyrics fetch
@@ -159,6 +162,21 @@ def load_tags(mp3: MP3File) -> None:
     mp3.snapshot_tag_baseline()  # see core.mp3_file.BASELINE_KEYS
 
 
+_MULTI_VALUE_FRAMES = {
+    "title": "TIT2", "artist": "TPE1", "albumartist": "TPE2", "album": "TALB", "genre": "TCON",
+    "composer": "TCOM", "language": "TLAN", "albumsort": "TSOA", "artistsort": "TSOP",
+    "albumartistsort": "TSO2", "publisher": "TPUB",
+}
+
+
+def _value_count(tags, frame_id: str) -> int:
+    frame = tags.get(frame_id)
+    try:
+        return len(frame.text) if frame is not None else 0
+    except (AttributeError, TypeError):
+        return 0
+
+
 def _first(tags, frame_id: str) -> str:
     frame = tags.get(frame_id)
     if frame is None:
@@ -179,6 +197,8 @@ def _first_uslt(tags) -> str:
     for key in tags.keys():
         if key.startswith("USLT"):
             frame = tags.get(key)
+            if getattr(frame, "desc", ""):
+                continue  # a described frame belongs to other software
             try:
                 return str(frame.text) if frame.text else ""
             except AttributeError:
@@ -199,6 +219,8 @@ def _first_comm(tags) -> str:
     for key in tags.keys():
         if key.startswith("COMM"):
             frame = tags.get(key)
+            if getattr(frame, "desc", ""):
+                continue  # iTunNORM, iTunSMPB and the like: never shown, never touched
             try:
                 return str(frame.text[0]) if frame.text else ""
             except (AttributeError, IndexError):

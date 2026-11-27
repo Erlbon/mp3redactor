@@ -166,7 +166,7 @@ def test_musicbrainz_ids_round_trip_as_picard_writes_them(tmp_path):
 def test_dialog_matches_a_folder_and_builds_per_file_changes(tmp_path, monkeypatch):
     from gui import musicbrainz_lookup_dialog as dlg_module
 
-    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id, **_kw: None)
     monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
     folder = tmp_path / "Johnny Cash - Ring of Fire"
     folder.mkdir()
@@ -217,7 +217,7 @@ ZA_ID = "5c2b4e7a-1f3d-4a8e-9c0b-1234567890ab"
 def test_dialog_a_pasted_release_link_uses_that_release(tmp_path, monkeypatch):
     from gui import musicbrainz_lookup_dialog as dlg_module
 
-    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id: None)
+    monkeypatch.setattr(dlg_module, "fetch_front_cover", lambda _id, **_kw: None)
     monkeypatch.setattr(dlg_module, "read_cover", lambda _path: None)
     folder = tmp_path / "Johnny Cash - Ring of Fire"
     folder.mkdir()

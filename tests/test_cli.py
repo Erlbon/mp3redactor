@@ -244,6 +244,7 @@ def test_convert_dry_run_and_trash_original_and_failure(tmp_path, capsys, monkey
     assert not (tmp_path / "a.mp3").exists()
     monkeypatch.setattr(cmd_files, "convert_to_mp3", lambda s, d, **k: (d.write_bytes(b"mp3"), (STATUS_OK, ""))[1])
     trashed = []
+    monkeypatch.setattr(cmd_files, "verify_result", lambda s, d: "")  # the fake "mp3" above is not a real MP3
     monkeypatch.setattr(cmd_files, "move_to_trash", trashed.append)
     run(capsys, "convert", str(src), "--trash-original")
     assert trashed == [str(src)]

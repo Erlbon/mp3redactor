@@ -786,17 +786,25 @@ def fix_file(path: Path, delete_backup: bool = False) -> list[str]:
     lines = list(result.lines)
     if result.fixed is None:
         return lines
+    if result.fixed == data:
+        return lines  # nothing the fix can change (for example only Layer II frames): touch nothing
+    if not _has_mpeg_frame(result.fixed):
+        # A rebuild that is empty or holds no audio must never replace the song (review 2026-11-27, card 1).
+        raise FixRefusedError("the rebuilt file would be empty or hold no MPEG audio; the file was left as it was")
     attributes = _get_attributes(path)
     backup = path.with_name(path.name + ".bak")
+    if backup.exists():  # an older backup is never replaced: it may be the only good copy
+        number = 1
+        while True:
+            backup = path.with_name(f"{path.name}.bak.{number}")
+            if not backup.exists():
+                break
+            number += 1
     fd, tmp_name = tempfile.mkstemp(prefix=".mp3val-", suffix=".tmp", dir=str(path.parent))
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(result.fixed)
-        # CrossAPI_MoveFile(): delete the target first, then move.
-        if backup.exists():
-            _make_writable(backup)
-            backup.unlink()
         os.rename(path, backup)
         try:
             os.rename(tmp_path, path)
@@ -810,11 +818,41 @@ def fix_file(path: Path, delete_backup: bool = False) -> list[str]:
             pass
         raise
     _set_attributes(path, attributes)
+    try:
+        written_ok = _has_mpeg_frame(path.read_bytes())
+    except OSError:
+        written_ok = False
+    if not written_ok:  # the new file does not read back: put the original back
+        try:
+            _make_writable(path)
+            path.unlink()
+            os.rename(backup, path)
+        except OSError:
+            pass
+        raise FixRefusedError("the rebuilt file did not read back; the original was put back")
     if delete_backup:
         _make_writable(backup)
         backup.unlink()
     lines.append(f'FIXED: "{full}": File was rebuilt')
     return lines
+
+
+class FixRefusedError(Exception):
+    """fix_file() declined to replace the file because the rebuilt bytes were not safe to use."""
+
+
+def _has_mpeg_frame(data: bytes) -> bool:
+    """True when data holds at least one MPEG frame, by the same scan the check uses."""
+    if not data:
+        return False
+    try:
+        info = MpegInfo()
+        d = bytearray(data)
+        d.extend(bytes(_PAD))
+        validate_file(d, len(data), info, _Messages(None, ""), False, None)
+        return info.mpeg_total() > 0
+    except Exception:  # noqa: BLE001 -- a scan that cannot run is not a verified file
+        return False
 
 
 def _get_attributes(path: Path):

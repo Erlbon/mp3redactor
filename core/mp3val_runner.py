@@ -105,6 +105,9 @@ def _run_native(
     except ValueError:
         # mp3val.exe: "Cannot open input file ... or it is empty"
         return STATUS_TOOL_ERROR, "mp3val could not open the file: it is empty"
+    except mp3_validator.FixRefusedError as e:
+        # Not a bug in the port: do NOT fall back to mp3val.exe, which would write the same empty file.
+        return STATUS_TOOL_ERROR, f"fix refused: {e}"
     except mp3_validator.ValidatorLoopError as e:
         return STATUS_TOOL_ERROR, f"mp3val check stopped: {e} (mp3val.exe hangs on this file)"
     except mp3_validator.ValidatorCrashError as e:

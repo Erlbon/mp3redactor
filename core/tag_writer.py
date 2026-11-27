@@ -45,10 +45,12 @@ message would otherwise make look retriable.
 """
 
 import os
+import re
 import shutil
 import tempfile
 
 from redactor_common.core.audio_write import check_audio_readable, save_tags as save_audio_tags
+from redactor_common.core.os_utils import apply_file_attributes, file_attributes
 from redactor_common.core.save_errors import describe_save_error
 
 from core.cover_art import FRONT_COVER
@@ -145,6 +147,7 @@ def _save_tags(mp3: MP3File) -> bool:
     if is_read_only(target):  # refused up front, before any copy exists
         mp3.save_error = read_only_message(target)
         return False
+    attributes = file_attributes(target)  # creation time and mode, put back on the new file (card 16)
     try:
         # Edit a same-folder copy and swap it in with os.replace(): a
         # crash/full disk mid-write can't leave the original half
@@ -160,17 +163,25 @@ def _save_tags(mp3: MP3File) -> bool:
         mp3.save_error = f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
         return False
 
-    error = apply_tags_to_file(mp3, tmp_path)
-    if not error:
-        try:  # the copy must read back before it replaces the song
-            retry_on_lock(lambda: check_audio_readable(tmp_path, opener=_open_mp3))
-        except OSError as e:
-            error = f"failed to write tags: {e}"
-    if not error:
-        try:
-            retry_on_lock(lambda: os.replace(tmp_path, target))
-        except OSError as e:
-            error = f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
+    try:
+        error = apply_tags_to_file(mp3, tmp_path)
+        if not error:
+            try:  # the copy must read back before it replaces the song
+                retry_on_lock(lambda: check_audio_readable(tmp_path, opener=_open_mp3))
+            except OSError as e:
+                error = f"failed to write tags: {e}"
+        if not error:
+            try:
+                retry_on_lock(lambda: os.replace(tmp_path, target))
+                apply_file_attributes(target, attributes)  # the creation date (and mode) of the song it replaced
+            except OSError as e:
+                error = f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
+    except BaseException as e:  # an unexpected failure must not leave a full-size hidden copy behind (card 13)
+        _discard(tmp_path)
+        if isinstance(e, Exception):
+            mp3.save_error = f"failed to write tags: {describe_save_error(e)}"
+            return False
+        raise
     if error:
         _discard(tmp_path)
         mp3.save_error = error
@@ -221,6 +232,12 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
 
     tags = audio.tags
 
+    # mutagen accepts any text as a TDRC value and then silently drops it when it writes the tag, so a Year
+    # that is not an ID3 date would delete the old year and still report success (card 3).
+    if mp3.tag_changed("year") and (mp3.year or "") and not is_id3_date(mp3.year):
+        return (f"not saved: Year {mp3.year!r} is not a date ID3 can store "
+                "(use YYYY, YYYY-MM or YYYY-MM-DD, optionally with a time)")
+
     # Only frames whose value changed since load/last save are touched
     # (MP3File.tag_changed): everything is held as one string, so
     # rewriting an untouched multi-valued frame would collapse it.
@@ -267,6 +284,16 @@ def apply_tags_to_file(mp3: MP3File, file_path: str) -> str:
     except Exception as e:  # noqa: BLE001
         return f"failed to write tags: {describe_save_error(e)}{lock_hint(e)}"
     return ""
+
+
+_ID3_DATE_RE = re.compile(r"\d{4}(-\d{2}(-\d{2}([T ]\d{2}(:\d{2}(:\d{2})?)?)?)?)?")
+
+
+def is_id3_date(text: str) -> bool:
+    """True if text is an ID3v2.4 timestamp (YYYY, YYYY-MM, YYYY-MM-DD, with an optional time), or two of them
+    joined by "/" (an interval)."""
+    parts = text.strip().split("/")
+    return len(parts) <= 2 and all(_ID3_DATE_RE.fullmatch(part) for part in parts)
 
 
 def _open_mp3(path: str):
@@ -318,23 +345,25 @@ def _write_comment_frame(tags, mp3: MP3File, comm_cls) -> None:
     """
     if not mp3.tag_changed("comment"):
         return  # untouched: keep every COMM frame (and its language) as is
-    lang, desc = _first_lang_desc(tags, "COMM")
-    for key in [k for k in tags.keys() if k.startswith("COMM")]:
+    # Only the frame with an empty description is "the comment" (the one the reader shows); frames with a
+    # description (iTunNORM, iTunSMPB gapless data, other software's) are never touched (card 2).
+    key, lang = _own_frame(tags, "COMM")
+    if key:
         tags.delall(key)
     value = mp3.comment or ""
     if value:
-        tags.add(comm_cls(encoding=3, lang=lang, desc=desc, text=[value]))
+        tags.add(comm_cls(encoding=3, lang=lang, desc="", text=[value]))
 
 
-def _first_lang_desc(tags, prefix: str) -> tuple[str, str]:
-    """Language and description of the first existing COMM/USLT frame,
-    so an edited comment/lyrics text keeps them ("eng"/"" if none)."""
+def _own_frame(tags, prefix: str) -> tuple[str, str]:
+    """Key and language of the first COMM/USLT frame with an EMPTY description (the one this app shows and
+    edits), or ("", "eng") if there is none."""
     for key in tags.keys():
         if key.startswith(prefix):
             frame = tags.get(key)
-            lang = str(getattr(frame, "lang", "") or "eng")
-            return lang, str(getattr(frame, "desc", "") or "")
-    return "eng", ""
+            if not str(getattr(frame, "desc", "") or ""):
+                return key, str(getattr(frame, "lang", "") or "eng")
+    return "", "eng"
 
 
 def _write_lyrics_frame(tags, mp3: MP3File, uslt_cls) -> None:
@@ -355,12 +384,12 @@ def _write_lyrics_frame(tags, mp3: MP3File, uslt_cls) -> None:
     fit a single-line field the way every FIELDS entry does)."""
     if not mp3.tag_changed("lyrics"):
         return
-    lang, desc = _first_lang_desc(tags, "USLT")
-    for key in [k for k in tags.keys() if k.startswith("USLT")]:
+    key, lang = _own_frame(tags, "USLT")  # only the empty-description frame; others are never touched
+    if key:
         tags.delall(key)
     value = mp3.lyrics or ""
     if value:
-        tags.add(uslt_cls(encoding=3, lang=lang, desc=desc, text=value))
+        tags.add(uslt_cls(encoding=3, lang=lang, desc="", text=value))
 
 
 def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:
@@ -383,7 +412,8 @@ def _write_bpm_frame(tags, mp3: MP3File, tbpm_cls) -> None:
     A STATUS_TOOL_ERROR bpm_status (the detector itself failed) writes
     nothing, even if mp3.bpm still holds an older value.
     """
-    if mp3.bpm is not None and mp3.bpm_status != STATUS_TOOL_ERROR:
+    if (mp3.bpm is not None and mp3.bpm_status != STATUS_TOOL_ERROR
+            and mp3.detection_changed("bpm", mp3.bpm)):  # a loaded value is not rewritten (card 7)
         tags.setall("TBPM", [tbpm_cls(encoding=3, text=str(round(mp3.bpm)))])
 
 
@@ -404,7 +434,7 @@ def _write_key_frame(tags, mp3: MP3File, tkey_cls) -> None:
     default STATUS_UNCHECKED, or a failed run) leaves any existing
     TKEY frame alone -- same "we don't know, so don't touch it" reasons
     as _write_bpm_frame()."""
-    if mp3.key_status != STATUS_OK:
+    if mp3.key_status != STATUS_OK or not mp3.detection_changed("key", mp3.key_value):
         return
     if mp3.key_value:
         tags.setall("TKEY", [tkey_cls(encoding=3, text=mp3.key_value)])
@@ -432,6 +462,8 @@ def _write_loudness_frame(tags, mp3: MP3File, txxx_cls) -> None:
     """
     if mp3.loudness_status != STATUS_OK or mp3.loudness_gain_db is None:
         return
+    if not mp3.detection_changed("gain", mp3.loudness_gain_db):
+        return  # the value the file already holds: leave its text exactly as it is
     tags.delall("TXXX:REPLAYGAIN_TRACK_GAIN")
     tags.add(txxx_cls(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=[f"{mp3.loudness_gain_db:+.2f} dB"]))
 
