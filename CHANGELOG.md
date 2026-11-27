@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-27#01 -- Auto-Number opens on Track
+
+- **Edit > Auto-Number...** now opens with **Track** chosen as the field, instead of Title. The other fields are still in the list.
+
 ## 2026-11-26#09 -- Redact fixes integrity problems again by default -- redactor_common 2026-11-26-02
 
 - **Redact repairs what the integrity check finds.** The Integrity step's "Fix problems" option is on by default

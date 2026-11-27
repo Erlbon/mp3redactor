@@ -1859,7 +1859,10 @@ class MainWindow(QMainWindow):
         # conservative default video's own NUMERIC_FIELDS used (year/
         # genre/etc aren't naturally "a number" the way a track
         # position is).
+        # Track is the field that wants numbering, so it comes first and the
+        # dialog opens on it (2026-11-27; Title first was a bewildering default).
         fields = [(key, label, key == "track") for key, label, _multiline in FIELDS]
+        fields.sort(key=lambda field: field[0] != "track")  # stable: the rest keep their order
         dialog = AutoNumberingDialog(
             targets, fields,
             get_value=lambda mp3, key: getattr(mp3, key, "") or "",

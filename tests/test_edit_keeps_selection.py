@@ -61,6 +61,24 @@ def test_a_multi_selection_survives_an_edit(window, tmp_path):
     assert (a.album, b.album, c.album) == ("Shared", "Shared", "")
 
 
+def test_auto_number_opens_on_track(window, tmp_path, monkeypatch):
+    """2026-11-27: the dialog opens on Track, the field that wants numbering."""
+    a, _b = _load(window, tmp_path, ["a.mp3", "b.mp3"])
+    _select(window, a)
+    seen = {}
+
+    def fake_exec(dialog):
+        seen["field"] = dialog.field_combo.currentData()
+        seen["keys"] = [dialog.field_combo.itemData(i) for i in range(dialog.field_combo.count())]
+        return dialog.DialogCode.Rejected
+
+    monkeypatch.setattr(mw.AutoNumberingDialog, "exec", fake_exec)
+    window.open_auto_numbering_dialog()
+    assert seen["field"] == "track"
+    assert seen["keys"].count("track") == 1
+    assert "title" in seen["keys"]
+
+
 def test_an_edit_to_the_selected_file_survives_clicking_another(window, tmp_path, monkeypatch):
     a, b = _load(window, tmp_path, ["a.mp3", "b.mp3"])
     _select(window, a)
